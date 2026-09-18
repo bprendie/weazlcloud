@@ -105,7 +105,7 @@ function gridFileCard(f, fullPath = false) {
   const preview = ['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG'].includes(kind)
     ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
     : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG'].includes(kind)
-    ? `<iframe class="grid-text-preview" src="${href}" title="${esc(f.title)}" loading="lazy"></iframe>`
+    ? `<div class="grid-text-preview" data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
     : `<div class="grid-kind"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
     <button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>

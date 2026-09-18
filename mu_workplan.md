@@ -146,6 +146,13 @@ Acceptance criteria:
 - Add recursive directory upload with relative-path preservation, aggregate and per-file progress, retry, and partial-failure reporting.
 - Replace the current request-size ceiling with streamed uploads plus quota reservation. No individual file-size limit is imposed by the application.
 
+### 7. TODO: improve direct-mount performance
+
+- Mounted WebDAV writes currently commit each file through the library path, which can create a separate restic snapshot and make large folder transfers feel slow.
+- Revisit this with a durable staging queue and a sane idle or batch window for restic commits and catalog updates.
+- Preserve per-user isolation, crash recovery, quota reservations, and clear failure reporting while reducing snapshot overhead.
+- Measure the result against direct WebDAV uploads before considering a different mount protocol.
+
 ## Docker and deployment requirements
 
 - Keep the container non-root with a persistent `/data` volume.

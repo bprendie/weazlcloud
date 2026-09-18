@@ -23,6 +23,26 @@ function hideMenu() {
   if (el) el.hidden = true;
 }
 
+async function hydrateGridTextPreviews() {
+  const previews = [...document.querySelectorAll('[data-grid-text-preview]:not([data-loaded])')];
+  await Promise.all(previews.map(async el => {
+    el.dataset.loaded = '1';
+    const path = el.dataset.gridTextPreview || '';
+    try {
+      const response = await fetch(`/api/library?path=${encodeURIComponent(path)}&preview=1`);
+      if (!response.ok) throw new Error('preview unavailable');
+      const text = await response.text();
+      el.textContent = text.slice(0, 1200) || '(empty file)';
+    } catch (_) {
+      el.textContent = 'Preview unavailable';
+      el.classList.add('preview-unavailable');
+    }
+  }));
+}
+
+const contentObserver = new MutationObserver(() => { hydrateGridTextPreviews(); });
+contentObserver.observe($('#content'), {childList: true});
+
 function showMenu(x, y, items) {
   const el = $('#ctx');
   if (!el) return;
