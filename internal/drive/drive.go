@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -91,6 +92,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(k, value)
 			}
 		}
+		w.Header().Del("Content-Length")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.WriteHeader(rec.Code)
 		_, _ = w.Write(body)
 		return
