@@ -179,6 +179,11 @@ func (f *fileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error)
 			return info{name: filepath.Base(name), size: row.Size, dir: row.Folder, mode: fileMode(row.Folder), mod: row.Mtime}, nil
 		}
 	}
+	for _, row := range f.lib.List() {
+		if strings.HasPrefix(row.Path, name+"/") {
+			return info{name: filepath.Base(name), dir: true, mode: fileMode(true), mod: row.Mtime}, nil
+		}
+	}
 	return nil, os.ErrNotExist
 }
 
