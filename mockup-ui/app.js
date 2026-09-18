@@ -104,7 +104,8 @@ function beginUpload(list, prefix = '') {
   if (!filesToUpload.length) return;
   const totalBytes = filesToUpload.reduce((n, f) => n + f.size, 0);
   state.upload = {active: true, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, failed: []};
-  modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><p id="upload-current">Starting…</p><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length}</p>`);
+  const rails = Array.from({length: Math.min(3, filesToUpload.length)}, (_, i) => `<div class="upload-rail" id="upload-rail-${i}"><div><strong>RAIL ${i + 1}</strong><span class="upload-rail-name">Waiting…</span></div><progress max="100" value="0"></progress><small>0%</small></div>`).join('');
+  modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><div class="upload-rails">${rails}</div><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length} · parallel rails</p>`);
   (async () => {
     const loaded = new Array(filesToUpload.length).fill(0);
     const updateProgress = () => {
@@ -114,7 +115,7 @@ function beginUpload(list, prefix = '') {
       const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}% · 3 at a time`;
     };
     let next = 0;
-    const worker = async () => {
+    const worker = async slot => {
       while (true) {
         const index = next++;
         if (index >= filesToUpload.length) return;
@@ -122,16 +123,35 @@ function beginUpload(list, prefix = '') {
         const relative = file.webkitRelativePath || file.name;
         const target = [prefix, relative].filter(Boolean).join('/');
         state.upload.current = target;
-        $('#upload-current')?.replaceChildren(document.createTextNode(target));
+        const rail = $(`#upload-rail-${slot}`);
+        const railName = rail?.querySelector('.upload-rail-name');
+        const railProgress = rail?.querySelector('progress');
+        const railPercent = rail?.querySelector('small');
+        if (railName) railName.textContent = target;
+        if (railProgress) railProgress.value = 0;
+        if (railPercent) railPercent.textContent = '0%';
         try {
-          await engine.putLibraryProgress(target, file, (sent) => { loaded[index] = sent; updateProgress(); });
+          await engine.putLibraryProgress(target, file, (sent) => {
+            loaded[index] = sent;
+            const pct = file.size ? (sent / file.size) * 100 : 100;
+            if (railProgress) railProgress.value = pct;
+            if (railPercent) railPercent.textContent = `${Math.round(pct)}%`;
+            updateProgress();
+          });
           loaded[index] = file.size;
           state.upload.done++;
-        } catch (err) { state.upload.failed.push(`${target}: ${err.message}`); loaded[index] = file.size; }
+          if (railName) railName.textContent = `✓ ${target}`;
+          if (railProgress) railProgress.value = 100;
+          if (railPercent) railPercent.textContent = 'done';
+        } catch (err) {
+          state.upload.failed.push(`${target}: ${err.message}`); loaded[index] = file.size;
+          if (railName) railName.textContent = `× ${target}`;
+          if (railPercent) railPercent.textContent = 'failed';
+        }
         updateProgress();
       }
     };
-    await Promise.all(Array.from({length: Math.min(3, filesToUpload.length)}, worker));
+    await Promise.all(Array.from({length: Math.min(3, filesToUpload.length)}, (_, slot) => worker(slot)));
     state.upload.active = false;
     await loadLibrary();
     renderMain(); renderDeck();
