@@ -121,15 +121,15 @@ function library() {
   const node = folderNode(buildTree(files), state.currentPath);
   const parent = state.currentPath.split('/').slice(0, -1).join('/');
   return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
-    libraryBreadcrumb() +
-    `<div class="hero-actions">
+    `<div class="library-workspace" data-ctx-tree="1">${libraryBreadcrumb()}
+    <div class="hero-actions">
       <button class="primary" data-view="send" ${sel ? '' : 'disabled'}>Send ${sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
       ${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}
       <button class="secondary" data-action="upload">Upload…</button>
       <button class="secondary" data-action="upload-folder">Upload folder…</button>
       <button class="secondary" data-action="new-folder">New folder</button>
     </div>
-    <div class="tree" data-ctx-tree="1">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div>
+    <div class="tree">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div></div>
     <p class="eyebrow" style="margin-top:22px">NO FUSE. THE DRIVE IS WEBDAV. RESTIC DEDUPES UNDERNEATH.</p>`;
 }
 
