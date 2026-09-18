@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -80,7 +81,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "weazlcloud: vault unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dav := &webdav.Handler{FileSystem: &fileSystem{lib: res.lib}, LockSystem: h.locks}
+	dav := &webdav.Handler{FileSystem: &fileSystem{lib: res.lib}, LockSystem: h.locks, Logger: func(req *http.Request, err error) {
+		if err != nil {
+			log.Printf("webdav %s %s: %v", req.Method, req.URL.Path, err)
+		}
+	}}
 	if r.Method == "PROPFIND" && r.URL.Path == "/" {
 		// GVfs compares the response href to the mount path. A relative root
 		// href works whether the client supplied a trailing slash or not.
