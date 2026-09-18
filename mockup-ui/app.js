@@ -752,10 +752,11 @@ document.addEventListener('contextmenu', e => {
   const folder = e.target.closest('[data-ctx-folder]');
   const cap = e.target.closest('[data-ctx-capsule]');
   const tree = e.target.closest('[data-ctx-tree]');
+  const libraryContent = state.view === 'library' && e.target.closest('#content');
   if (file) { e.preventDefault(); showMenu(e.clientX, e.clientY, fileMenu(file.dataset.ctxFile)); return; }
   if (folder) { e.preventDefault(); showMenu(e.clientX, e.clientY, folderMenu(folder.dataset.ctxFolder)); return; }
   if (cap) { e.preventDefault(); showMenu(e.clientX, e.clientY, capsuleMenu(cap.dataset.ctxCapsule)); return; }
-  if (tree) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu()); }
+  if (tree || libraryContent) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu()); }
 });
 
 document.addEventListener('dragstart', e => {
