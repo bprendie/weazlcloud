@@ -5,6 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,7 +81,11 @@ func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	if contentType == "application/octet-stream" {
+		contentType = http.DetectContentType(b)
+	}
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	if r.URL.Query().Get("preview") == "" {
 		w.Header().Set("Content-Disposition", "attachment")
 	} else {

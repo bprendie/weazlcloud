@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,32 @@ func TestRejectsTraversal(t *testing.T) {
 		if _, err := cleanPath(p); err == nil {
 			t.Fatalf("allowed %q", p)
 		}
+	}
+}
+
+func TestPutGetPNG(t *testing.T) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Put(context.Background(), "Pictures/pixel.png", png); err != nil {
+		t.Fatal(err)
+	}
+	got, err := lib.Get(context.Background(), "Pictures/pixel.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, png) {
+		t.Fatal("png round trip mismatch")
 	}
 }
 

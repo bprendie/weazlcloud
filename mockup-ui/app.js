@@ -97,6 +97,10 @@ async function previewFile(id) {
     else if (type.startsWith('video/')) body = `<video class="file-preview-media" src="${url}" controls preload="metadata"></video>`;
     else { URL.revokeObjectURL(url); toast('This file opens as a download.'); return; }
     modal(`<span class="eyebrow purple">PREVIEW / ${esc(type)}</span><h2>${esc(f.title)}</h2>${body}<div class="preview-actions"><a class="secondary button-link" href="${url}" download="${esc(f.title)}">Download</a></div><p class="eyebrow">${esc(path)}</p>`, true);
+    const image = $('#modal .file-preview-image');
+    image?.addEventListener('error', () => {
+      image.replaceWith(Object.assign(document.createElement('p'), {className: 'preview-error', textContent: 'The stored bytes could not be decoded as an image.'}));
+    }, {once: true});
     $('#modal').addEventListener('close', () => URL.revokeObjectURL(url), {once: true});
   } catch (err) { toast(err.message); }
 }
