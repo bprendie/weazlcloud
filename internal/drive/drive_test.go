@@ -64,6 +64,12 @@ func TestMultiDriveAuthenticatesAndServesWebDAV(t *testing.T) {
 	}
 	s := httptest.NewServer(NewMulti(store))
 	t.Cleanup(s.Close)
+	options, _ := http.NewRequest(http.MethodOptions, s.URL+"/", nil)
+	optionsRes, err := http.DefaultClient.Do(options)
+	if err != nil || optionsRes.StatusCode != http.StatusOK || optionsRes.Header.Get("DAV") == "" {
+		t.Fatalf("OPTIONS status=%v err=%v dav=%q", optionsRes.StatusCode, err, optionsRes.Header.Get("DAV"))
+	}
+	optionsRes.Body.Close()
 	req, _ := http.NewRequest("PROPFIND", s.URL+"/", nil)
 	req.SetBasicAuth("alice", "alice-password")
 	req.Header.Set("Depth", "1")

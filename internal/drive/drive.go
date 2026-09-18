@@ -46,6 +46,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "weazlcloud: no desk", http.StatusNotFound)
 		return
 	}
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Allow", "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, COPY, MOVE, PROPFIND, LOCK, UNLOCK")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if h.users == nil {
 		challenge(w, "weazlcloud: drive locked")
 		return
