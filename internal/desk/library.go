@@ -5,6 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -69,6 +70,13 @@ func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	contentType := mime.TypeByExtension(filepath.Ext(path))
+	if contentType == "" {
+		contentType = map[string]string{
+			".md": "text/markdown", ".markdown": "text/markdown", ".json": "application/json",
+			".yaml": "application/x-yaml", ".yml": "application/x-yaml", ".log": "text/plain",
+			".svg": "image/svg+xml", ".m4a": "audio/mp4", ".webm": "video/webm",
+		}[strings.ToLower(filepath.Ext(path))]
+	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}

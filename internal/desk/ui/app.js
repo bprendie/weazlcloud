@@ -91,10 +91,12 @@ async function previewFile(id) {
     const type = result.type.split(';')[0];
     let body;
     if (type.startsWith('image/')) body = `<img class="file-preview-image" src="${url}" alt="${esc(f.title)}">`;
-    else if (type.startsWith('text/')) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
-    else if (type === 'application/pdf' || type.startsWith('audio/') || type.startsWith('video/')) body = `<iframe class="file-preview-frame" src="${url}" title="${esc(f.title)}"></iframe>`;
+    else if (type.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript', 'application/x-yaml'].includes(type)) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
+    else if (type === 'application/pdf') body = `<iframe class="file-preview-frame" src="${url}" title="${esc(f.title)}"></iframe>`;
+    else if (type.startsWith('audio/')) body = `<audio class="file-preview-media" src="${url}" controls preload="metadata"></audio>`;
+    else if (type.startsWith('video/')) body = `<video class="file-preview-media" src="${url}" controls preload="metadata"></video>`;
     else { URL.revokeObjectURL(url); toast('This file opens as a download.'); return; }
-    modal(`<span class="eyebrow purple">PREVIEW / ${esc(type)}</span><h2>${esc(f.title)}</h2>${body}<p class="eyebrow">${esc(path)}</p>`);
+    modal(`<span class="eyebrow purple">PREVIEW / ${esc(type)}</span><h2>${esc(f.title)}</h2>${body}<div class="preview-actions"><a class="secondary button-link" href="${url}" download="${esc(f.title)}">Download</a></div><p class="eyebrow">${esc(path)}</p>`, true);
     $('#modal').addEventListener('close', () => URL.revokeObjectURL(url), {once: true});
   } catch (err) { toast(err.message); }
 }
@@ -212,7 +214,8 @@ function toast(message) {
   noticeTimer = setTimeout(() => { $('#toast').hidden = true; }, 3200);
 }
 
-function modal(html) {
+function modal(html, wide = false) {
+  $('#modal').classList.toggle('wide', wide);
   $('#modal-content').innerHTML = html;
   $('#modal').showModal();
 }
@@ -736,7 +739,7 @@ document.addEventListener('keydown', e => {
   if (/^[1-5]$/.test(e.key)) navigate(['home', 'library', 'send', 'capsules', 'places'][Number(e.key) - 1]);
 });
 
-$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); });
+$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide'); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (frame) cancelAnimationFrame(frame);
