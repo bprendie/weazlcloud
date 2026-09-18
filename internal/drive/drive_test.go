@@ -4,8 +4,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bprendie/weazlcloud/internal/users"
+	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 func TestDriveIsNotUnlock(t *testing.T) {
@@ -41,5 +45,39 @@ func TestDriveIsNotUnlock(t *testing.T) {
 	res.Body.Close()
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("ready %q", body)
+	}
+}
+
+func TestMultiDriveAuthenticatesAndServesWebDAV(t *testing.T) {
+	dir := t.TempDir()
+	store, err := users.New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := store.Create("alice", "alice-password", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := vault.New(store.VaultPath(u), store.NodeKeyPath(u))
+	if err := v.Forge([]byte("vault-pass"), []byte("vault-pass")); err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(NewMulti(store))
+	t.Cleanup(s.Close)
+	req, _ := http.NewRequest("PROPFIND", s.URL+"/", nil)
+	req.SetBasicAuth("alice", "alice-password")
+	req.Header.Set("Depth", "1")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("PROPFIND %d", res.StatusCode)
+	}
+	unauth, _ := http.Get(s.URL + "/")
+	unauth.Body.Close()
+	if unauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated %d", unauth.StatusCode)
 	}
 }

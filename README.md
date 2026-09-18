@@ -142,6 +142,12 @@ OAuth, SSO, external directories, or third-party identity providers. Each user
 gets a separate vault, catalog, restic library, and session. The first account
 created on a fresh node is the local administrator.
 
+The drive listener is WebDAV. In Thunar, use **File → Connect to Server** and
+enter `dav://HOST:7274/` for a direct HTTP connection, or `davs://HOST/` when
+the drive name is behind the HTTPS reverse proxy. Authenticate with the local
+WeazlCloud username and account password. The listener unlocks only that
+user's vault and presents only that user's library.
+
 Desk API (same-origin header `X-Weazl-Desk: 1` on POST):
 
 - `GET /api/status` — setup, local authentication, vault, and sanitized quota state

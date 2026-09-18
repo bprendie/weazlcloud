@@ -163,7 +163,7 @@ func (n *Node) bind() error {
 	n.svcs = []*http.Server{
 		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase)),
 		server(n.share, share.New(n.caps)),
-		server(n.drive, drive.New()),
+		server(n.drive, drive.NewMulti(us)),
 	}
 	return nil
 }
