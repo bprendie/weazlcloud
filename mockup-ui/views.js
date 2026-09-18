@@ -102,9 +102,10 @@ function gridFileCard(f, fullPath = false) {
   const path = f.folders.concat(f.title).join('/');
   const href = `/api/library?path=${encodeURIComponent(path)}&preview=1`;
   const kind = String(f.kind || '').toUpperCase();
-  const preview = ['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG'].includes(kind)
+  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1).toLowerCase() : '';
+  const preview = ['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'STL', '3MF'].includes(kind)
     ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
-    : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG'].includes(kind)
+    : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP'].includes(kind) || ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(ext)
     ? `<div class="grid-text-preview" data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
     : `<div class="grid-kind"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">

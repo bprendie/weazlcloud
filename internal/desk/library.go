@@ -84,6 +84,11 @@ func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
 	if contentType == "application/octet-stream" {
 		contentType = http.DetectContentType(b)
 	}
+	if r.URL.Query().Get("preview") != "" {
+		if rendered, renderedType, ok := renderedPreview(path, b); ok {
+			b, contentType = rendered, renderedType
+		}
+	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
 	if r.URL.Query().Get("preview") == "" {

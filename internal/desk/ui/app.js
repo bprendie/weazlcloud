@@ -103,7 +103,7 @@ async function previewFile(id) {
   const f = files.find(x => x.id === id); if (!f || f.folder) return;
   const path = filePath(id);
   if (!live) { toast('Preview is available when the node is connected.'); return; }
-  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'MP3', 'WAV', 'FLA', 'MP4', 'MOV', 'WEBM']);
+  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLA', 'MP4', 'MOV', 'WEBM']);
   if (!previewable.has(String(f.kind).toUpperCase())) { toast('This file opens as a download.'); return; }
   try {
     const result = await engine.previewLibrary(path);
