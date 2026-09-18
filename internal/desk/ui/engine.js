@@ -28,6 +28,9 @@ export const listAccessRequests = async () => { const r = await fetch('/api/acce
 export const approveAccess = id => post('/api/access-requests/approve', {id});
 export const rejectAccess = id => post('/api/access-requests/reject', {id});
 export const completeAccess = body => post('/api/account-setup', body);
+export const me = async () => { const r = await fetch('/api/me'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'account'); return j; };
+export const saveSettings = body => post('/api/settings', body);
+export const rekeyVault = (current, next, confirm) => post('/api/vault/rekey', {current, next, confirm});
 export const lock = () => post('/api/lock', {});
 export const kit = passphrase => post('/api/kit', { passphrase });
 

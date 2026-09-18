@@ -231,7 +231,7 @@ function help() {
 }
 
 function vaultCard() {
-  modal(`<img class="auth-brand" src="weazlcloud.png" alt="WeazlCloud"><span class="eyebrow purple">THIS SESSION</span><h2>Vault ${state.unlocked ? 'open' : 'locked'}</h2><p>Closing the tab detaches. Lock zeroes the key.${state.engine ? '' : ' Preview only — no real vault.'}</p><div class="dialog-actions"><button class="primary" id="do-lock">${state.unlocked ? 'Lock vault' : 'Unlock…'}</button></div>`);
+  modal(`<img class="auth-brand" src="weazlcloud.png" alt="WeazlCloud"><span class="eyebrow purple">ACCOUNT SETTINGS</span><h2>${esc(state.fullName || state.username || 'Your account')}</h2><p>Local identity and vault controls. The administrator cannot open this user's vault.</p><form id="settings-form" class="auth-form"><label>Full name<input name="full_name" value="${esc(state.fullName)}" maxlength="120" placeholder="Your full name"></label><label>Current account password<input name="current_password" type="password" autocomplete="current-password"></label><label>New account password<input name="new_password" type="password" autocomplete="new-password"></label><button class="primary">Save settings</button></form><hr><h3>Rekey vault</h3><p class="eyebrow">Changes the vault passphrase while preserving the library.</p><form id="rekey-form" class="auth-form"><label>Current vault passphrase<input name="current" type="password" required></label><label>New vault passphrase<input name="next" type="password" required></label><label>Confirm new vault passphrase<input name="confirm" type="password" required></label><button class="secondary">Rekey vault</button></form><div class="dialog-actions"><button class="secondary" id="do-lock">${state.unlocked ? 'Lock vault' : 'Unlock…'}</button></div>` , true);
 }
 
 function navigate(view) {
@@ -403,6 +403,7 @@ function openDesk() {
   $('#unlock-screen').hidden = true;
   $('.app').hidden = false;
   $('#admin-nav').hidden = !state.admin;
+  if (state.username) $('#username').innerHTML = `${esc(state.fullName || state.username)}<small>Open · this session owns the key</small>`;
   renderMain();
   renderDeck();
 }
@@ -703,10 +704,12 @@ $('#unlock-form').onsubmit = async e => {
       if (state.forging) {
         await engine.bootstrap(username, pass, pass, confirm);
         state.admin = true;
+        state.username = username;
         await engine.unlock(pass);
       } else if (!state.authenticated) {
         const account = await engine.login(username, pass);
         state.admin = !!account.admin;
+        state.username = account.username || username;
         state.authenticated = true;
         try {
           await engine.unlock(pass);
@@ -782,6 +785,17 @@ document.addEventListener('submit', e => {
     if (phrase !== `DESTROY ${state.destroyId}`) { toast(`Type DESTROY ${state.destroyId} exactly.`); return; }
     revoke(state.destroyId);
     e.target.reset();
+  }
+  if (e.target.id === 'settings-form') {
+    e.preventDefault(); const data = new FormData(e.target); const body = Object.fromEntries(data.entries());
+    if (!live) { toast('Settings are available on the connected node.'); return; }
+    engine.saveSettings(body).then(result => { state.fullName = result.full_name || ''; $('#username').innerHTML = `${esc(state.fullName || result.username)}<small>Open · this session owns the key</small>`; toast('Account settings saved.'); }).catch(err => toast(err.message));
+  }
+  if (e.target.id === 'rekey-form') {
+    e.preventDefault(); const data = new FormData(e.target); const current = String(data.get('current') || ''), next = String(data.get('next') || ''), confirm = String(data.get('confirm') || '');
+    if (next !== confirm) { toast('New vault passphrases do not match.'); return; }
+    if (!live) { toast('Vault rekeying is available on the connected node.'); return; }
+    engine.rekeyVault(current, next, confirm).then(() => { e.target.reset(); toast('Vault rekeyed.'); }).catch(err => toast(err.message));
   }
 });
 
@@ -890,6 +904,7 @@ engine.probe().then(async s => {
   $('#admin-nav').hidden = !state.admin;
   setForgeMode(!s.setup);
   if (s.authenticated && s.unlocked) {
+    const account = await engine.me().catch(() => null); if (account) { state.username = account.username || state.username; state.fullName = account.full_name || ''; state.admin = !!account.admin; }
     await loadLibrary();
     await loadCapsules();
     await refreshPlaces();

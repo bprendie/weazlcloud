@@ -32,11 +32,68 @@ var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$`)
 type User struct {
 	ID        string    `json:"id"`
 	Username  string    `json:"username"`
+	FullName  string    `json:"full_name,omitempty"`
 	Admin     bool      `json:"admin"`
 	Disabled  bool      `json:"disabled"`
 	Salt      string    `json:"salt"`
 	Verifier  string    `json:"verifier"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *Store) UpdateProfile(id, fullName string) (User, error) {
+	fullName = strings.TrimSpace(fullName)
+	if len([]rune(fullName)) > 120 {
+		return User{}, errors.New("full name is too long")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.users {
+		if s.users[i].ID == id {
+			s.users[i].FullName = fullName
+			if err := s.saveLocked(); err != nil {
+				return User{}, err
+			}
+			return s.users[i], nil
+		}
+	}
+	return User{}, errors.New("user not found")
+}
+
+func (s *Store) ChangePassword(id, current, next string) error {
+	if len(next) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.users {
+		u := &s.users[i]
+		if u.ID != id {
+			continue
+		}
+		salt, err := cryptox.B64d(u.Salt)
+		if err != nil {
+			return ErrBadCredentials
+		}
+		want, err := cryptox.B64d(u.Verifier)
+		if err != nil {
+			return ErrBadCredentials
+		}
+		got := cryptox.Derive([]byte(current), salt)
+		valid := subtle.ConstantTimeCompare(got, want) == 1
+		cryptox.Zero(got)
+		if !valid {
+			return ErrBadCredentials
+		}
+		newSalt, err := cryptox.Random(cryptox.SaltBytes)
+		if err != nil {
+			return err
+		}
+		key := cryptox.Derive([]byte(next), newSalt)
+		defer cryptox.Zero(key)
+		u.Salt, u.Verifier = cryptox.B64(newSalt), cryptox.B64(key)
+		return s.saveLocked()
+	}
+	return errors.New("user not found")
 }
 
 type AccessRequest struct {

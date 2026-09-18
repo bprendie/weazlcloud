@@ -7,6 +7,42 @@ import (
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
+// Rekey changes only the passphrase wrapping the vault's existing secrets.
+// The library and its restic credentials remain intact.
+func (v *Vault) Rekey(current, next, confirm []byte) error {
+	if len(next) == 0 {
+		return ErrEmpty
+	}
+	if string(next) != string(confirm) {
+		return ErrMismatch
+	}
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	env, err := readEnvelope(v.path)
+	if err != nil {
+		return err
+	}
+	salt, err := cryptox.B64d(env.Salt)
+	if err != nil {
+		return ErrPass
+	}
+	key := cryptox.Derive(current, salt)
+	defer cryptox.Zero(key)
+	dek, err := unwrap(key, env.PassNonce, env.PassWrap)
+	if err != nil {
+		return ErrPass
+	}
+	if err := v.load(env, dek); err != nil {
+		return err
+	}
+	node, err := cryptox.Random(cryptox.KeyBytes)
+	if err != nil {
+		return err
+	}
+	defer cryptox.Zero(node)
+	return v.write(next, dek, v.resticPassword, v.driveToken, node)
+}
+
 func (v *Vault) Forge(passphrase, confirm []byte) error {
 	if len(passphrase) == 0 {
 		return ErrEmpty

@@ -58,6 +58,10 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.createUser)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
 		h.me(w, r)
+	case r.URL.Path == "/api/settings" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.saveSettings)
+	case r.URL.Path == "/api/vault/rekey" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.rekeyVault)
 	case r.URL.Path == "/api/unlock" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiUnlock)
 	case r.URL.Path == "/api/lock" && r.Method == http.MethodPost:
@@ -133,6 +137,16 @@ type accountSetupBody struct {
 	Password        string `json:"password"`
 	VaultPassphrase string `json:"vault_passphrase"`
 	Confirm         string `json:"confirm"`
+}
+type settingsBody struct {
+	FullName        string `json:"full_name"`
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+type rekeyBody struct {
+	Current string `json:"current"`
+	Next    string `json:"next"`
+	Confirm string `json:"confirm"`
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any, max int64) bool {
@@ -377,7 +391,48 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "admin": u.Admin, "unlocked": h.resource(u).vault.Unlocked()})
+	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "full_name": u.FullName, "admin": u.Admin, "unlocked": h.resource(u).vault.Unlocked()})
+}
+
+func (h *Handler) saveSettings(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	var b settingsBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	if b.NewPassword != "" {
+		if err := h.users.ChangePassword(u.ID, b.CurrentPassword, b.NewPassword); err != nil {
+			apiUsersError(w, err)
+			return
+		}
+	}
+	u, err = h.users.UpdateProfile(u.ID, b.FullName)
+	if err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "full_name": u.FullName})
+}
+
+func (h *Handler) rekeyVault(w http.ResponseWriter, r *http.Request) {
+	res, _, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	var b rekeyBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	if err := res.vault.Rekey([]byte(b.Current), []byte(b.Next), []byte(b.Confirm)); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "vault rekeyed"})
 }
 
 func (h *Handler) multiStatus(w http.ResponseWriter, r *http.Request) {
