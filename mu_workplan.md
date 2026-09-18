@@ -25,6 +25,7 @@ Identity is local to the WeazlCloud node. There will be no third-party identity 
 - The usable quota is 97% of the filesystem capacity of the Docker data volume.
 - The remaining 3% is reserved for filesystem safety, metadata, temporary restic work, and recovery operations.
 - The quota meter displays `used / usable quota`, so reaching 97% physical usage displays as 100%.
+- There is no per-file filesize quota. Users may store large files such as ISO images, provided the write fits within the remaining global and user allocation.
 - Writes are rejected before they can exceed the usable quota. Failed writes must not leave catalog entries or orphaned temporary objects.
 - Each user receives an allocated share from the global quota. The first version should support an administrator-set per-user quota, with the sum of allocations limited to the global usable quota.
 - Usage accounting must distinguish logical user bytes, deduplicated physical bytes, and temporary working bytes.
@@ -49,6 +50,21 @@ The decision gate is privacy first: per-user isolation wins over maximum dedupe.
 - Start with browser-native rendering from an authenticated file endpoint. Do not create a thumbnail cache until the authorization and cache ownership rules are defined.
 - Add folder previews and a lightweight gallery only after individual image viewing works.
 - Video, RAW formats, EXIF editing, and server-side transcoding are outside today’s scope.
+
+### Library interaction benchmark
+
+The library should feel as simple to use as Google Drive for ordinary file
+work. The visual language can remain WeazlCloud’s, but actions must be obvious,
+consistent, and available from the item being acted on.
+
+- Add **New folder** from the library toolbar and the current folder’s context menu.
+- Add right-click context menus for files and folders. A file menu includes **Share this**, **Open preview** when the browser can render the file, **Download**, **Rename**, and **Delete**. A folder menu includes **Open**, **Upload into**, **Share this**, **Rename**, and **Delete**.
+- Keep context-menu actions keyboard accessible and provide an equivalent action menu for touch devices. Right-click cannot be the only route to sharing or destructive actions.
+- Clicking a browser-readable file opens an in-library preview. Start with images, PDF, plain text, Markdown, audio, and browser-renderable video. Unsupported files open a details/download view.
+- Previews use the authenticated user’s authorization and never create public URLs. **Share this** remains an explicit sealed capsule action.
+- Add recursive folder upload. Preserve the selected destination and every file’s relative path, including nested directories and empty folders where supported.
+- Show aggregate upload progress and per-file progress, current filename, bytes transferred, failures, retry controls, and a final summary. A failed file must not hide successful files or leave partial catalog records.
+- Do not impose an application-level per-file size limit. Large files are limited only by available global quota and the user’s allocation.
 
 ## Implementation order for today
 
@@ -111,7 +127,7 @@ Acceptance criteria:
 
 ### 5. Add the photo viewer
 
-- Add MIME/type detection and an image preview action to the library UI.
+- Add MIME/type detection and browser preview actions to the library UI.
 - Render through the authenticated file endpoint with correct content type and disposition.
 - Add a gallery view for a folder using authorized file metadata.
 - Add tests for supported types, unsupported types, missing files, and cross-user access.
@@ -121,6 +137,14 @@ Acceptance criteria:
 - An authorized user can open supported photos in the browser.
 - An unauthorized user receives no image bytes.
 - The viewer does not create an unbounded cache or leak filenames through public routes.
+
+### 6. Bring the library to the Google Drive interaction baseline
+
+- Implement folder records and `New folder` in the API and UI.
+- Add file and folder context menus with **Share this** as a first-class action.
+- Add click-to-preview for browser-readable files and a details/download fallback.
+- Add recursive directory upload with relative-path preservation, aggregate and per-file progress, retry, and partial-failure reporting.
+- Replace the current request-size ceiling with streamed uploads plus quota reservation. No individual file-size limit is imposed by the application.
 
 ## Docker and deployment requirements
 
@@ -139,8 +163,9 @@ The minimum useful result for today is a reviewed multiuser design plus the firs
 2. Two users can authenticate and see isolated library namespaces.
 3. Global quota calculation and the 97%-to-100% meter behavior are implemented behind a tested interface.
 4. The dedupe decision is documented with a small measurement or prototype.
-5. An authenticated user can open a JPEG or PNG in the browser.
-6. Docker restart and bind-mounted volume migration are tested on `weazlcloud.teralab.local`.
+5. An authenticated user can create folders, use context menus, upload a folder recursively with progress, and preview a browser-readable file.
+6. An authenticated user can store a large file subject only to available global quota, with no per-file limit.
+7. Docker restart and bind-mounted volume migration are tested on `weazlcloud.teralab.local`.
 
 ## Explicitly deferred
 
