@@ -171,7 +171,7 @@ function home() {
   const list = live.length
     ? `<div class="point-list">${live.slice(0, 3).map(c => `<button class="point-row" data-view="capsules"><span class="point-when">${esc(c.label)}</span><span class="point-scope">${esc(c.name)}</span><span class="point-dedupe">${esc(c.gate)}</span><span class="point-age">${esc(c.expiry)}</span><span class="tag">${esc(c.status)}</span></button>`).join('')}</div>`
     : '<p class="empty">Nothing minted yet. Put a file in the library, then send a grab link.</p>';
-  return `<section class="hero"><div class="hero-copy"><p class="eyebrow">SIGNAL OVER NOISE</p><h1>Your files. Your node. Send a grab link.</h1><p>Library on this machine. Gil gets a URL. Files opens the same tree — no extra mount helper.</p><div class="hero-actions"><button class="primary" data-view="library">Open library</button><button class="secondary" data-view="send">Mint a grab link ↗</button></div></div><img src="weazlhead.png" alt="Weazl" width="255" height="251"></section>
+  return `<section class="hero"><div class="hero-copy"><p class="eyebrow">SIGNAL OVER NOISE</p><h1>Your files. Your node. Send a grab link.</h1><p>Library on this machine. recipient gets a URL. Files opens the same tree — no extra mount helper.</p><div class="hero-actions"><button class="primary" data-view="library">Open library</button><button class="secondary" data-view="send">Mint a grab link ↗</button></div></div><img src="weazlhead.png" alt="Weazl" width="255" height="251"></section>
     <section><div class="section-title"><h2>Live capsules</h2><button class="text-button" data-view="capsules">All capsules ↗</button></div>
     ${list}
     <p class="eyebrow" style="margin-top:22px">${live.length} LIVE · BURN-AFTER-READ IS THE DEFAULT · ${esc(grab)}</p></section>`;
@@ -200,7 +200,7 @@ function library() {
 
 function send() {
   if (!state.selected) {
-    return head('WEAZLCLOUD / SEND', 'Mint a grab link.', 'Pick a file or a folder in Library first. Gil never creates an account.') +
+    return head('WEAZLCLOUD / SEND', 'Mint a grab link.', 'Pick a file or a folder in Library first. recipient never creates an account.') +
       `<p class="empty">Nothing selected.<br><button class="primary" data-view="library">Open library →</button></p>`;
   }
   const name = selectedName();
@@ -213,19 +213,19 @@ function send() {
       <p class="eyebrow">${state.engine ? 'SEALED COPY · URL IS THE CAPABILITY' : 'QR FIXTURE · PREVIEW ONLY'}</p>
       <div class="hero-actions">
         <button class="primary" data-action="copy-url">Copy URL</button>
-        <a class="secondary button-link" href="${esc(minted.url && minted.url.startsWith('http') ? minted.url : 'grab.html?c=' + minted.id)}" target="_blank" rel="noopener">Open as Gil ↗</a>
+        <a class="secondary button-link" href="${esc(minted.url && minted.url.startsWith('http') ? minted.url : 'grab.html?c=' + minted.id)}" target="_blank" rel="noopener">Open as recipient ↗</a>
       </div>
     </div>` : '';
-  return head('WEAZLCLOUD / SEND', kind === 'folder' ? 'Send this folder.' : 'Send this file.', 'Sealed at mint. Later edits do not change Gil’s link. Read-only. Burn-after-read is the default.') +
+  return head('WEAZLCLOUD / SEND', kind === 'folder' ? 'Send this folder.' : 'Send this file.', 'Sealed at mint. Later edits do not change recipient’s link. Read-only. Burn-after-read is the default.') +
     result +
-    `<div class="panel active-place" style="margin-bottom:22px"><div class="panel-top"><span>${kind === 'folder' ? 'DIR' : 'FILE'}</span><span>SELECTED</span></div><h3>${esc(name)}</h3><p>${kind === 'folder' ? `${filesInFolder(state.selected.path).length} files sealed together.` : 'One file. Bytes Gil can open.'}</p></div>` +
+    `<div class="panel active-place" style="margin-bottom:22px"><div class="panel-top"><span>${kind === 'folder' ? 'DIR' : 'FILE'}</span><span>SELECTED</span></div><h3>${esc(name)}</h3><p>${kind === 'folder' ? `${filesInFolder(state.selected.path).length} files sealed together.` : 'One file. Bytes recipient can open.'}</p></div>` +
     `<form id="send-form" class="policy">
-      <fieldset><legend>How Gil gets in</legend>
+      <fieldset><legend>How recipient gets in</legend>
         <label class="choice"><input type="radio" name="gate" value="open" ${state.gate === 'open' ? 'checked' : ''}><span><strong>Open</strong><small>URL is the capability. No extra phrase.</small></span></label>
         <label class="choice"><input type="radio" name="gate" value="passphrase" ${state.gate === 'passphrase' ? 'checked' : ''}><span><strong>Passphrase</strong><small>URL in one channel. Phrase in another.</small></span></label>
       </fieldset>
-      ${state.gate === 'passphrase' ? `<label class="field">Passphrase for Gil<input name="phrase" type="password" value="${esc(state.passphrase)}" maxlength="1024" autocomplete="off"></label>` : ''}
-      <fieldset><legend>What Gil can do</legend>
+      ${state.gate === 'passphrase' ? `<label class="field">Passphrase for recipient<input name="phrase" type="password" value="${esc(state.passphrase)}" maxlength="1024" autocomplete="off"></label>` : ''}
+      <fieldset><legend>What recipient can do</legend>
         <label class="choice"><input type="radio" name="mode" value="readonly" checked><span><strong>Read-only</strong><small>Grab the sealed copy. Cannot write back.</small></span></label>
       </fieldset>
       <div class="policy-row">
@@ -251,7 +251,7 @@ function send() {
 
 function capsules() {
   if (!state.capsules.length) return head('WEAZLCLOUD / CAPSULES', 'Nothing minted.', 'Send a file or a folder first.') + '<p class="empty">No capsules yet.</p>';
-  return head('WEAZLCLOUD / CAPSULES', 'What you already minted.', 'Gil is a label you typed, not a login. Revoke bricks the URL.') +
+  return head('WEAZLCLOUD / CAPSULES', 'What you already minted.', 'recipient is a label you typed, not a login. Revoke bricks the URL.') +
     `<div class="file-list">${state.capsules.map(c => `<div class="file-row" data-ctx-capsule="${esc(c.id)}">
       <button data-open-grab="${esc(c.id)}" ${c.status !== 'live' ? 'disabled' : ''}>
         <span class="kind">${c.kind === 'folder' ? 'DIR' : 'FILE'}</span>
@@ -274,7 +274,7 @@ function places() {
       <button class="primary">Save places</button>
     </form>
     <div class="panel-grid" style="margin-top:28px">
-      <article class="panel active-place"><div class="panel-top"><span>01 / GRAB</span><span>GIL</span></div><h3>Phone URL</h3><p>Mint refuses to fire until this is an https:// name. Not 127.0.0.1.</p></article>
+      <article class="panel active-place"><div class="panel-top"><span>01 / GRAB</span><span>RECIPIENT</span></div><h3>Phone URL</h3><p>Mint refuses to fire until this is an https:// name. Not 127.0.0.1.</p></article>
       <article class="panel"><div class="panel-top"><span>02 / DRIVE</span><span>FILES</span></div><h3>Connect to Server</h3><p>No FUSE. Files → Other Locations → ${esc(dav)}</p></article>
     </div>
     <div class="panel" style="margin-top:13px">

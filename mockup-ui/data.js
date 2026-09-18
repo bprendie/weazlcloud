@@ -88,7 +88,7 @@ const previewFiles = [
 ];
 
 const previewCapsules = [
-  {id: 'setlist', label: 'Gil', name: 'gil-setlist.md', kind: 'file', gate: 'passphrase', expiry: '18h left', left: 1, status: 'live'},
+  {id: 'setlist', label: 'Recipient', name: 'gil-setlist.md', kind: 'file', gate: 'passphrase', expiry: '18h left', left: 1, status: 'live'},
   {id: 'dinner', label: 'Open', name: 'family-dinner.jpg', kind: 'file', gate: 'open', expiry: '24h left', left: 1, status: 'live'},
   {id: 'vacation', label: 'Vacation', name: 'Pictures/2026', kind: 'folder', gate: 'open', expiry: '3 days left', left: 5, status: 'live'}
 ];
@@ -136,7 +136,7 @@ export const state = {
   passphrase: '',
   expiry: '24h',
   grabs: '1',
-  label: 'Gil',
+  label: 'Recipient',
   minted: null,
   tokenShown: false,
   grabBase: '',

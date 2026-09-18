@@ -1,11 +1,22 @@
 package share
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"html"
 	"net/http"
+	"strings"
 )
 
 func writeGrabPage(w http.ResponseWriter, id string) {
+	nonceBytes := make([]byte, 18)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "weazlcloud: unavailable", http.StatusInternalServerError)
+		return
+	}
+	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
+	csp := w.Header().Get("Content-Security-Policy")
+	w.Header().Set("Content-Security-Policy", strings.Replace(csp, "script-src 'self'", "script-src 'self' 'nonce-"+nonce+"'", 1))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<!doctype html>
@@ -36,7 +47,7 @@ button{width:100%;border:0;background:var(--yellow);color:#151515;padding:12px;f
 <p class="err" id="e"></p>
 <p class="eyebrow">NO ACCOUNT. ONE LINK. THEN GONE.</p>
 </main>
-<script>
+<script nonce="` + nonce + `">
 const id = ` + "`" + html.EscapeString(id) + "`" + `;
 const $ = s => document.querySelector(s);
 async function meta(){

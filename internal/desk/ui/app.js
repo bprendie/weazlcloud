@@ -226,7 +226,7 @@ function capsuleMenu(id) {
   if (!cap || cap.status !== 'live') return [{act: `open-grab:${id}`, label: 'This grab is gone'}];
   return [
     {act: `copy-capsule:${id}`, label: 'Copy grab URL'},
-    {act: `open-grab:${id}`, label: 'Open as Gil'},
+    {act: `open-grab:${id}`, label: 'Open as recipient'},
     {sep: true},
     {act: `revoke:${id}`, label: 'Revoke'}
   ];
@@ -309,7 +309,7 @@ function finishMint() {
   const kind = state.selected.type;
   const capsule = {
     id,
-    label: state.label || 'Gil',
+    label: state.label || 'recipient',
     name,
     kind,
     gate: state.gate,
@@ -338,7 +338,7 @@ async function mint() {
   if (!state.unlocked) { toast('Unlock the vault first.'); return; }
   if (!state.selected) { navigate('library'); toast('Pick a file or a folder first.'); return; }
   if (!state.grabBase.startsWith('https://')) { toast('Set an https:// grab base in Places.'); navigate('places'); return; }
-  if (state.gate === 'passphrase' && !state.passphrase) { toast('Give Gil a passphrase, or switch to Open.'); return; }
+  if (state.gate === 'passphrase' && !state.passphrase) { toast('Give recipient a passphrase, or switch to Open.'); return; }
   if (state.operation !== 'idle') return;
   if (live) {
     try {
@@ -356,7 +356,7 @@ async function mint() {
       renderMain();
       renderDeck();
       $('#mint-result')?.scrollIntoView({block: 'nearest'});
-      toast('Grab link minted. Sealed copy. Gil cannot write back.');
+      toast('Grab link minted. Sealed copy. recipient cannot write back.');
     } catch (err) {
       toast(err.message);
     }

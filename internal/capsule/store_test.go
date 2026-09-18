@@ -9,7 +9,7 @@ import (
 
 func TestOpenGrabBurns(t *testing.T) {
 	s := New(t.TempDir())
-	rec := Record{Label: "Gil", Name: "nug.md", Kind: "file", Gate: "open", Expires: time.Now().Add(time.Hour), Limit: 1, Size: 4}
+	rec := Record{Label: "recipient", Name: "nug.md", Kind: "file", Gate: "open", Expires: time.Now().Add(time.Hour), Limit: 1, Size: 4}
 	got, err := s.Mint(rec, "", []byte("nug!"))
 	if err != nil {
 		t.Fatal(err)

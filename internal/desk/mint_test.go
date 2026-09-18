@@ -40,7 +40,7 @@ func TestMintAndGrab(t *testing.T) {
 	if res.StatusCode != 200 {
 		t.Fatalf("put %d", res.StatusCode)
 	}
-	mint, _ := http.NewRequest(http.MethodPost, desk.URL+"/api/capsules", bytes.NewBufferString(`{"path":"weazldocs/nug.md","kind":"file","gate":"open","label":"Gil","expiry":"24h","grabs":1}`))
+	mint, _ := http.NewRequest(http.MethodPost, desk.URL+"/api/capsules", bytes.NewBufferString(`{"path":"weazldocs/nug.md","kind":"file","gate":"open","label":"recipient","expiry":"24h","grabs":1}`))
 	mint.Header.Set("X-Weazl-Desk", "1")
 	mint.Header.Set("Content-Type", "application/json")
 	res, err = http.DefaultClient.Do(mint)

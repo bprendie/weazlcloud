@@ -89,7 +89,7 @@ func (h *Handler) seal(r *http.Request, body mintBody) ([]byte, capsule.Record, 
 		Expires: time.Now().Add(parseExpiry(body.Expiry)), Limit: body.Grabs,
 	}
 	if rec.Label == "" {
-		rec.Label = "Gil"
+		rec.Label = "recipient"
 	}
 	if rec.Kind == "" {
 		rec.Kind = "file"
