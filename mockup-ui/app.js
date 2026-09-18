@@ -517,7 +517,7 @@ document.addEventListener('click', e => {
   hideMenu();
   const b = e.target.closest('button, a.button-link');
   if (!b) return;
-  if (b.classList.contains('dialog-close') || b.dataset.close) { $('#modal').close(); return; }
+  if (b.classList.contains('dialog-close') || b.dataset.close !== undefined) { $('#modal').close(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
