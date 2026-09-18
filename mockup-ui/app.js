@@ -84,23 +84,32 @@ function beginUpload(list, prefix = '') {
   state.upload = {active: true, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, failed: []};
   modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><p id="upload-current">Starting…</p><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length}</p>`);
   (async () => {
-    let completedBytes = 0;
-    for (const file of filesToUpload) {
-      const relative = file.webkitRelativePath || file.name;
-      const target = [prefix, relative].filter(Boolean).join('/');
-      state.upload.current = target;
-      $('#upload-current')?.replaceChildren(document.createTextNode(target));
-      try {
-        await engine.putLibraryProgress(target, file, (loaded, total) => {
-          const pct = totalBytes ? ((completedBytes + loaded) / totalBytes) * 100 : 100;
-          const bar = $('#upload-progress-bar'); if (bar) bar.value = pct;
-          const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}%`;
-        });
-        state.upload.done++;
-      } catch (err) { state.upload.failed.push(`${target}: ${err.message}`); }
-      completedBytes += file.size;
-      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round((completedBytes / Math.max(1, totalBytes)) * 100)}%`;
-    }
+    const loaded = new Array(filesToUpload.length).fill(0);
+    const updateProgress = () => {
+      const sent = loaded.reduce((n, value) => n + value, 0);
+      const pct = totalBytes ? (sent / totalBytes) * 100 : 100;
+      const bar = $('#upload-progress-bar'); if (bar) bar.value = pct;
+      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}% · 3 at a time`;
+    };
+    let next = 0;
+    const worker = async () => {
+      while (true) {
+        const index = next++;
+        if (index >= filesToUpload.length) return;
+        const file = filesToUpload[index];
+        const relative = file.webkitRelativePath || file.name;
+        const target = [prefix, relative].filter(Boolean).join('/');
+        state.upload.current = target;
+        $('#upload-current')?.replaceChildren(document.createTextNode(target));
+        try {
+          await engine.putLibraryProgress(target, file, (sent) => { loaded[index] = sent; updateProgress(); });
+          loaded[index] = file.size;
+          state.upload.done++;
+        } catch (err) { state.upload.failed.push(`${target}: ${err.message}`); loaded[index] = file.size; }
+        updateProgress();
+      }
+    };
+    await Promise.all(Array.from({length: Math.min(3, filesToUpload.length)}, worker));
     state.upload.active = false;
     await loadLibrary();
     renderMain(); renderDeck();

@@ -109,13 +109,9 @@ func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, ex
 	if err != nil {
 		return catalog.File{}, err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return catalog.File{}, err
-	}
-	pass, _, err := l.vault.Secrets()
-	if err != nil {
+	// Spool the request before taking the repository mutex. Multiple uploads
+	// can receive data concurrently; only the restic/catalog commit is serialized.
+	if err := os.MkdirAll(l.repo, 0o700); err != nil {
 		return catalog.File{}, err
 	}
 	tmp, err := os.CreateTemp(l.repo, ".upload-*")
@@ -139,6 +135,17 @@ func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, ex
 		return catalog.File{}, err
 	}
 	hash := hex.EncodeToString(h.Sum(nil))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		tmp.Close()
+		return catalog.File{}, err
+	}
+	pass, _, err := l.vault.Secrets()
+	if err != nil {
+		tmp.Close()
+		return catalog.File{}, err
+	}
 	snap, err := l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, hash, tmp)
 	_ = tmp.Close()
 	if err != nil {
