@@ -64,6 +64,13 @@ export function putLibraryProgress(path, body, onProgress) {
 export const createFolder = path => post('/api/library/folder', {path});
 export const renameLibrary = (from, to) => post('/api/library/rename', {from, to});
 
+export async function quota() {
+  const r = await fetch('/api/quota');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'quota');
+  return j;
+}
+
 export async function previewLibrary(path) {
   const r = await fetch('/api/library?path=' + encodeURIComponent(path) + '&preview=1');
   if (!r.ok) {

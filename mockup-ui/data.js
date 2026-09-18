@@ -129,6 +129,8 @@ export const state = {
   librarySearch: '',
   librarySort: 'name',
   librarySortDir: 'asc',
+  libraryView: 'list',
+  quota: null,
   selected: null,
   gate: 'open',
   passphrase: '',

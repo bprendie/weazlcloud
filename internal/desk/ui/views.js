@@ -87,6 +87,7 @@ function compareLibrary(a, b) {
 }
 
 function fileRow(f, fullPath = false) {
+  if (state.libraryView === 'grid') return gridFileCard(f, fullPath);
   const hit = isSelected('file', f.id) ? ' highlight' : '';
   const path = f.folders.concat(f.title).join('/');
   return `<div class="file-row tree-file${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
@@ -96,16 +97,38 @@ function fileRow(f, fullPath = false) {
   </div>`;
 }
 
+function gridFileCard(f, fullPath = false) {
+  const hit = isSelected('file', f.id) ? ' selected' : '';
+  const path = f.folders.concat(f.title).join('/');
+  const href = `/api/library?path=${encodeURIComponent(path)}&preview=1`;
+  const kind = String(f.kind || '').toUpperCase();
+  const preview = ['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG'].includes(kind)
+    ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
+    : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG'].includes(kind)
+    ? `<iframe class="grid-text-preview" src="${href}" title="${esc(f.title)}" loading="lazy"></iframe>`
+    : `<div class="grid-kind"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
+  return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
+    <button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>
+    <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong>${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
+    <button class="icon-button menu-btn grid-menu" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
+  </div>`;
+}
+
+function folderRow(child) {
+  const n = countNode(child);
+  const on = isSelected('folder', child.path);
+  if (state.libraryView === 'grid') return `<div class="library-card folder-card${on ? ' selected' : ''}" data-ctx-folder="${esc(child.path)}"><button class="grid-open" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><div class="grid-folder-preview"><span class="kind type-dir">DIR</span></div></button><div class="grid-card-info"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong><span class="grid-meta">${n} ${n === 1 ? 'item' : 'items'}</span></div><button class="icon-button menu-btn grid-menu" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button></div>`;
+  return `<div class="tree-row${on ? ' highlight' : ''}" data-ctx-folder="${esc(child.path)}">
+    <button class="tree-toggle" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
+    <span class="library-modified">${esc(modifiedLabel(child.mtime))}</span><span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
+    <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
+  </div>`;
+}
+
 function libraryRows(node) {
   let html = '';
   for (const child of Object.values(node.folders).sort(compareLibrary)) {
-    const n = countNode(child);
-    const on = isSelected('folder', child.path);
-    html += `<div class="tree-row${on ? ' highlight' : ''}" data-ctx-folder="${esc(child.path)}">
-      <button class="tree-toggle" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
-      <span class="library-modified">${esc(modifiedLabel(child.mtime))}</span><span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
-      <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
-    </div>`;
+    html += folderRow(child);
   }
   html += [...node.files].sort(compareLibrary).map(f => fileRow(f)).join('');
   return html;
@@ -121,7 +144,7 @@ function librarySearchRows() {
       if (matchQuery(`${part} ${path}`, query)) folders.set(path, {title: part, name: part, path, folders: path.split('/').slice(0, -1), kind: 'DIR', size: 'folder', folder: true});
     }
   }
-  const folderRows = [...folders.values()].sort(compareLibrary).map(folder => `<div class="tree-row" data-ctx-folder="${esc(folder.path)}"><button class="tree-toggle" data-open-folder="${esc(folder.path)}"><span class="kind type-dir">DIR</span><strong>${esc(folder.title)}</strong><small>${esc(folderLabel(folder.path))}</small></button><span class="ver-count">folder</span><button class="icon-button menu-btn" data-menu-folder="${esc(folder.path)}" aria-label="Folder actions">⋯</button></div>`).join('');
+  const folderRows = [...folders.values()].sort(compareLibrary).map(folder => folderRow(folder)).join('');
   const fileRows = files.filter(f => !f.folder && fileMatches(f, query)).sort(compareLibrary).map(f => fileRow(f, true)).join('');
   return folderRows + fileRows;
 }
@@ -170,7 +193,8 @@ function library() {
       <button class="secondary" data-action="new-folder">New folder</button>
     </div>
     ${searching ? `<p class="library-result-count">Search results across the library</p>` : ''}
-    <div class="tree">${libraryHeader()}${rows || `<p class="empty">${searching ? 'No matching files.' : 'This folder is empty. Upload a weazldoc.'}</p>`}</div></div>`;
+    <div class="view-toggle"><span>VIEW</span><button class="${state.libraryView === 'list' ? 'active' : ''}" data-library-view="list">☷ List</button><button class="${state.libraryView === 'grid' ? 'active' : ''}" data-library-view="grid">▦ Grid</button></div>
+    <div class="${state.libraryView === 'grid' ? 'library-grid' : 'tree'}">${state.libraryView === 'list' ? libraryHeader() : ''}${rows || `<p class="empty">${searching ? 'No matching files.' : 'This folder is empty. Upload a weazldoc.'}</p>`}</div></div>`;
 }
 
 function send() {
@@ -358,6 +382,14 @@ export function renderDeck() {
   $('#lane-a-n').textContent = busy ? `${Math.round(state.lanes.a)}%` : '—';
   $('#lane-b-n').textContent = `${busy ? Math.round(state.lanes.b) : dedupe}%`;
   $('#lane-c-n').textContent = busy && minting ? `${Math.round(state.lanes.c)}%` : String(liveCapsules().length);
+  const quota = state.quota;
+  const quotaPercent = quota ? Math.round(quota.percent) : 0;
+  const quotaBar = $('#quota-bar');
+  if (quotaBar) quotaBar.style.width = `${quotaPercent}%`;
+  const quotaNumber = $('#quota-n');
+  if (quotaNumber) quotaNumber.textContent = quota ? `${quotaPercent}%` : '—';
+  const quotaCaption = $('#quota-caption');
+  if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} used · ${formatBytes(quota.limit)} available cap` : 'Waiting for vault';
   const unit = $('#dedupe-unit');
   const heading = $('#dedupe-heading');
   if (state.engine && !busy) {
@@ -379,4 +411,13 @@ export function renderDeck() {
   $('#send-now').disabled = busy || !state.unlocked;
   $('#send-now').hidden = busy;
   $('#username').innerHTML = state.unlocked ? 'vault<small>Open · this session owns the key</small>' : 'vault<small>Locked</small>';
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1099511627776) return `${(bytes / 1099511627776).toFixed(1)} TB`;
+  if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
+  if (bytes >= 1048576) return `${Math.round(bytes / 1048576)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
 }

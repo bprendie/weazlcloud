@@ -390,6 +390,12 @@ async function loadLibrary() {
   files.splice(0, files.length, ...rows.map(engine.toFixture));
   const folders = [...new Set(files.map(f => f.folders.join('/')))];
   state.expanded = folders;
+  await loadQuota();
+}
+
+async function loadQuota() {
+  if (!live) return;
+  try { state.quota = await engine.quota(); } catch (err) { toast(err.message); }
 }
 
 function openDesk() {
@@ -523,6 +529,7 @@ document.addEventListener('click', e => {
   if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
   if (b.dataset.libraryPath !== undefined) { state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
   if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
+  if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
   if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
