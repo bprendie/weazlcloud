@@ -16,14 +16,16 @@ func writeGrabPage(w http.ResponseWriter, id string) {
 	}
 	nonce := base64.RawURLEncoding.EncodeToString(nonceBytes)
 	csp := w.Header().Get("Content-Security-Policy")
-	w.Header().Set("Content-Security-Policy", strings.Replace(csp, "script-src 'self'", "script-src 'self' 'nonce-"+nonce+"'", 1))
+	csp = strings.Replace(csp, "script-src 'self'", "script-src 'self' 'nonce-"+nonce+"'", 1)
+	csp = strings.Replace(csp, "style-src 'self'", "style-src 'self' 'nonce-"+nonce+"'", 1)
+	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#111215"><title>Grab / WeazlCloud</title>
-<style>
+<style nonce="` + nonce + `">
 :root{color-scheme:dark;--bg:#111215;--text:#e9e8e1;--muted:#9798a5;--yellow:#e6e68a;--purple:#a17bff;--line:#2b2d33}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#26212f,transparent 65%);color:var(--text);font:14px Arial,Helvetica,sans-serif}
 .card{width:min(420px,100%);padding:32px;border:1px solid #494052;background:#18191e;border-top:3px solid var(--purple)}
