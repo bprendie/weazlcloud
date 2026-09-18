@@ -37,6 +37,7 @@ func NewMulti(us *users.Store) *Handler {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	headers.Secure(w)
+	w.Header().Set("DAV", "1, 2")
 	if r.URL.Path == "/ready" && r.Method == http.MethodGet {
 		ready.Serve(w, r)
 		return
@@ -141,7 +142,7 @@ func (f *fileSystem) Stat(ctx context.Context, name string) (os.FileInfo, error)
 		return nil, mapError(err)
 	}
 	if name == "" {
-		return info{name: "/", dir: true, mode: os.ModeDir | 0o755}, nil
+		return info{name: "/", dir: true, mode: os.ModeDir | 0o755, mod: time.Unix(0, 0).UTC()}, nil
 	}
 	for _, row := range f.lib.List() {
 		if row.Path == name {
