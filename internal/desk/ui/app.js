@@ -517,6 +517,7 @@ document.addEventListener('click', e => {
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
   if (b.dataset.libraryPath !== undefined) { state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
+  if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
   if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
   if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
@@ -575,6 +576,10 @@ document.addEventListener('change', e => {
     state.gate = e.target.value;
     renderMain();
   }
+  if (e.target.dataset.librarySort !== undefined) {
+    state.librarySort = e.target.value;
+    renderMain();
+  }
 });
 
 document.addEventListener('input', e => {
@@ -582,6 +587,14 @@ document.addEventListener('input', e => {
   if (e.target.name === 'label') state.label = e.target.value;
   if (e.target.name === 'expiry') state.expiry = e.target.value;
   if (e.target.name === 'grabs') state.grabs = e.target.value;
+  if (e.target.dataset.librarySearch !== undefined) {
+    const caret = e.target.selectionStart;
+    state.librarySearch = e.target.value;
+    renderMain();
+    const search = document.querySelector('[data-library-search]');
+    search?.focus();
+    search?.setSelectionRange(caret, caret);
+  }
 });
 
 $('#help').onclick = help;

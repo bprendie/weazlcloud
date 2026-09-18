@@ -78,13 +78,13 @@ export const takeouts = [
 ];
 
 const previewFiles = [
-  {id: 'f1', title: 'Invoice-2026-03.pdf', folders: ['Documents', 'Finance'], kind: 'PDF', size: '240 KB'},
-  {id: 'f2', title: 'notes.md', folders: ['Documents', 'Projects'], kind: 'MD', size: '12 KB'},
-  {id: 'f3', title: 'contract-draft.docx', folders: ['Documents', 'Work'], kind: 'DOC', size: '88 KB'},
-  {id: 'f4', title: 'family-dinner.jpg', folders: ['Pictures', '2026'], kind: 'IMG', size: '4.1 MB'},
-  {id: 'f5', title: 'beach.jpg', folders: ['Pictures', '2026'], kind: 'IMG', size: '6.8 MB'},
-  {id: 'f6', title: 'gil-setlist.md', folders: ['weazldocs'], kind: 'MD', size: '8 KB'},
-  {id: 'f7', title: 'setlist-notes.txt', folders: ['Music'], kind: 'TXT', size: '2 KB'}
+  {id: 'f1', title: 'Invoice-2026-03.pdf', folders: ['Documents', 'Finance'], kind: 'PDF', size: '240 KB', bytes: 245760, mtime: '2026-03-16T14:20:00Z'},
+  {id: 'f2', title: 'notes.md', folders: ['Documents', 'Projects'], kind: 'MD', size: '12 KB', bytes: 12288, mtime: '2026-03-17T09:15:00Z'},
+  {id: 'f3', title: 'contract-draft.docx', folders: ['Documents', 'Work'], kind: 'DOC', size: '88 KB', bytes: 90112, mtime: '2026-03-12T18:42:00Z'},
+  {id: 'f4', title: 'family-dinner.jpg', folders: ['Pictures', '2026'], kind: 'IMG', size: '4.1 MB', bytes: 4299162, mtime: '2026-03-18T20:04:00Z'},
+  {id: 'f5', title: 'beach.jpg', folders: ['Pictures', '2026'], kind: 'IMG', size: '6.8 MB', bytes: 7130316, mtime: '2026-03-18T20:05:00Z'},
+  {id: 'f6', title: 'gil-setlist.md', folders: ['weazldocs'], kind: 'MD', size: '8 KB', bytes: 8192, mtime: '2026-03-10T11:01:00Z'},
+  {id: 'f7', title: 'setlist-notes.txt', folders: ['Music'], kind: 'TXT', size: '2 KB', bytes: 2048, mtime: '2026-03-08T16:30:00Z'}
 ];
 
 const previewCapsules = [
@@ -96,6 +96,18 @@ const previewCapsules = [
 export const filePath = f => f.folders.join(' › ');
 export const folderLabel = path => path.split('/').join(' › ');
 export const folderName = path => path.split('/').pop();
+export function matchQuery(haystack, query) {
+  const h = String(haystack).toLowerCase();
+  const q = String(query).trim().toLowerCase();
+  if (!q) return true;
+  if (!/[*?]/.test(q)) return h.includes(q);
+  const pattern = q.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  try { return new RegExp(pattern).test(h); } catch { return h.includes(q); }
+}
+export function fileMatches(file, query) {
+  const ext = file.title.includes('.') ? file.title.slice(file.title.lastIndexOf('.') + 1) : '';
+  return matchQuery(`${file.title} ${filePath(file)} ${file.kind} ${ext}`, query);
+}
 export const filesInFolder = path => files.filter(f => {
   const p = f.folders.join('/');
   return p === path || p.startsWith(path + '/');
@@ -114,6 +126,9 @@ export const state = {
   dedupe: 0,
   expanded: [],
   currentPath: '',
+  librarySearch: '',
+  librarySort: 'name',
+  librarySortDir: 'asc',
   selected: null,
   gate: 'open',
   passphrase: '',

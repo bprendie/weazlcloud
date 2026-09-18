@@ -1,4 +1,4 @@
-import {files, filePath, filesInFolder, folderLabel, folderName, takeouts, state, selectedName, liveCapsules, escapeHTML as esc} from './data.js';
+import {files, filePath, filesInFolder, folderLabel, folderName, takeouts, state, selectedName, liveCapsules, fileMatches, matchQuery, escapeHTML as esc} from './data.js';
 
 const $ = s => document.querySelector(s);
 const head = (label, title, description) => `<div class="page-head"><span class="eyebrow">${label}</span><h1>${title}</h1><p>${description}</p></div>`;
@@ -70,27 +70,64 @@ function folderNode(node, path) {
   return path.split('/').reduce((current, part) => current?.folders?.[part], node) || {folders: {}, files: []};
 }
 
+function modifiedLabel(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString([], {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+}
+
+function compareLibrary(a, b) {
+  const direction = state.librarySortDir === 'desc' ? -1 : 1;
+  let left, right;
+  if (state.librarySort === 'modified') { left = a.mtime || ''; right = b.mtime || ''; }
+  else if (state.librarySort === 'size') { left = a.bytes || 0; right = b.bytes || 0; }
+  else if (state.librarySort === 'type') { left = a.kind || ''; right = b.kind || ''; }
+  else { left = a.title || a.name || ''; right = b.title || b.name || ''; }
+  return String(left).localeCompare(String(right), undefined, {numeric: true, sensitivity: 'base'}) * direction;
+}
+
+function fileRow(f, fullPath = false) {
+  const hit = isSelected('file', f.id) ? ' highlight' : '';
+  const path = f.folders.concat(f.title).join('/');
+  return `<div class="file-row tree-file${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
+    <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span class="file-name"><strong>${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}</span></button>
+    <span class="library-modified">${esc(modifiedLabel(f.mtime))}</span><span class="size">${esc(f.size)}</span>
+    <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
+  </div>`;
+}
+
 function libraryRows(node) {
   let html = '';
-  for (const name of Object.keys(node.folders)) {
-    const child = node.folders[name];
+  for (const child of Object.values(node.folders).sort(compareLibrary)) {
     const n = countNode(child);
     const on = isSelected('folder', child.path);
     html += `<div class="tree-row${on ? ' highlight' : ''}" data-ctx-folder="${esc(child.path)}">
       <button class="tree-toggle" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
-      <span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
+      <span class="library-modified">${esc(modifiedLabel(child.mtime))}</span><span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
       <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
     </div>`;
   }
-  html += node.files.map(f => {
-    const hit = isSelected('file', f.id) ? ' highlight' : '';
-    return `<div class="file-row tree-file${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(f.folders.concat(f.title).join('/'))}" draggable="true">
-      <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span><strong>${esc(f.title)}</strong></span></button>
-      <span class="size">${esc(f.size)}</span>
-      <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
-    </div>`;
-  }).join('');
+  html += [...node.files].sort(compareLibrary).map(f => fileRow(f)).join('');
   return html;
+}
+
+function librarySearchRows() {
+  const query = state.librarySearch.trim().toLowerCase();
+  const folders = new Map();
+  for (const file of files) {
+    let path = '';
+    for (const part of file.folders) {
+      path = path ? `${path}/${part}` : part;
+      if (matchQuery(`${part} ${path}`, query)) folders.set(path, {title: part, name: part, path, folders: path.split('/').slice(0, -1), kind: 'DIR', size: 'folder', folder: true});
+    }
+  }
+  const folderRows = [...folders.values()].sort(compareLibrary).map(folder => `<div class="tree-row" data-ctx-folder="${esc(folder.path)}"><button class="tree-toggle" data-open-folder="${esc(folder.path)}"><span class="kind type-dir">DIR</span><strong>${esc(folder.title)}</strong><small>${esc(folderLabel(folder.path))}</small></button><span class="ver-count">folder</span><button class="icon-button menu-btn" data-menu-folder="${esc(folder.path)}" aria-label="Folder actions">⋯</button></div>`).join('');
+  const fileRows = files.filter(f => !f.folder && fileMatches(f, query)).sort(compareLibrary).map(f => fileRow(f, true)).join('');
+  return folderRows + fileRows;
+}
+
+function libraryHeader() {
+  return `<div class="library-columns"><span>NAME</span><span>DATE MODIFIED</span><span>FILE SIZE</span></div>`;
 }
 
 function libraryBreadcrumb() {
@@ -120,8 +157,11 @@ function library() {
   const sel = selectedName();
   const node = folderNode(buildTree(files), state.currentPath);
   const parent = state.currentPath.split('/').slice(0, -1).join('/');
+  const searching = state.librarySearch.trim().length > 0;
+  const rows = searching ? librarySearchRows() : libraryRows(node);
   return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
     `<div class="library-workspace" data-ctx-tree="1">${libraryBreadcrumb()}
+    <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button></div>
     <div class="hero-actions">
       <button class="primary" data-view="send" ${sel ? '' : 'disabled'}>Send ${sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
       ${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}
@@ -129,7 +169,8 @@ function library() {
       <button class="secondary" data-action="upload-folder">Upload folder…</button>
       <button class="secondary" data-action="new-folder">New folder</button>
     </div>
-    <div class="tree">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div></div>`;
+    ${searching ? `<p class="library-result-count">Search results across the library</p>` : ''}
+    <div class="tree">${libraryHeader()}${rows || `<p class="empty">${searching ? 'No matching files.' : 'This folder is empty. Upload a weazldoc.'}</p>`}</div></div>`;
 }
 
 function send() {
