@@ -790,34 +790,40 @@ document.addEventListener('dragstart', e => {
 document.addEventListener('dragend', e => e.target.closest('[data-drag-file]')?.classList.remove('dragging'));
 
 document.addEventListener('dragover', e => {
-  const target = e.target.closest('.library-workspace, .tree, [data-ctx-folder]');
+  const folder = e.target.closest('[data-ctx-folder]');
+  const target = folder || (state.view === 'library'
+    ? e.target.closest('#content')
+    : e.target.closest('.library-workspace, .tree'));
   if (!target || !e.dataTransfer) return;
   const internal = e.dataTransfer.types.includes('application/x-weazl-path');
-  const external = e.dataTransfer.types.includes('Files');
+  const external = e.dataTransfer.types.includes('Files') || [...(e.dataTransfer.items || [])].some(item => item.kind === 'file');
   if (!internal && !external) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = internal ? 'move' : 'copy';
-  const folder = target.closest('[data-ctx-folder]');
   (folder || target).classList.add('drop-target');
 });
 
 document.addEventListener('dragleave', e => e.target.closest('.drop-target')?.classList.remove('drop-target'));
 
 document.addEventListener('drop', e => {
-  const target = e.target.closest('.library-workspace, .tree, [data-ctx-folder]');
+  const folderTarget = e.target.closest('[data-ctx-folder]');
+  const target = folderTarget || (state.view === 'library'
+    ? e.target.closest('#content')
+    : e.target.closest('.library-workspace, .tree'));
   if (!target || !e.dataTransfer) return;
   const from = e.dataTransfer.getData('application/x-weazl-path');
-  if (!from && e.dataTransfer.files.length) {
+  const hasExternalFiles = e.dataTransfer.files.length || [...(e.dataTransfer.items || [])].some(item => item.kind === 'file');
+  if (!from && hasExternalFiles) {
     e.preventDefault();
     document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-    const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || state.currentPath;
+    const folder = folderTarget?.dataset.ctxFolder || state.currentPath;
     droppedUploadItems(e.dataTransfer).then(items => beginUpload(items, folder)).catch(err => toast(`Drop failed: ${err.message}`));
     return;
   }
   if (!from) return;
   e.preventDefault();
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-  const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || state.currentPath;
+  const folder = folderTarget?.dataset.ctxFolder || state.currentPath;
   const file = files.find(f => filePath(f.id) === from);
   if (file) moveFile(file.id, folder);
 });
