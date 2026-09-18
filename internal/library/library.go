@@ -70,6 +70,32 @@ func (l *Library) Usage(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return 0, 0, 0, err
+	}
+	logical := int64(0)
+	unique := int64(0)
+	hashes := make(map[string]int64)
+	for _, f := range l.catalog.List() {
+		if f.Folder {
+			continue
+		}
+		logical += f.Size
+		if _, ok := hashes[f.Hash]; !ok {
+			hashes[f.Hash] = f.Size
+			unique += f.Size
+		}
+	}
+	percent := 0
+	if logical > 0 {
+		percent = int((logical - unique) * 100 / logical)
+	}
+	return percent, logical, unique, nil
+}
+
 func (l *Library) Mkdir(ctx context.Context, name string) error {
 	name, err := cleanPath(name)
 	if err != nil {

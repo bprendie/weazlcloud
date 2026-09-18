@@ -337,7 +337,8 @@ func (h *Handler) multiKit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.users.Current(r); err != nil {
+	res, _, err := h.currentResource(r)
+	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
@@ -350,7 +351,15 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, q)
+	out := map[string]any{"capacity": q.Capacity, "used": q.Used, "limit": q.Limit, "percent": q.Percent, "users": q.Users}
+	if res.vault.Unlocked() {
+		if dedupe, logical, unique, e := res.lib.Dedupe(r.Context()); e == nil {
+			out["dedupe_percent"] = dedupe
+			out["logical_bytes"] = logical
+			out["unique_bytes"] = unique
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) multiListLibrary(w http.ResponseWriter, r *http.Request) {

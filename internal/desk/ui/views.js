@@ -370,7 +370,7 @@ export function renderDeck() {
   const busy = state.operation !== 'idle';
   const ingest = state.operation === 'ingest';
   const minting = state.operation === 'mint';
-  const dedupe = Math.round(state.dedupe);
+  const dedupe = state.quota?.dedupe_percent ?? Math.round(state.dedupe);
   $('#now-title').textContent = ingest ? 'Ingesting takeout' : minting ? 'Sealing capsule' : 'Library ready';
   $('#now-artist').textContent = ingest ? `${takeouts.find(t => t.id === state.takeout)?.name || 'Takeout'} · preview` : minting ? `${selectedName()} · preview` : `${files.length} files · ${liveCapsules().length} live grabs`;
   $('#lane-a-l').textContent = ingest ? 'WALK' : minting ? 'SEAL' : 'PUT';
