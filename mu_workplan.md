@@ -4,11 +4,15 @@ Date: 2026-09-18
 
 This workplan moves WeazlCloud from a single household vault to a multiuser node that can run in Docker. The first implementation should establish correct ownership, quota, and isolation before adding convenience features.
 
+## Sovereignty boundary
+
+Identity is local to the WeazlCloud node. There will be no third-party identity system: no OIDC, OAuth, SSO, hosted account, external directory, social login, identity relay, or Weazl-operated account service. User records, password verifiers, sessions, vault keys, recovery material, and authorization decisions live on the node and are administered by its owner.
+
 ## Product decisions
 
 ### Users and vaults
 
-- The node has a local user registry stored in the data volume.
+- The node has a local user registry stored in the data volume. It is the sole identity authority for the node.
 - Every user has a separate vault and encryption root. A user can unlock only their own vault.
 - User credentials are verifier material only; passwords are never stored in plaintext or passed through Compose environment variables.
 - The first account is the node administrator. It can create, disable, and remove users and configure the node quota.
@@ -140,7 +144,7 @@ The minimum useful result for today is a reviewed multiuser design plus the firs
 
 ## Explicitly deferred
 
-- OIDC, external identity providers, and multi-node replication.
+- Third-party identity, OIDC, OAuth, SSO, hosted accounts, external directories, and multi-node identity federation.
 - Public user registration.
 - Collaborative sharing or shared writable folders.
 - Video transcoding, RAW photo processing, and EXIF editing.
