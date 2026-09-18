@@ -420,10 +420,12 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 			apiError(w, e)
 			return
 		}
-		if err := h.quota.Check(h.users.Count(), used, current, int64(len(body))); err != nil {
+		release, err := h.quota.Reserve(u.ID, h.users.Count(), used, current, int64(len(body)))
+		if err != nil {
 			apiError(w, err)
 			return
 		}
+		defer release()
 	}
 	f, err := res.lib.Put(r.Context(), path, body)
 	if err != nil {

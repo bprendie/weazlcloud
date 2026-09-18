@@ -20,11 +20,13 @@ type Status struct {
 }
 
 type Manager struct {
-	mu   sync.Mutex
-	root string
+	mu           sync.Mutex
+	root         string
+	reserved     uint64
+	userReserved map[string]uint64
 }
 
-func New(root string) *Manager { return &Manager{root: root} }
+func New(root string) *Manager { return &Manager{root: root, userReserved: make(map[string]uint64)} }
 
 func (m *Manager) Status(users int) (Status, error) {
 	m.mu.Lock()
@@ -33,14 +35,23 @@ func (m *Manager) Status(users int) (Status, error) {
 }
 
 func (m *Manager) Check(users int, userUsed, current, incoming int64) error {
+	release, err := m.Reserve("", users, userUsed, current, incoming)
+	if err != nil {
+		return err
+	}
+	release()
+	return nil
+}
+
+func (m *Manager) Reserve(userID string, users int, userUsed, current, incoming int64) (func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if incoming < 0 || current < 0 || userUsed < 0 {
-		return ErrExceeded
+		return nil, ErrExceeded
 	}
 	s, err := m.status(users)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	limit := s.Limit
 	delta := incoming
@@ -51,17 +62,29 @@ func (m *Manager) Check(users int, userUsed, current, incoming int64) error {
 	}
 	if users > 0 {
 		perUser := limit / uint64(users)
-		if uint64(userUsed)+uint64(delta) > perUser {
-			return ErrExceeded
+		if uint64(userUsed)+m.userReserved[userID]+uint64(delta) > perUser {
+			return nil, ErrExceeded
 		}
 	}
 	// Filesystem usage includes existing restic packs and metadata. The write
 	// reservation is conservative: it prevents a request from crossing the
 	// configured ceiling before restic has added its pack overhead.
-	if s.Used >= limit || uint64(delta) > limit-s.Used {
-		return ErrExceeded
+	if s.Used >= limit || m.reserved > limit-s.Used || uint64(delta) > limit-s.Used-m.reserved {
+		return nil, ErrExceeded
 	}
-	return nil
+	m.reserved += uint64(delta)
+	m.userReserved[userID] += uint64(delta)
+	released := false
+	return func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if released {
+			return
+		}
+		released = true
+		m.reserved -= uint64(delta)
+		m.userReserved[userID] -= uint64(delta)
+	}, nil
 }
 
 func (m *Manager) status(users int) (Status, error) {
