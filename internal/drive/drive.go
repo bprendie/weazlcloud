@@ -1,9 +1,11 @@
 package drive
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,6 +80,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dav := &webdav.Handler{FileSystem: &fileSystem{lib: res.lib}, LockSystem: h.locks}
+	if r.Method == "PROPFIND" && r.URL.Path == "/" {
+		// GVfs compares the response href to the mount path. A relative root
+		// href works whether the client supplied a trailing slash or not.
+		rec := httptest.NewRecorder()
+		dav.ServeHTTP(rec, r)
+		body := bytes.Replace(rec.Body.Bytes(), []byte("<D:href>/</D:href>"), []byte("<D:href>.</D:href>"), 1)
+		for k, values := range rec.Header() {
+			for _, value := range values {
+				w.Header().Add(k, value)
+			}
+		}
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(body)
+		return
+	}
 	dav.ServeHTTP(w, r)
 }
 

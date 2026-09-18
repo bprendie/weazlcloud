@@ -77,9 +77,13 @@ func TestMultiDriveAuthenticatesAndServesWebDAV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, _ := io.ReadAll(res.Body)
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusMultiStatus {
 		t.Fatalf("PROPFIND %d", res.StatusCode)
+	}
+	if !strings.Contains(string(body), "<D:href>.</D:href>") {
+		t.Fatalf("root href was not normalized: %s", body)
 	}
 	unauth, _ := http.Get(s.URL + "/")
 	unauth.Body.Close()
