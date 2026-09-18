@@ -103,6 +103,7 @@ export const filesInFolder = path => files.filter(f => {
 
 export const state = {
   engine: false,
+  authenticated: false,
   view: 'home',
   unlocked: false,
   forging: false,

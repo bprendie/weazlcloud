@@ -87,6 +87,10 @@ func (s *Store) Revoke(id string) error {
 	if err != nil {
 		return err
 	}
+	return s.revokeDir(dir, rec)
+}
+
+func (s *Store) revokeDir(dir string, rec Record) error {
 	rec.Revoked = true
 	_ = os.Remove(filepath.Join(dir, "open.key"))
 	_ = os.Remove(filepath.Join(dir, "pass.wrap"))

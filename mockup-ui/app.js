@@ -440,10 +440,10 @@ function setForgeMode(on) {
   const confirm = $('#unlock-form [name=confirm]');
   if (confirm) confirm.required = false;
   $('#unlock-description').textContent = state.forging
-    ? 'Forge a vault. Type the passphrase twice. There is no reset. Cut a kit after.'
-    : 'Unlock the vault. The passphrase never leaves this machine.';
-  $('#forge-mode').textContent = state.forging ? 'Already forged? Unlock' : 'New here? Forge a vault';
-  $('#unlock-form .primary').textContent = state.forging ? 'Forge vault →' : 'Unlock →';
+    ? 'Create the first local account. This node owns the identity and the vault.'
+    : 'Log in to the local node. The passphrase never leaves this machine.';
+  $('#forge-mode').textContent = state.forging ? 'Already set up? Log in' : 'New node? Create the first account';
+  $('#unlock-form .primary').textContent = state.forging ? 'Create account →' : 'Log in →';
   $('#unlock-error').textContent = '';
 }
 
@@ -452,26 +452,37 @@ $('#forge-mode').onclick = () => setForgeMode(!state.forging);
 $('#unlock-form').onsubmit = async e => {
   e.preventDefault();
   const form = new FormData(e.target);
+  const username = String(form.get('username') || '').trim();
   const pass = String(form.get('passphrase') || '');
   const confirm = String(form.get('confirm') || '');
   $('#unlock-error').textContent = '';
+  if (!username) { $('#unlock-error').textContent = 'Username must not be empty.'; return; }
   if (!pass) { $('#unlock-error').textContent = 'Passphrase must not be empty.'; return; }
   if (state.forging && !confirm) { $('#unlock-error').textContent = 'Confirm the passphrase.'; return; }
   if (state.forging && pass !== confirm) { $('#unlock-error').textContent = 'Passphrases do not match.'; return; }
   if (live) {
     try {
-      if (state.forging) await engine.forge(pass, confirm);
-      else await engine.unlock(pass);
+      if (state.forging) {
+        await engine.bootstrap(username, pass, pass, confirm);
+      } else if (!state.authenticated) {
+        await engine.login(username, pass);
+        state.authenticated = true;
+        $('#unlock-error').textContent = 'Logged in. Enter the passphrase again to unlock the vault.';
+        $('#unlock-form .primary').textContent = 'Unlock vault →';
+        return;
+      } else {
+        await engine.unlock(pass);
+      }
     } catch (err) {
       const msg = err.message || 'unlock failed';
       if (/already exists/i.test(msg)) {
         setForgeMode(false);
-        $('#unlock-error').textContent = 'This node already has a vault. Unlock with the passphrase.';
+        $('#unlock-error').textContent = 'This node already has an account. Log in with the local username.';
         return;
       }
       if (/does not exist|missing/i.test(msg)) {
         setForgeMode(true);
-        $('#unlock-error').textContent = 'No vault yet. Confirm the passphrase to forge one.';
+        $('#unlock-error').textContent = 'No account yet. Create the first local account.';
         return;
       }
       $('#unlock-error').textContent = msg;
@@ -583,13 +594,14 @@ engine.probe().then(async s => {
   }
   live = true;
   state.engine = true;
+  state.authenticated = !!s.authenticated;
   const kicker = document.querySelector('#strip-kicker');
   const dim = document.querySelector('#strip-dim') || document.querySelector('.preview-strip .dim');
   if (kicker) kicker.textContent = 'THIS NODE';
   if (dim) dim.textContent = '· engine · this machine';
   await refreshPlaces();
-  setForgeMode(!s.forged);
-  if (s.unlocked) {
+  setForgeMode(!s.setup);
+  if (s.authenticated && s.unlocked) {
     await loadLibrary();
     await loadCapsules();
     await refreshPlaces();

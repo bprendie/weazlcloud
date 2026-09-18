@@ -5,7 +5,7 @@ export async function probe() {
     const r = await fetch('/api/status');
     if (!r.ok) return null;
     const s = await r.json();
-    if (typeof s.forged !== 'boolean') return null;
+    if (typeof s.setup !== 'boolean' && typeof s.forged !== 'boolean') return null;
     return s;
   } catch {
     return null;
@@ -21,6 +21,8 @@ async function post(url, body) {
 
 export const forge = (passphrase, confirm) => post('/api/forge', { passphrase, confirm });
 export const unlock = passphrase => post('/api/unlock', { passphrase });
+export const login = (username, password) => post('/api/login', { username, password });
+export const bootstrap = (username, password, vaultPassphrase, confirm) => post('/api/bootstrap', { username, password, vault_passphrase: vaultPassphrase, confirm });
 export const lock = () => post('/api/lock', {});
 export const kit = passphrase => post('/api/kit', { passphrase });
 

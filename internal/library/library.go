@@ -56,6 +56,19 @@ func (l *Library) List() []catalog.File {
 	return l.catalog.List()
 }
 
+func (l *Library) Usage(ctx context.Context) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, f := range l.catalog.List() {
+		total += f.Size
+	}
+	return total, nil
+}
+
 func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.File, error) {
 	name, err := cleanPath(name)
 	if err != nil {

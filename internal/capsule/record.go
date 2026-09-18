@@ -20,6 +20,7 @@ type Member struct {
 
 type Record struct {
 	ID      string    `json:"id"`
+	Owner   string    `json:"owner,omitempty"`
 	Label   string    `json:"label"`
 	Name    string    `json:"name"`
 	Kind    string    `json:"kind"`

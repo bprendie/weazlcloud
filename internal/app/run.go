@@ -16,7 +16,9 @@ import (
 	"github.com/bprendie/weazlcloud/internal/desk"
 	"github.com/bprendie/weazlcloud/internal/drive"
 	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/share"
+	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -85,7 +87,9 @@ func Start(cfg config.Config) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n.bind()
+	if err := n.bind(); err != nil {
+		return nil, err
+	}
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go n.svcs[i].Serve(ln)
 	}
@@ -114,7 +118,9 @@ func listen(cfg config.Config) (*Node, error) {
 }
 
 func (n *Node) serve(ctx context.Context) error {
-	n.bind()
+	if err := n.bind(); err != nil {
+		return err
+	}
 	errc := make(chan error, 3)
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go func(srv *http.Server, ln net.Listener) {
@@ -133,16 +139,22 @@ func (n *Node) serve(ctx context.Context) error {
 	}
 }
 
-func (n *Node) bind() {
+func (n *Node) bind() error {
 	vp, np := vault.Paths(n.cfg.DataDir)
 	n.vault = vault.New(vp, np)
 	n.lib = library.New(n.cfg.DataDir+"/library", n.cfg.DataDir+"/catalog.enc", n.vault)
 	n.caps = capsule.New(n.cfg.DataDir + "/capsules")
+	us, err := users.New(n.cfg.DataDir+"/users.json", n.cfg.DataDir+"/users")
+	if err != nil {
+		return err
+	}
+	q := quota.New(n.cfg.DataDir)
 	n.svcs = []*http.Server{
-		server(n.desk, desk.New(n.vault, n.lib, n.caps, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir+"/places.json")),
+		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase)),
 		server(n.share, share.New(n.caps)),
 		server(n.drive, drive.New()),
 	}
+	return nil
 }
 
 func server(ln net.Listener, h http.Handler) *http.Server {

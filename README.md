@@ -127,7 +127,7 @@ Right-click → copy URL, open as Gil, revoke.
 
 Destroy a capsule (fine print) is the same revoke, spoken in consequences.
 
-## Node (Phase 1)
+## Node (multiuser foundation)
 
 ```sh
 make check
@@ -137,14 +137,25 @@ make run
 Native binds loopback: desk `127.0.0.1:7272`, share `7273`, drive `7274`.
 `GET /ready` on each listener. Share and drive do not serve the desk.
 
+The node has a local identity authority. There are no hosted accounts, OIDC,
+OAuth, SSO, external directories, or third-party identity providers. Each user
+gets a separate vault, catalog, restic library, and session. The first account
+created on a fresh node is the local administrator.
+
 Desk API (same-origin header `X-Weazl-Desk: 1` on POST):
 
-- `GET /api/status` — `{forged, unlocked}` only
-- `POST /api/forge` — `{passphrase, confirm}`
-- `POST /api/unlock` / `POST /api/lock`
+- `GET /api/status` — setup, local authentication, vault, and sanitized quota state
+- `POST /api/bootstrap` — `{username, password, vault_passphrase, confirm}` on a fresh node
+- `POST /api/login` / `POST /api/logout`
+- `POST /api/users` — administrator creates another local user
+- `GET /api/me`
+- `POST /api/unlock` / `POST /api/lock` — current user’s vault
+- `GET /api/quota` — physical volume usage and the 97% usable limit
 - `POST /api/kit` — writes `weazlcloud-recovery.wzck` on the volume
 
 The passphrase never lives in Compose `environment`. Lose it and the kit is a brick too.
+An existing single-user root vault is adopted by the first administrator after
+its vault passphrase verifies.
 
 Library (vault must be unlocked):
 
@@ -165,7 +176,13 @@ Places:
 - `GET /api/places` / `POST /api/places` — `{grab: "https://…", drive: "davs://…"}`
   Grab base must be `https://`. Mint refuses without it.
 
-Identical bytes are stored once. The desk mockup talks to these endpoints when it is served by the node (`engine.js`). `make mockup` on :3001 stays a preview with no engine.
+The quota hard cap is 97% of the filesystem containing `/data`; the UI meter
+reports that usable limit as 100%. User logical usage is divided by the current
+number of local users, while physical filesystem headroom remains the final
+write guard. Cross-user deduplication remains a separate privacy decision.
+
+The desk mockup talks to these endpoints when it is served by the node
+(`engine.js`). `make mockup` on :3001 stays a preview with no engine.
 
 When you hang this on the Ubuntu box: join the existing Traefik network, three HTTPS names, no host-published vault port. Backup `/data` with WeazlBack. Cut two kits.
 

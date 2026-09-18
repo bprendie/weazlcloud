@@ -62,6 +62,58 @@ func (s *Store) Mint(rec Record, phrase string, payload []byte) (Record, error) 
 	return rec, nil
 }
 
+func (s *Store) ListOwner(owner string) []Record {
+	recs := s.List()
+	out := make([]Record, 0, len(recs))
+	for _, rec := range recs {
+		if rec.Owner == owner {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+func (s *Store) RevokeOwner(id, owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir := filepath.Join(s.root, id)
+	rec, err := readMeta(dir)
+	if err != nil {
+		return err
+	}
+	if rec.Owner != owner {
+		return ErrGone
+	}
+	return s.revokeDir(dir, rec)
+}
+
+func (s *Store) AssignOwner(owner string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ents, err := os.ReadDir(s.root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(s.root, e.Name())
+		rec, err := readMeta(dir)
+		if err != nil || rec.Owner != "" {
+			continue
+		}
+		rec.Owner = owner
+		if err := writeMeta(dir, rec); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func encodeToken(b []byte) string {
 	const hex = "0123456789abcdef"
 	out := make([]byte, len(b)*2)

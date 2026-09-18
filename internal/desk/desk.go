@@ -4,11 +4,14 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ready"
+	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -23,6 +26,10 @@ type Handler struct {
 	publicBase string
 	driveBase  string
 	placesPath string
+	users      *users.Store
+	quota      *quota.Manager
+	resources  map[string]*userResource
+	resourceMu sync.Mutex
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -37,8 +44,19 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 	}
 }
 
+func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase string) *Handler {
+	h := New(nil, nil, caps, publicBase, driveBase, "")
+	h.users, h.quota = us, q
+	h.resources = make(map[string]*userResource)
+	return h
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	headers.Secure(w)
+	if h.users != nil {
+		h.serveMulti(w, r)
+		return
+	}
 	switch {
 	case r.URL.Path == "/ready" && r.Method == http.MethodGet:
 		ready.Serve(w, r)
