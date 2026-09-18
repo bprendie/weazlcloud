@@ -402,8 +402,14 @@ function openDesk() {
   state.unlocked = true;
   $('#unlock-screen').hidden = true;
   $('.app').hidden = false;
+  $('#admin-nav').hidden = !state.admin;
   renderMain();
   renderDeck();
+}
+
+async function loadAccessRequests() {
+  if (!live || !state.admin) return;
+  try { state.requests = await engine.listAccessRequests(); } catch (err) { toast(err.message); }
 }
 
 async function revoke(id) {
@@ -572,6 +578,14 @@ document.addEventListener('click', e => {
     else ingest();
   }
   if (b.dataset.action === 'toggle-token') { state.tokenShown = !state.tokenShown; renderMain(); }
+  if (b.dataset.adminApprove) {
+    engine.approveAccess(b.dataset.adminApprove).then(result => {
+      modal(`<span class="eyebrow purple">ADMIN / APPROVAL COMPLETE</span><h2>Give this setup token to ${esc(result.request.username)}</h2><p>This token can be used once to create the approved local account and vault.</p><pre class="file-preview-text">${esc(result.setup_token)}</pre><button class="primary" data-copy-token="${esc(result.setup_token)}">Copy token</button><button class="secondary" data-close>Done</button>`, true);
+      loadAccessRequests().then(renderMain);
+    }).catch(err => toast(err.message));
+  }
+  if (b.dataset.adminReject) engine.rejectAccess(b.dataset.adminReject).then(() => loadAccessRequests().then(renderMain)).catch(err => toast(err.message));
+  if (b.dataset.copyToken) { navigator.clipboard?.writeText(b.dataset.copyToken).catch(() => {}); toast('Setup token copied.'); }
   if (b.dataset.action === 'rotate-token') {
     state.driveToken = `wzcv-${Math.random().toString(36).slice(2, 6)}-mock-token`;
     state.tokenShown = true;
@@ -653,6 +667,25 @@ function setVaultOnly(on) {
 }
 
 $('#forge-mode').onclick = () => setForgeMode(!state.forging);
+$('#request-mode').onclick = async () => {
+  const username = String($('#unlock-form [name=username]').value || '').trim();
+  if (!username) { $('#unlock-error').textContent = 'Enter the username you want to request.'; return; }
+  const note = prompt('Optional note for the node administrator:', '') || '';
+  if (!live) { $('#unlock-error').textContent = 'Access requests are available on the connected node.'; return; }
+  try { const q = await engine.requestAccess(username, note); $('#unlock-error').textContent = `Request submitted for ${q.username}. An administrator must approve it before an account or vault is created.`; }
+  catch (err) { $('#unlock-error').textContent = err.message; }
+};
+$('#setup-mode').onclick = async () => {
+  if (!live) { $('#unlock-error').textContent = 'Account setup is available on the connected node.'; return; }
+  const username = String($('#unlock-form [name=username]').value || '').trim();
+  const id = prompt('Approval request ID:') || '';
+  const token = prompt('One-time setup token:') || '';
+  const password = prompt('Choose an account password (8+ characters):') || '';
+  const vault = prompt('Vault passphrase (leave blank to use the account password):', '') || '';
+  if (!username || !id || !token || !password) { $('#unlock-error').textContent = 'Setup cancelled: all account fields are required.'; return; }
+  try { await engine.completeAccess({id, token, username, password, vault_passphrase: vault, confirm: vault || password}); $('#unlock-error').textContent = 'Account created. Log in with your local username and password.'; }
+  catch (err) { $('#unlock-error').textContent = err.message; }
+};
 
 $('#unlock-form').onsubmit = async e => {
   e.preventDefault();
@@ -669,9 +702,11 @@ $('#unlock-form').onsubmit = async e => {
     try {
       if (state.forging) {
         await engine.bootstrap(username, pass, pass, confirm);
+        state.admin = true;
         await engine.unlock(pass);
       } else if (!state.authenticated) {
-        await engine.login(username, pass);
+        const account = await engine.login(username, pass);
+        state.admin = !!account.admin;
         state.authenticated = true;
         try {
           await engine.unlock(pass);
@@ -702,6 +737,7 @@ $('#unlock-form').onsubmit = async e => {
       await loadLibrary();
       await loadCapsules();
       await refreshPlaces();
+      await loadAccessRequests();
     } catch (err) {
       toast(err.message);
     }
@@ -850,11 +886,14 @@ engine.probe().then(async s => {
   if (kicker) kicker.textContent = 'THIS NODE';
   if (dim) dim.textContent = '· engine · this machine';
   await refreshPlaces();
+  state.admin = !!s.admin;
+  $('#admin-nav').hidden = !state.admin;
   setForgeMode(!s.setup);
   if (s.authenticated && s.unlocked) {
     await loadLibrary();
     await loadCapsules();
     await refreshPlaces();
+    await loadAccessRequests();
     openDesk();
   } else {
     renderDeck();

@@ -146,6 +146,7 @@ export const state = {
   destroyId: '',
   capsules: []
   ,upload: {active: false, current: '', done: 0, total: 0, loaded: 0, totalBytes: 0, failed: []}
+  ,admin: false, requests: [], accessMode: ''
 };
 
 export function seedPreview() {

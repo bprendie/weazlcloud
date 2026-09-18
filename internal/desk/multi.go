@@ -42,6 +42,16 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, false, h.bootstrap)
 	case r.URL.Path == "/api/login" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, false, h.login)
+	case r.URL.Path == "/api/access-requests" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, false, h.requestAccess)
+	case r.URL.Path == "/api/access-requests" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.listAccessRequests)
+	case r.URL.Path == "/api/access-requests/approve" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.approveAccess)
+	case r.URL.Path == "/api/access-requests/reject" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.rejectAccess)
+	case r.URL.Path == "/api/account-setup" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, false, h.completeAccess)
 	case r.URL.Path == "/api/logout" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.logout)
 	case r.URL.Path == "/api/users" && r.Method == http.MethodPost:
@@ -108,6 +118,21 @@ type bootstrapBody struct {
 type loginBody struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+type accessRequestBody struct {
+	Username string `json:"username"`
+	Note     string `json:"note"`
+}
+type accessDecisionBody struct {
+	ID string `json:"id"`
+}
+type accountSetupBody struct {
+	ID              string `json:"id"`
+	Token           string `json:"token"`
+	Username        string `json:"username"`
+	Password        string `json:"password"`
+	VaultPassphrase string `json:"vault_passphrase"`
+	Confirm         string `json:"confirm"`
 }
 
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any, max int64) bool {
@@ -213,6 +238,94 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "admin": u.Admin})
 }
 
+func (h *Handler) requestAccess(w http.ResponseWriter, r *http.Request) {
+	var b accessRequestBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	q, err := h.users.RequestAccess(b.Username, b.Note)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": q.ID, "username": q.Username, "status": q.Status, "created_at": q.CreatedAt})
+}
+
+func (h *Handler) listAccessRequests(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil || !u.Admin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
+		return
+	}
+	requests := h.users.AccessRequests()
+	public := make([]map[string]any, 0, len(requests))
+	for _, q := range requests {
+		public = append(public, map[string]any{"id": q.ID, "username": q.Username, "note": q.Note, "status": q.Status, "created_at": q.CreatedAt, "approved_at": q.ApprovedAt, "consumed_at": q.ConsumedAt})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": public})
+}
+
+func (h *Handler) approveAccess(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil || !u.Admin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
+		return
+	}
+	var b accessDecisionBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	q, token, err := h.users.ApproveAccess(b.ID)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"request": q, "setup_token": token})
+}
+
+func (h *Handler) rejectAccess(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil || !u.Admin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
+		return
+	}
+	var b accessDecisionBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	if err := h.users.RejectAccess(b.ID); err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "rejected"})
+}
+
+func (h *Handler) completeAccess(w http.ResponseWriter, r *http.Request) {
+	var b accountSetupBody
+	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	u, err := h.users.CompleteAccess(b.ID, b.Token, b.Username, b.Password)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	pass := b.VaultPassphrase
+	if pass == "" {
+		pass = b.Password
+	}
+	confirm := b.Confirm
+	if confirm == "" {
+		confirm = pass
+	}
+	v := vault.New(h.users.VaultPath(u), h.users.NodeKeyPath(u))
+	if err := v.Forge([]byte(pass), []byte(confirm)); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": u.ID, "username": u.Username, "admin": u.Admin})
+}
+
 func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 	admin, err := h.users.Current(r)
 	if err != nil || !admin.Admin {
@@ -272,6 +385,7 @@ func (h *Handler) multiStatus(w http.ResponseWriter, r *http.Request) {
 	if u, err := h.users.Current(r); err == nil {
 		out["authenticated"] = true
 		out["username"] = u.Username
+		out["admin"] = u.Admin
 		out["unlocked"] = h.resource(u).vault.Unlocked()
 	}
 	if h.quota != nil {

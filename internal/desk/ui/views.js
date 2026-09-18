@@ -330,11 +330,17 @@ function destroy() {
     `<form id="destroy-form" class="auth-form"><label>Confirmation phrase<input name="phrase" required autocomplete="off" placeholder="DESTROY ${esc(state.destroyId)}"></label><button class="primary">Destroy capsule</button></form>`;
 }
 
+function admin() {
+  const pending = state.requests.filter(q => q.status === 'pending');
+  return head('NODE ADMIN / ACCESS', 'Approve local accounts.', 'Identity approval only. User vaults and their contents stay outside the administrator view.') +
+    `<div class="file-list admin-requests">${state.requests.length ? state.requests.map(q => `<div class="file-row"><span class="kind ${q.status === 'pending' ? 'type-dir' : ''}">${esc(q.status.toUpperCase())}</span><span><strong>${esc(q.username)}</strong><small>${esc(q.note || 'No note')} · ${esc(new Date(q.created_at).toLocaleString())}</small></span>${q.status === 'pending' ? `<button class="text-button" data-admin-approve="${esc(q.id)}">Approve</button><button class="text-button" data-admin-reject="${esc(q.id)}">Reject</button>` : ''}</div>`).join('') : '<p class="empty">No account requests.</p>'}</div>`;
+}
+
 export function renderMain() {
-  const pages = {home, library, send, capsules, places, kit, takeout, check, destroy};
+  const pages = {home, library, send, capsules, places, admin, kit, takeout, check, destroy};
   const html = (pages[state.view] || home)();
   $('#content').innerHTML = html;
-  const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY'};
+  const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', admin: 'ADMIN', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY'};
   $('#breadcrumb').textContent = state.view === 'library' && state.currentPath
     ? `LIBRARY / ${state.currentPath.split('/').join(' / ')}`
     : (crumb[state.view] || state.view.toUpperCase());

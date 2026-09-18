@@ -1,34 +1,38 @@
 package users
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
 
-func TestLocalUsersAndSessions(t *testing.T) {
-	s, err := New(filepath.Join(t.TempDir(), "users.json"), filepath.Join(t.TempDir(), "users"))
+func TestAccessRequestRequiresApprovalBeforeAccountCreation(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := s.Create("alice", "alice-password", true)
+	q, err := s.RequestAccess("alice", "home node")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authenticate("alice", "wrong-password"); err != ErrBadCredentials {
-		t.Fatalf("wrong password: %v", err)
+	if s.Count() != 0 || q.Status != "pending" {
+		t.Fatalf("request created an account: count=%d status=%s", s.Count(), q.Status)
 	}
-	if _, err := s.Authenticate("alice", "alice-password"); err != nil {
-		t.Fatal(err)
+	approved, token, err := s.ApproveAccess(q.ID)
+	if err != nil || approved.Status != "approved" || token == "" {
+		t.Fatalf("approve: %#v %q %v", approved, token, err)
 	}
-	token, err := s.Login(u)
+	if _, err := s.CompleteAccess(q.ID, "wrong", "alice", "alice-password"); err == nil {
+		t.Fatal("wrong setup token accepted")
+	}
+	u, err := s.CompleteAccess(q.ID, token, "alice", "alice-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/", nil)
-	r.AddCookie(&http.Cookie{Name: cookieName, Value: token})
-	if got, err := s.Current(r); err != nil || got.ID != u.ID {
-		t.Fatalf("current user: %+v %v", got, err)
+	if u.Username != "alice" || s.Count() != 1 {
+		t.Fatalf("account was not created: %#v count=%d", u, s.Count())
+	}
+	if _, err := s.CompleteAccess(q.ID, token, "alice", "alice-password"); err == nil {
+		t.Fatal("setup token reused")
 	}
 }

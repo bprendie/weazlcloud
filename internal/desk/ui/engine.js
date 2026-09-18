@@ -23,6 +23,11 @@ export const forge = (passphrase, confirm) => post('/api/forge', { passphrase, c
 export const unlock = passphrase => post('/api/unlock', { passphrase });
 export const login = (username, password) => post('/api/login', { username, password });
 export const bootstrap = (username, password, vaultPassphrase, confirm) => post('/api/bootstrap', { username, password, vault_passphrase: vaultPassphrase, confirm });
+export const requestAccess = (username, note) => post('/api/access-requests', {username, note});
+export const listAccessRequests = async () => { const r = await fetch('/api/access-requests'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'requests'); return j.requests || []; };
+export const approveAccess = id => post('/api/access-requests/approve', {id});
+export const rejectAccess = id => post('/api/access-requests/reject', {id});
+export const completeAccess = body => post('/api/account-setup', body);
 export const lock = () => post('/api/lock', {});
 export const kit = passphrase => post('/api/kit', { passphrase });
 
