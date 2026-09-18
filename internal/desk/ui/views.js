@@ -373,15 +373,9 @@ export function renderDeck() {
   const dedupe = state.quota?.dedupe_percent ?? Math.round(state.dedupe);
   $('#now-title').textContent = ingest ? 'Ingesting takeout' : minting ? 'Sealing capsule' : 'Library ready';
   $('#now-artist').textContent = ingest ? `${takeouts.find(t => t.id === state.takeout)?.name || 'Takeout'} · preview` : minting ? `${selectedName()} · preview` : `${files.length} files · ${liveCapsules().length} live grabs`;
-  $('#lane-a-l').textContent = ingest ? 'WALK' : minting ? 'SEAL' : 'PUT';
   $('#lane-b-l').textContent = 'DEDUPE';
-  $('#lane-c-l').textContent = ingest ? 'KEEP' : minting ? 'LINK' : 'GRABS';
-  $('#lane-a').style.width = `${busy ? state.lanes.a : 0}%`;
   $('#lane-b').style.width = `${busy ? state.lanes.b : dedupe}%`;
-  $('#lane-c').style.width = `${busy ? state.lanes.c : Math.min(100, liveCapsules().length * 20)}%`;
-  $('#lane-a-n').textContent = busy ? `${Math.round(state.lanes.a)}%` : '—';
   $('#lane-b-n').textContent = `${busy ? Math.round(state.lanes.b) : dedupe}%`;
-  $('#lane-c-n').textContent = busy && minting ? `${Math.round(state.lanes.c)}%` : String(liveCapsules().length);
   const quota = state.quota;
   const quotaPercent = quota ? Math.round(quota.percent) : 0;
   const quotaBar = $('#quota-bar');
@@ -389,7 +383,7 @@ export function renderDeck() {
   const quotaNumber = $('#quota-n');
   if (quotaNumber) quotaNumber.textContent = quota ? `${quotaPercent}%` : '—';
   const quotaCaption = $('#quota-caption');
-  if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} used · ${formatBytes(quota.limit)} available cap` : 'Waiting for vault';
+  if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} used · ${formatBytes(quota.capacity)} volume` : 'Waiting for vault';
   const unit = $('#dedupe-unit');
   const heading = $('#dedupe-heading');
   if (state.engine && !busy) {
