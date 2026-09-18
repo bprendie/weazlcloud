@@ -3,6 +3,8 @@ package app
 import (
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -67,6 +69,21 @@ func TestBindSplit(t *testing.T) {
 	close(errc)
 	for err := range errc {
 		t.Fatal(err)
+	}
+}
+
+func TestEnsureTempDir(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "restic-tmp")
+	t.Setenv("TMPDIR", tmp)
+	if err := ensureTempDir(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", tmp)
 	}
 }
 

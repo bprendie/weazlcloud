@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/buildinfo"
@@ -60,6 +61,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err := cfg.EnsureData(); err != nil {
 		return err
 	}
+	if err := ensureTempDir(); err != nil {
+		return err
+	}
 	if *check {
 		fmt.Fprintln(stdout, "weazlcloud: configuration valid")
 		return nil
@@ -79,8 +83,15 @@ func (n *Node) DeskAddr() string  { return n.desk.Addr().String() }
 func (n *Node) ShareAddr() string { return n.share.Addr().String() }
 func (n *Node) DriveAddr() string { return n.drive.Addr().String() }
 
+func ensureTempDir() error {
+	return os.MkdirAll(os.TempDir(), 0o700)
+}
+
 func Start(cfg config.Config) (*Node, error) {
 	if err := cfg.EnsureData(); err != nil {
+		return nil, err
+	}
+	if err := ensureTempDir(); err != nil {
 		return nil, err
 	}
 	n, err := listen(cfg)
