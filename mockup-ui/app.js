@@ -57,6 +57,28 @@ function folderMenu(path) {
   ];
 }
 
+function rootMenu() {
+  return [
+    {act: 'upload', label: 'Upload files…'},
+    {act: 'upload-folder-root', label: 'Upload folder…'},
+    {act: 'new-folder-root', label: 'New folder'}
+  ];
+}
+
+async function moveFile(id, folder) {
+  const from = filePath(id);
+  const name = from.split('/').pop();
+  const to = folder ? `${folder}/${name}` : name;
+  if (from === to) return;
+  if (!live) { toast('Files can move on the connected node.'); return; }
+  try {
+    await engine.renameLibrary(from, to);
+    await loadLibrary();
+    renderMain();
+    toast(`Moved ${name} to ${folder || 'the library root'}.`);
+  } catch (err) { toast(err.message); }
+}
+
 async function previewFile(id) {
   const f = files.find(x => x.id === id); if (!f || f.folder) return;
   const path = filePath(id);
@@ -404,6 +426,11 @@ async function runMenu(act) {
   }
   if (kind === 'upload-here') { uploadPrefix = key; $('#upload-folder').click(); }
   if (kind === 'upload') { uploadPrefix = ''; $('#upload').click(); }
+  if (kind === 'upload-folder-root') { uploadPrefix = ''; $('#upload-folder').click(); }
+  if (kind === 'new-folder-root') {
+    const name = prompt('New folder name');
+    if (name && live) engine.createFolder(name.trim()).then(async () => { await loadLibrary(); renderMain(); toast('Folder created.'); }).catch(err => toast(err.message));
+  }
   if (kind === 'copy-capsule') {
     const url = grabHref(key);
     navigator.clipboard?.writeText(url).catch(() => {});
@@ -660,7 +687,40 @@ document.addEventListener('contextmenu', e => {
   if (file) { e.preventDefault(); showMenu(e.clientX, e.clientY, fileMenu(file.dataset.ctxFile)); return; }
   if (folder) { e.preventDefault(); showMenu(e.clientX, e.clientY, folderMenu(folder.dataset.ctxFolder)); return; }
   if (cap) { e.preventDefault(); showMenu(e.clientX, e.clientY, capsuleMenu(cap.dataset.ctxCapsule)); return; }
-  if (tree) { e.preventDefault(); showMenu(e.clientX, e.clientY, [{act: 'upload', label: 'Upload…'}]); }
+  if (tree) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu()); }
+});
+
+document.addEventListener('dragstart', e => {
+  const file = e.target.closest('[data-drag-file]');
+  if (!file || !e.dataTransfer) return;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('application/x-weazl-path', file.dataset.dragFile);
+  file.classList.add('dragging');
+});
+
+document.addEventListener('dragend', e => e.target.closest('[data-drag-file]')?.classList.remove('dragging'));
+
+document.addEventListener('dragover', e => {
+  const target = e.target.closest('.tree, [data-ctx-folder]');
+  if (!target || !e.dataTransfer?.types.includes('application/x-weazl-path')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const folder = target.closest('[data-ctx-folder]');
+  (folder || target).classList.add('drop-target');
+});
+
+document.addEventListener('dragleave', e => e.target.closest('.drop-target')?.classList.remove('drop-target'));
+
+document.addEventListener('drop', e => {
+  const target = e.target.closest('.tree, [data-ctx-folder]');
+  if (!target || !e.dataTransfer) return;
+  const from = e.dataTransfer.getData('application/x-weazl-path');
+  if (!from) return;
+  e.preventDefault();
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || '';
+  const file = files.find(f => filePath(f.id) === from);
+  if (file) moveFile(file.id, folder);
 });
 engine.probe().then(async s => {
   if (!s) {

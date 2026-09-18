@@ -189,6 +189,9 @@ button[aria-pressed=true]{color:var(--yellow)}
 .menu-btn{opacity:.55;font-size:16px;line-height:1}
 .menu-btn:hover,.file-row:hover .menu-btn,.tree-row:hover .menu-btn{opacity:1}
 .tree,.file-list,.tree-row,.file-row{user-select:none}
+.file-row[draggable=true]{cursor:grab}
+.file-row.dragging{opacity:.45}
+.drop-target{outline:2px solid var(--yellow);outline-offset:-2px;background:#29231b!important}
 #forge-mode{display:block;margin:18px 0;font-size:12px}
 .dialog-actions{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
 .policy{display:grid;gap:22px;max-width:640px}

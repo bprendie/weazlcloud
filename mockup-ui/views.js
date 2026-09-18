@@ -54,7 +54,7 @@ function treeRows(node, depth) {
       html += treeRows(child, depth + 1);
       html += child.files.map(f => {
         const hit = isSelected('file', f.id) ? ' highlight' : '';
-        return `<div class="file-row tree-file${hit}" style="padding-left:${28 + (depth + 1) * 16}px" data-ctx-file="${f.id}">
+        return `<div class="file-row tree-file${hit}" style="padding-left:${28 + (depth + 1) * 16}px" data-ctx-file="${f.id}" data-drag-file="${esc(f.folders.concat(f.title).join('/'))}" draggable="true">
           <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span><strong>${esc(f.title)}</strong></span></button>
           <span class="size">${esc(f.size)}</span>
           <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
