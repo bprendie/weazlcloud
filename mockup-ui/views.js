@@ -129,8 +129,7 @@ function library() {
       <button class="secondary" data-action="upload-folder">Upload folder…</button>
       <button class="secondary" data-action="new-folder">New folder</button>
     </div>
-    <div class="tree">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div></div>
-    <p class="eyebrow" style="margin-top:22px">NO FUSE. THE DRIVE IS WEBDAV. RESTIC DEDUPES UNDERNEATH.</p>`;
+    <div class="tree">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div></div>`;
 }
 
 function send() {
