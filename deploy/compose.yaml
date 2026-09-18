@@ -12,6 +12,7 @@ services:
       WEAZLCLOUD_DRIVE_ADDR: ":7274"
       HOME: /data
       XDG_CACHE_HOME: /data/cache
+      TMPDIR: /data/tmp
     volumes:
       - weazlcloud-data:/data
     expose:
