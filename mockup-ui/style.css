@@ -199,6 +199,10 @@ button[aria-pressed=true]{color:var(--yellow)}
 .file-row[draggable=true]{cursor:grab}
 .file-row.dragging{opacity:.45}
 .drop-target{outline:2px solid var(--yellow);outline-offset:-2px;background:#29231b!important}
+.library-breadcrumb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:18px 0 4px;color:var(--muted);font:10px monospace;letter-spacing:1px}
+.crumb-button{border:0;background:transparent;color:var(--yellow);padding:3px 0;font:inherit;cursor:pointer}
+.crumb-button:hover{text-decoration:underline}
+.crumb-sep{color:var(--purple)}
 #forge-mode{display:block;margin:18px 0;font-size:12px}
 .dialog-actions{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
 .policy{display:grid;gap:22px;max-width:640px}

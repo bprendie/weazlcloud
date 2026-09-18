@@ -112,7 +112,7 @@ function beginUpload(list, prefix = '') {
       const sent = loaded.reduce((n, value) => n + value, 0);
       const pct = totalBytes ? (sent / totalBytes) * 100 : 100;
       const bar = $('#upload-progress-bar'); if (bar) bar.value = pct;
-      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}% · 3 at a time`;
+      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}%`;
     };
     let next = 0;
     const worker = async slot => {
@@ -445,11 +445,12 @@ async function runMenu(act) {
     } else toast('Delete is the engine. This preview does not drop files.');
   }
   if (kind === 'upload-here') { uploadPrefix = key; $('#upload-folder').click(); }
-  if (kind === 'upload') { uploadPrefix = ''; $('#upload').click(); }
-  if (kind === 'upload-folder-root') { uploadPrefix = ''; $('#upload-folder').click(); }
+  if (kind === 'upload') { uploadPrefix = state.currentPath; $('#upload').click(); }
+  if (kind === 'upload-folder-root') { uploadPrefix = state.currentPath; $('#upload-folder').click(); }
   if (kind === 'new-folder-root') {
     const name = prompt('New folder name');
-    if (name && live) engine.createFolder(name.trim()).then(async () => { await loadLibrary(); renderMain(); toast('Folder created.'); }).catch(err => toast(err.message));
+    const base = state.currentPath ? `${state.currentPath}/` : '';
+    if (name && live) engine.createFolder(base + name.trim()).then(async () => { await loadLibrary(); renderMain(); toast('Folder created.'); }).catch(err => toast(err.message));
   }
   if (kind === 'copy-capsule') {
     const url = grabHref(key);
@@ -478,13 +479,8 @@ document.addEventListener('click', e => {
   if (b.classList.contains('dialog-close') || b.dataset.close) { $('#modal').close(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
-  if (b.dataset.folder) {
-    const path = b.dataset.folder;
-    const i = state.expanded.indexOf(path);
-    if (i >= 0) state.expanded.splice(i, 1);
-    else state.expanded.push(path);
-    renderMain();
-  }
+  if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
+  if (b.dataset.libraryPath !== undefined) { state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
   if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
   if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
@@ -501,14 +497,14 @@ document.addEventListener('click', e => {
     toast(live ? 'Grab URL copied.' : 'URL copied in this preview.');
   }
   if (b.dataset.action === 'upload') {
-    if (live) $('#upload').click();
+    if (live) { uploadPrefix = state.currentPath; $('#upload').click(); }
     else toast('Upload would land in the library. Preview only. Drive PUT does the same job.');
   }
-  if (b.dataset.action === 'upload-folder') { if (live) $('#upload-folder').click(); else toast('Folder upload is available on the connected node.'); }
+  if (b.dataset.action === 'upload-folder') { if (live) { uploadPrefix = state.currentPath; $('#upload-folder').click(); } else toast('Folder upload is available on the connected node.'); }
   if (b.dataset.action === 'new-folder') {
     const name = prompt('New folder name');
     if (name && live) {
-      const base = state.selected?.type === 'folder' ? `${state.selected.path}/` : '';
+      const base = state.selected?.type === 'folder' ? `${state.selected.path}/` : (state.currentPath ? `${state.currentPath}/` : '');
       engine.createFolder(base + name.trim()).then(async () => { await loadLibrary(); renderMain(); toast('Folder created.'); }).catch(err => toast(err.message));
     }
   }
@@ -738,7 +734,7 @@ document.addEventListener('drop', e => {
   if (!from) return;
   e.preventDefault();
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
-  const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || '';
+  const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || state.currentPath;
   const file = files.find(f => filePath(f.id) === from);
   if (file) moveFile(file.id, folder);
 });

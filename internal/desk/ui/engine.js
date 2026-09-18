@@ -127,5 +127,5 @@ export function toFixture(row) {
   if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true};
   const ext = title.includes('.') ? title.slice(title.lastIndexOf('.') + 1).toUpperCase() : 'FILE';
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
-  return { id: row.path, title, folders: parts.length ? parts : ['library'], kind: ext.slice(0, 3), size };
+  return { id: row.path, title, folders: parts, kind: ext.slice(0, 3), size };
 }

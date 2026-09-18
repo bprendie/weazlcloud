@@ -65,6 +65,45 @@ function treeRows(node, depth) {
   return html;
 }
 
+function folderNode(node, path) {
+  if (!path) return node;
+  return path.split('/').reduce((current, part) => current?.folders?.[part], node) || {folders: {}, files: []};
+}
+
+function libraryRows(node) {
+  let html = '';
+  for (const name of Object.keys(node.folders)) {
+    const child = node.folders[name];
+    const n = countNode(child);
+    const on = isSelected('folder', child.path);
+    html += `<div class="tree-row${on ? ' highlight' : ''}" data-ctx-folder="${esc(child.path)}">
+      <button class="tree-toggle" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
+      <span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
+      <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
+    </div>`;
+  }
+  html += node.files.map(f => {
+    const hit = isSelected('file', f.id) ? ' highlight' : '';
+    return `<div class="file-row tree-file${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(f.folders.concat(f.title).join('/'))}" draggable="true">
+      <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span><strong>${esc(f.title)}</strong></span></button>
+      <span class="size">${esc(f.size)}</span>
+      <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
+    </div>`;
+  }).join('');
+  return html;
+}
+
+function libraryBreadcrumb() {
+  const parts = state.currentPath ? state.currentPath.split('/') : [];
+  let path = '';
+  const crumbs = [`<button class="crumb-button" data-library-path="">LIBRARY</button>`];
+  for (const part of parts) {
+    path = path ? `${path}/${part}` : part;
+    crumbs.push(`<span class="crumb-sep">›</span><button class="crumb-button" data-library-path="${esc(path)}">${esc(part)}</button>`);
+  }
+  return `<nav class="library-breadcrumb" aria-label="Library location">${crumbs.join('')}</nav>`;
+}
+
 function home() {
   const live = liveCapsules();
   const grab = state.grabBase || 'grab base not set';
@@ -79,14 +118,18 @@ function home() {
 
 function library() {
   const sel = selectedName();
+  const node = folderNode(buildTree(files), state.currentPath);
+  const parent = state.currentPath.split('/').slice(0, -1).join('/');
   return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
+    libraryBreadcrumb() +
     `<div class="hero-actions">
       <button class="primary" data-view="send" ${sel ? '' : 'disabled'}>Send ${sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
+      ${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}
       <button class="secondary" data-action="upload">Upload…</button>
       <button class="secondary" data-action="upload-folder">Upload folder…</button>
       <button class="secondary" data-action="new-folder">New folder</button>
     </div>
-    <div class="tree" data-ctx-tree="1">${treeRows(buildTree(files), 0) || '<p class="empty">Library is empty. Upload a weazldoc.</p>'}</div>
+    <div class="tree" data-ctx-tree="1">${libraryRows(node) || '<p class="empty">This folder is empty. Upload a weazldoc.</p>'}</div>
     <p class="eyebrow" style="margin-top:22px">NO FUSE. THE DRIVE IS WEBDAV. RESTIC DEDUPES UNDERNEATH.</p>`;
 }
 
@@ -228,7 +271,9 @@ export function renderMain() {
   const html = (pages[state.view] || home)();
   $('#content').innerHTML = html;
   const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY'};
-  $('#breadcrumb').textContent = crumb[state.view] || state.view.toUpperCase();
+  $('#breadcrumb').textContent = state.view === 'library' && state.currentPath
+    ? `LIBRARY / ${state.currentPath.split('/').join(' / ')}`
+    : (crumb[state.view] || state.view.toUpperCase());
   document.querySelectorAll('nav [data-view]').forEach(b => {
     const active = b.dataset.view === state.view;
     b.classList.toggle('active', active);

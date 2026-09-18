@@ -113,6 +113,7 @@ export const state = {
   lanes: {a: 0, b: 0, c: 0},
   dedupe: 0,
   expanded: [],
+  currentPath: '',
   selected: null,
   gate: 'open',
   passphrase: '',
