@@ -167,16 +167,16 @@ dialog.wide{width:min(560px,calc(100% - 32px))}
 .inline-form{display:flex;gap:8px;margin-top:22px}
 .inline-form input{min-width:0;flex:1}
 input:not([type=range]):not([type=search]){background:#141518;border:1px solid #49464f;color:var(--text);padding:12px}
-dialog{background:#1a1b20;color:var(--text);border:1px solid #625176;width:min(440px,calc(100% - 32px));padding:35px;max-height:calc(100dvh - 32px);overflow-y:auto}
+dialog{background:#1a1b20;color:var(--text);border:1px solid #625176;width:min(440px,calc(100% - 32px));padding:35px;max-height:calc(100dvh - 32px);overflow-x:hidden;overflow-y:auto}
 dialog::backdrop{background:#060609b8}
 .dialog-close{position:absolute;right:12px;top:10px}
 progress{width:100%;height:12px;accent-color:var(--yellow);margin:16px 0}
 .upload-rails{display:grid;gap:10px;margin:18px 0}
-.upload-rail{border:1px solid var(--line);padding:10px;background:#141518}
+.upload-rail{border:1px solid var(--line);padding:10px;background:#141518;min-width:0;max-width:100%;overflow:hidden}
 .upload-rail>div{display:flex;gap:10px;align-items:baseline;min-width:0}
 .upload-rail strong{font:9px monospace;color:var(--mint);letter-spacing:1px;flex-shrink:0}
 .upload-rail-name{font:11px monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
-.upload-rail progress{margin:8px 0 3px;height:7px}
+.upload-rail progress{display:block;width:100%;max-width:100%;margin:8px 0 3px;height:7px}
 .upload-rail small{display:block;text-align:right;font:10px monospace;color:var(--muted)}
 .file-preview-image{display:block;max-width:100%;max-height:60vh;object-fit:contain;background:#101114;margin:18px 0}
 .file-preview-frame{display:block;width:100%;height:60vh;border:1px solid var(--line);background:#101114;margin:18px 0}

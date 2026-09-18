@@ -143,8 +143,9 @@ function beginUpload(list, prefix = '') {
           await engine.putLibraryProgress(target, file, (sent) => {
             loaded[index] = sent;
             const pct = file.size ? (sent / file.size) * 100 : 100;
-            if (railProgress) railProgress.value = pct;
-            if (railPercent) railPercent.textContent = `${Math.round(pct)}%`;
+            const sentComplete = sent >= file.size;
+            if (railProgress) railProgress.value = sentComplete ? 99 : pct;
+            if (railPercent) railPercent.textContent = sentComplete ? 'saving…' : `${Math.round(pct)}%`;
             updateProgress();
           });
           loaded[index] = file.size;
