@@ -1,0 +1,6 @@
+/weazlcloud
+/data/
+.gocache/
+.gomodcache/
+*.exe
+*.test

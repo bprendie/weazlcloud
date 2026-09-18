@@ -1,0 +1,86 @@
+package desk
+
+import (
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/bprendie/weazlcloud/internal/vault"
+)
+
+type fileView struct {
+	Path  string    `json:"path"`
+	Size  int64     `json:"size"`
+	Mtime time.Time `json:"mtime"`
+}
+
+func (h *Handler) listLibrary(w http.ResponseWriter, r *http.Request) {
+	if h.lib == nil {
+		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
+		return
+	}
+	if h.vault == nil || !h.vault.Unlocked() {
+		apiError(w, vault.ErrLocked)
+		return
+	}
+	if err := h.lib.Ensure(r.Context()); err != nil {
+		apiError(w, err)
+		return
+	}
+	files := h.lib.List()
+	out := make([]fileView, 0, len(files))
+	for _, f := range files {
+		out = append(out, fileView{Path: f.Path, Size: f.Size, Mtime: f.Mtime})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"files": out})
+}
+
+func (h *Handler) putLibrary(w http.ResponseWriter, r *http.Request) {
+	if h.lib == nil || h.vault == nil {
+		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"too large"}`, http.StatusRequestEntityTooLarge)
+		return
+	}
+	f, err := h.lib.Put(r.Context(), path, body)
+	if err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fileView{Path: f.Path, Size: f.Size, Mtime: f.Mtime})
+}
+
+func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
+	if h.lib == nil || h.vault == nil {
+		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	b, err := h.lib.Get(r.Context(), path)
+	if err != nil {
+		apiError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(b)
+}
+
+func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) {
+	if h.lib == nil || h.vault == nil {
+		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if err := h.lib.Delete(path); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "deleted"})
+}

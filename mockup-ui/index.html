@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111215"><title>WeazlCloud / the household node</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon-64.png">
+<link rel="icon" type="image/png" href="weazlcloud.png">
+<link rel="apple-touch-icon" href="weazlcloud.png">
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="responsive.css">
+</head>
+<body>
+<div class="app" hidden>
+<aside class="sidebar">
+<a class="brand" href="#home" aria-label="WeazlCloud home"><img class="brand-icon" src="weazlcloud.png" alt="" width="40" height="40"><span>WEAZL<span class="brand-thin">CLOUD</span><small>YOUR FILES. YOUR NODE.</small></span></a>
+<div class="node"><span class="dot"></span> THIS NODE</div>
+<nav aria-label="Main navigation">
+<p class="nav-label">THE JOB</p>
+<button data-view="home" class="nav-item active"><span>⌂</span> Home <kbd>1</kbd></button>
+<button data-view="library" class="nav-item"><span>▣</span> Library <kbd>2</kbd></button>
+<button data-view="send" class="nav-item"><span>↗</span> Send <kbd>3</kbd></button>
+<button data-view="capsules" class="nav-item"><span>⊞</span> Capsules <kbd>4</kbd></button>
+<button data-view="places" class="nav-item"><span>◎</span> Places <kbd>5</kbd></button>
+<div class="nav-divider"></div>
+<p class="nav-label">THE FINE PRINT</p>
+<button data-view="kit" class="nav-item playlist-link"><span class="purple">↳</span> Cut a recovery kit</button>
+<button data-view="takeout" class="nav-item playlist-link"><span class="purple">↳</span> Bring a takeout</button>
+<button data-view="check" class="nav-item playlist-link"><span class="purple">↳</span> Check store</button>
+<button data-view="destroy" class="nav-item playlist-link"><span class="purple">↳</span> Destroy a capsule</button>
+</nav>
+<div class="sidebar-bottom"><div class="ethos"><span>NO NOISE.<br>JUST THE GOOD STUFF.</span><span class="mint">//</span></div><button id="account" class="account"><span class="avatar">V</span><span id="username">vault<small>Open · this session owns the key</small></span><span>↗</span></button></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><span class="breadcrumb">WEAZL / <b id="breadcrumb">HOME</b></span><button class="icon-button" id="help" aria-label="Keyboard shortcuts">?</button></header>
+<div class="preview-strip"><span><span class="dot"></span> <span id="strip-kicker">MOCKUP / SOURCE OF TRUTH</span> <span class="dim" id="strip-dim">· no engine · 127.0.0.1:3001</span></span><span id="strip-status">LOCKED</span></div>
+<div class="desk"><main id="content"></main><aside class="queue-panel" aria-label="Current job"><div class="section-title"><h2 id="side-title">The job <span id="side-count" class="count"></span></h2><button id="side-action" class="text-button">Clear</button></div><p class="eyebrow" id="side-eyebrow">WHAT HAPPENS NEXT.</p><div id="queue"></div><div class="queue-note"><span>↳</span> Put a file in the library, mint a grab link, or connect Files.<br>Then return to the gig.</div>
+<div class="stat-card" id="dedupe-card">
+  <div class="signal-heading" id="dedupe-heading">IN THE LIBRARY</div>
+  <p><em id="dedupe-n">—</em><span id="dedupe-unit"></span></p>
+  <span class="eyebrow" id="dedupe-caption">FILES ON THIS NODE</span>
+</div>
+<div class="signal-card"><div class="signal-heading">THE WEAZL PROMISE <span>↗</span></div><p>Your files.<br>Your node.<br><em>Your rules.</em></p><span class="eyebrow">NEVER TAX THE GIG.</span></div></aside></div>
+</div>
+<footer class="deck" aria-label="Node status">
+<div class="deck-id">
+  <img class="deck-mark" src="weazlcloud.png" alt="">
+  <div><strong id="now-title">Library ready</strong><small id="now-artist">0 files</small></div>
+</div>
+<div class="deck-lanes" aria-live="polite">
+  <div class="lane"><span id="lane-a-l">PUT</span><div class="lane-track"><i id="lane-a"></i></div><b id="lane-a-n">—</b></div>
+  <div class="lane"><span id="lane-b-l">DEDUPE</span><div class="lane-track dedupe" id="lane-b-track"><i id="lane-b"></i></div><b id="lane-b-n">—</b></div>
+  <div class="lane"><span id="lane-c-l">GRABS</span><div class="lane-track"><i id="lane-c"></i></div><b id="lane-c-n">0</b></div>
+</div>
+<div class="deck-actions">
+  <span id="dedupe-tag" class="tag dedupe-tag">LIBRARY</span>
+  <span id="source" class="tag">LOCKED</span>
+  <button type="button" id="send-now" class="primary">Mint grab link</button>
+  <button type="button" id="cancel" class="secondary" hidden>Cancel</button>
+  <button type="button" id="lock" class="secondary">Lock</button>
+</div>
+</footer>
+</div>
+<section id="unlock-screen" class="login-screen">
+<div class="login-card">
+<img src="weazlcloud.png" alt="WeazlCloud" class="login-brand">
+<p class="eyebrow purple">WEAZLCLOUD / YOUR HOUSEHOLD NODE</p>
+<h1>Your files.<br>Your node.</h1>
+<p id="unlock-description">Unlock the vault. The passphrase never leaves this machine.</p>
+<form id="unlock-form" class="auth-form" novalidate>
+<label>Vault passphrase<input name="passphrase" type="password" autocomplete="off" maxlength="1024" autofocus></label>
+<label id="confirm-row" hidden>Confirm passphrase<input name="confirm" type="password" autocomplete="off" maxlength="1024"></label>
+<p class="warn">No forgotten-passphrase recovery. Lose the phrase and the library is gone. Cut a kit while you remember. A stolen kit is still a brick.</p>
+<button type="submit" class="primary">Unlock →</button>
+<p id="unlock-error" role="alert"></p>
+</form>
+<button type="button" id="forge-mode" class="text-button">New here? Forge a vault</button>
+<span class="eyebrow">NEVER TAX THE GIG.</span>
+</div>
+</section>
+<dialog id="modal"><button class="dialog-close icon-button" aria-label="Close dialog">×</button><div id="modal-content"></div></dialog>
+<input id="upload" type="file" multiple hidden>
+<div id="ctx" class="ctx" hidden role="menu"></div>
+<div id="toast" role="status" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

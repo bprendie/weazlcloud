@@ -1,0 +1,11 @@
+.grab-body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#26212f,transparent 65%)}
+.grab-card{width:min(420px,100%);padding:32px;border:1px solid #494052;background:#18191e;border-top:3px solid var(--purple)}
+.grab-card h1{color:var(--yellow);font-size:clamp(28px,8vw,42px);letter-spacing:-2px;line-height:1.05;margin:16px 0 10px;word-break:break-word}
+.grab-meta{color:var(--muted);font-size:12px;line-height:1.6}
+.grab-list{border-top:1px solid var(--line);margin:18px 0}
+.grab-file{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #24262c;font-size:13px}
+.grab-file small{display:block;color:var(--muted);font-size:10px;margin-top:4px}
+.grab-card .hero-actions{margin:22px 0}
+.grab-card .primary{width:100%;justify-content:center}
+#grab-error{color:#f3a3ad;min-height:1.4em;font-size:12px}
+@media(max-width:650px){.grab-card{padding:24px}.grab-card h1{font-size:32px}}

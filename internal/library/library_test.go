@@ -1,0 +1,99 @@
+package library
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/bprendie/weazlcloud/internal/vault"
+)
+
+func TestPutGetDeleteAndDedupe(t *testing.T) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	ctx := context.Background()
+	payload := make([]byte, 120000)
+	if _, err := rand.Read(payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Put(ctx, "Documents/a.txt", payload); err != nil {
+		t.Fatal(err)
+	}
+	first, err := dirSize(filepath.Join(dir, "library"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Put(ctx, "Documents/b.txt", payload); err != nil {
+		t.Fatal(err)
+	}
+	second, err := dirSize(filepath.Join(dir, "library"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second-first > int64(len(payload))/2 {
+		t.Fatalf("dedupe failed: first=%d second=%d delta=%d payload=%d", first, second, second-first, len(payload))
+	}
+	got, err := lib.Get(ctx, "Documents/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatal("get mismatch")
+	}
+	if err := lib.Delete("Documents/a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Get(ctx, "Documents/a.txt"); err == nil {
+		t.Fatal("deleted file still present")
+	}
+	list := lib.List()
+	if len(list) != 1 || list[0].Path != "Documents/b.txt" {
+		t.Fatalf("list %+v", list)
+	}
+}
+
+func TestRejectsTraversal(t *testing.T) {
+	for _, p := range []string{"/etc/passwd", "../x", "foo/../../x", ""} {
+		if _, err := cleanPath(p); err == nil {
+			t.Fatalf("allowed %q", p)
+		}
+	}
+}
+
+func TestLockedPut(t *testing.T) {
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	v.Lock()
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	if _, err := lib.Put(context.Background(), "a.txt", []byte("x")); err != vault.ErrLocked {
+		t.Fatalf("locked put %v", err)
+	}
+}
+
+func dirSize(root string) (int64, error) {
+	var n int64
+	err := filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			n += info.Size()
+		}
+		return nil
+	})
+	return n, err
+}

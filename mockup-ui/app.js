@@ -1,0 +1,600 @@
+import {files, filesInFolder, takeouts, state, selectedName, seedPreview} from './data.js';
+import {renderMain, renderSide, renderDeck} from './views.js';
+import * as engine from './engine.js';
+
+const $ = s => document.querySelector(s);
+let noticeTimer, frame, live = false, uploadPrefix = '';
+
+function libraryPath() {
+  if (!state.selected) return '';
+  if (state.selected.type === 'folder') return state.selected.path;
+  const f = files.find(x => x.id === state.selected.id);
+  if (!f) return '';
+  return f.folders.concat(f.title).join('/');
+}
+
+function hideMenu() {
+  const el = $('#ctx');
+  if (el) el.hidden = true;
+}
+
+function showMenu(x, y, items) {
+  const el = $('#ctx');
+  if (!el) return;
+  el.innerHTML = items.map(item => item.sep
+    ? '<div class="sep"></div>'
+    : `<button type="button" role="menuitem" data-act="${item.act}">${item.label}</button>`).join('');
+  el.hidden = false;
+  const pad = 8;
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = `${Math.min(x, innerWidth - w - pad)}px`;
+  el.style.top = `${Math.min(y, innerHeight - h - pad)}px`;
+}
+
+function fileMenu(id) {
+  return [
+    {act: `send-file:${id}`, label: 'Send grab link'},
+    {act: `download:${id}`, label: 'Download'},
+    {sep: true},
+    {act: `delete-file:${id}`, label: 'Delete'}
+  ];
+}
+
+function folderMenu(path) {
+  return [
+    {act: `send-folder:${path}`, label: 'Send grab link'},
+    {act: `upload-here:${path}`, label: 'Upload here…'},
+    {sep: true},
+    {act: `delete-folder:${path}`, label: 'Delete'}
+  ];
+}
+
+function capsuleMenu(id) {
+  const cap = state.capsules.find(c => c.id === id);
+  if (!cap || cap.status !== 'live') return [{act: `open-grab:${id}`, label: 'This grab is gone'}];
+  return [
+    {act: `copy-capsule:${id}`, label: 'Copy grab URL'},
+    {act: `open-grab:${id}`, label: 'Open as Gil'},
+    {sep: true},
+    {act: `revoke:${id}`, label: 'Revoke'}
+  ];
+}
+
+function toast(message) {
+  clearTimeout(noticeTimer);
+  $('#toast').textContent = message;
+  $('#toast').hidden = false;
+  noticeTimer = setTimeout(() => { $('#toast').hidden = true; }, 3200);
+}
+
+function modal(html) {
+  $('#modal-content').innerHTML = html;
+  $('#modal').showModal();
+}
+
+function help() {
+  modal('<span class="eyebrow purple">KEEP YOUR HANDS ON THE KEYS</span><h2>The short route.</h2>' +
+    [['Home / Library / Send / Capsules / Places', '1–5'], ['Mint grab link', 'S'], ['Lock vault', 'L'], ['File / folder actions', 'Right-click or ⋯'], ['This cheat sheet', '?']].map(([a, b]) => `<div class="shortcut"><span>${a}</span><kbd>${b}</kbd></div>`).join(''));
+}
+
+function vaultCard() {
+  modal(`<img class="auth-brand" src="weazlcloud.png" alt="WeazlCloud"><span class="eyebrow purple">THIS SESSION</span><h2>Vault ${state.unlocked ? 'open' : 'locked'}</h2><p>Closing the tab detaches. Lock zeroes the key.${state.engine ? '' : ' Preview only — no real vault.'}</p><div class="dialog-actions"><button class="primary" id="do-lock">${state.unlocked ? 'Lock vault' : 'Unlock…'}</button></div>`);
+}
+
+function navigate(view) {
+  state.view = view;
+  renderMain();
+}
+
+function selectFile(id) {
+  state.selected = {type: 'file', id};
+  state.minted = null;
+  renderMain();
+  renderDeck();
+}
+
+function selectFolder(path) {
+  state.selected = {type: 'folder', path};
+  state.minted = null;
+  renderMain();
+  renderDeck();
+}
+
+function sendFile(id) {
+  selectFile(id);
+  navigate('send');
+}
+
+function sendFolder(path) {
+  selectFolder(path);
+  navigate('send');
+}
+
+function stopWork() {
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
+  state.operation = 'idle';
+  state.percent = 0;
+  state.lanes = {a: 0, b: state.dedupe, c: 0};
+  renderDeck();
+}
+
+function tickMint(now) {
+  if (document.visibilityState === 'hidden') { frame = requestAnimationFrame(tickMint); return; }
+  const t = Math.min(1, (now - state.started) / 1600);
+  state.lanes = {a: Math.min(100, t * 140), b: 41 + t * 20, c: t * 100};
+  renderDeck();
+  if (t < 1) { frame = requestAnimationFrame(tickMint); return; }
+  finishMint();
+}
+
+function finishMint() {
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
+  const id = `c${Date.now().toString(36).slice(-6)}`;
+  const name = selectedName();
+  const kind = state.selected.type;
+  const capsule = {
+    id,
+    label: state.label || 'Gil',
+    name,
+    kind,
+    gate: state.gate,
+    expiry: state.expiry === '24h' ? '24h left' : state.expiry === '3d' ? '3 days left' : '7 days left',
+    left: Number(state.grabs),
+    status: 'live'
+  };
+  state.capsules.unshift(capsule);
+  state.minted = {id, url: `${state.grabBase.replace(/\/$/, '')}/g/${id}`, gate: state.gate, name};
+  const members = kind === 'folder'
+    ? filesInFolder(state.selected.path).map(f => ({title: f.title, size: f.size, kind: f.kind}))
+    : [{title: name, size: files.find(f => f.id === state.selected.id)?.size || '', kind: files.find(f => f.id === state.selected.id)?.kind || 'FILE'}];
+  const bag = JSON.parse(localStorage.getItem('wzcl-capsules') || '{}');
+  bag[id] = {token: id, name, kind, size: kind === 'folder' ? `${members.length} files` : members[0].size, gate: state.gate, phrase: state.passphrase, status: 'live', expiry: capsule.expiry, files: members};
+  localStorage.setItem('wzcl-capsules', JSON.stringify(bag));
+  state.operation = 'idle';
+  state.dedupe = Math.min(96, state.dedupe + 1);
+  state.lanes = {a: 0, b: state.dedupe, c: 0};
+  renderMain();
+  renderDeck();
+  $('#mint-result')?.scrollIntoView({block: 'nearest'});
+  toast('Grab link minted in this preview. Nothing left this machine.');
+}
+
+async function mint() {
+  if (!state.unlocked) { toast('Unlock the vault first.'); return; }
+  if (!state.selected) { navigate('library'); toast('Pick a file or a folder first.'); return; }
+  if (!state.grabBase.startsWith('https://')) { toast('Set an https:// grab base in Places.'); navigate('places'); return; }
+  if (state.gate === 'passphrase' && !state.passphrase) { toast('Give Gil a passphrase, or switch to Open.'); return; }
+  if (state.operation !== 'idle') return;
+  if (live) {
+    try {
+      const row = await engine.mintCapsule({
+        path: libraryPath(),
+        kind: state.selected.type,
+        gate: state.gate,
+        passphrase: state.passphrase,
+        label: state.label,
+        expiry: state.expiry,
+        grabs: Number(state.grabs)
+      });
+      await loadCapsules();
+      state.minted = {id: row.id, url: row.url, gate: row.gate, name: row.name};
+      renderMain();
+      renderDeck();
+      $('#mint-result')?.scrollIntoView({block: 'nearest'});
+      toast('Grab link minted. Sealed copy. Gil cannot write back.');
+    } catch (err) {
+      toast(err.message);
+    }
+    return;
+  }
+  state.operation = 'mint';
+  state.started = performance.now();
+  renderDeck();
+  frame = requestAnimationFrame(tickMint);
+}
+
+function tickIngest(now) {
+  if (document.visibilityState === 'hidden') { frame = requestAnimationFrame(tickIngest); return; }
+  const t = Math.min(1, (now - state.started) / 4200);
+  state.lanes = {a: Math.min(100, t * 120), b: 20 + t * 70, c: t < 0.4 ? 0 : ((t - 0.4) / 0.6) * 100};
+  state.dedupe = 20 + t * 55;
+  renderDeck();
+  if (t < 1) { frame = requestAnimationFrame(tickIngest); return; }
+  const tko = takeouts.find(x => x.id === state.takeout);
+  state.dedupe = 84;
+  stopWork();
+  toast(`${tko?.name || 'Takeout'} preview finished. ${tko?.unique} would be kept. No dump was read.`);
+}
+
+function ingest() {
+  if (!state.unlocked) { toast('Unlock the vault first.'); return; }
+  if (state.operation !== 'idle') return;
+  state.operation = 'ingest';
+  state.started = performance.now();
+  renderDeck();
+  frame = requestAnimationFrame(tickIngest);
+  toast('Walking a fixture dump. The real engine is not connected.');
+}
+
+async function lockVault() {
+  stopWork();
+  if (live) {
+    try { await engine.lock(); } catch (err) { toast(err.message); return; }
+  }
+  state.unlocked = false;
+  $('.app').hidden = true;
+  $('#unlock-screen').hidden = false;
+  $('#unlock-form').reset();
+  renderDeck();
+  toast(live ? 'Vault locked. Key zeroed.' : 'Vault locked. Key zeroed in this preview.');
+}
+
+async function loadLibrary() {
+  if (!live) return;
+  const rows = await engine.listLibrary();
+  files.splice(0, files.length, ...rows.map(engine.toFixture));
+  const folders = [...new Set(files.map(f => f.folders.join('/')))];
+  state.expanded = folders;
+}
+
+function openDesk() {
+  state.unlocked = true;
+  $('#unlock-screen').hidden = true;
+  $('.app').hidden = false;
+  renderMain();
+  renderDeck();
+}
+
+async function revoke(id) {
+  if (live) {
+    try { await engine.revokeCapsule(id); await loadCapsules(); }
+    catch (err) { toast(err.message); return; }
+  } else {
+    const cap = state.capsules.find(c => c.id === id);
+    if (!cap) return;
+    cap.status = 'burned';
+    cap.left = 0;
+    cap.expiry = 'revoked';
+  }
+  if (state.minted?.id === id) state.minted = null;
+  renderMain();
+  renderDeck();
+  toast(live ? 'Capsule revoked. The URL is a brick.' : 'Capsule revoked in this preview. The URL would be a brick.');
+}
+
+async function refreshPlaces() {
+  const places = await engine.loadPlaces().catch(() => null);
+  if (!places) return;
+  if (places.grab) state.grabBase = places.grab;
+  else state.grabBase = '';
+  if (places.drive) state.driveBase = places.drive;
+  if (places.token) state.driveToken = places.token;
+}
+
+async function loadCapsules() {
+  if (!live) return;
+  const j = await engine.listCapsules();
+  if (j.base) state.grabBase = j.base;
+  state.capsules = (j.capsules || []).map(c => ({
+    id: c.id,
+    label: c.label,
+    name: c.name,
+    kind: c.kind,
+    gate: c.gate,
+    expiry: c.status === 'live' && c.expires ? `until ${new Date(c.expires).toLocaleString()}` : 'gone',
+    left: c.left,
+    status: c.status
+  }));
+}
+
+function grabHref(id) {
+  if (live) return `${state.grabBase.replace(/\/$/, '')}/g/${id}`;
+  return `grab.html?c=${id}`;
+}
+
+async function runMenu(act) {
+  hideMenu();
+  const [kind, ...rest] = act.split(':');
+  const key = rest.join(':');
+  if (kind === 'send-file') sendFile(key);
+  if (kind === 'send-folder') sendFolder(key);
+  if (kind === 'download') {
+    const f = files.find(x => x.id === key);
+    const path = f ? f.folders.concat(f.title).join('/') : key;
+    if (live) {
+      try { await engine.downloadLibrary(path, f?.title || key); }
+      catch (err) { toast(err.message); }
+    } else toast('Download is the engine. This preview has no bytes.');
+  }
+  if (kind === 'delete-file' || kind === 'delete-folder') {
+    const f = files.find(x => x.id === key);
+    const path = kind === 'delete-folder' ? key : (f ? f.folders.concat(f.title).join('/') : key);
+    if (!confirm(`Delete ${path}? Present or not. No recycle bin.`)) return;
+    if (live) {
+      try {
+        await engine.deleteLibrary(path);
+        await loadLibrary();
+        if (state.selected && (state.selected.id === key || state.selected.path === key)) state.selected = null;
+        renderMain();
+        renderDeck();
+        toast('Gone from the current tree.');
+      } catch (err) { toast(err.message); }
+    } else toast('Delete is the engine. This preview does not drop files.');
+  }
+  if (kind === 'upload-here') { uploadPrefix = key; $('#upload').click(); }
+  if (kind === 'upload') { uploadPrefix = ''; $('#upload').click(); }
+  if (kind === 'copy-capsule') {
+    const url = grabHref(key);
+    navigator.clipboard?.writeText(url).catch(() => {});
+    toast('Grab URL copied.');
+  }
+  if (kind === 'open-grab') window.open(grabHref(key), '_blank', 'noopener');
+  if (kind === 'revoke') revoke(key);
+}
+
+document.addEventListener('click', e => {
+  const ctxBtn = e.target.closest('#ctx button');
+  if (ctxBtn) { runMenu(ctxBtn.dataset.act); return; }
+  const menuBtn = e.target.closest('[data-menu-file], [data-menu-folder], [data-menu-capsule]');
+  if (menuBtn) {
+    e.preventDefault();
+    const r = menuBtn.getBoundingClientRect();
+    if (menuBtn.dataset.menuFile) showMenu(r.left, r.bottom + 4, fileMenu(menuBtn.dataset.menuFile));
+    else if (menuBtn.dataset.menuFolder) showMenu(r.left, r.bottom + 4, folderMenu(menuBtn.dataset.menuFolder));
+    else showMenu(r.left, r.bottom + 4, capsuleMenu(menuBtn.dataset.menuCapsule));
+    return;
+  }
+  hideMenu();
+  const b = e.target.closest('button, a.button-link');
+  if (!b) return;
+  if (b.classList.contains('dialog-close') || b.dataset.close) { $('#modal').close(); return; }
+  if (b.closest('form') && !b.dataset.action) return;
+  if (b.dataset.view) navigate(b.dataset.view);
+  if (b.dataset.folder) {
+    const path = b.dataset.folder;
+    const i = state.expanded.indexOf(path);
+    if (i >= 0) state.expanded.splice(i, 1);
+    else state.expanded.push(path);
+    renderMain();
+  }
+  if (b.dataset.selectFile) selectFile(b.dataset.selectFile);
+  if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
+  if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
+  if (b.dataset.sendFolder) sendFolder(b.dataset.sendFolder);
+  if (b.dataset.revoke) revoke(b.dataset.revoke);
+  if (b.dataset.openGrab) {
+    const cap = state.capsules.find(c => c.id === b.dataset.openGrab);
+    if (cap?.status === 'live') window.open(grabHref(cap.id), '_blank', 'noopener');
+  }
+  if (b.dataset.takeout) { state.takeout = b.dataset.takeout; renderMain(); }
+  if (b.dataset.action === 'mint') { e.preventDefault(); mint(); }
+  if (b.dataset.action === 'copy-url') {
+    navigator.clipboard?.writeText(state.minted?.url || '').catch(() => {});
+    toast(live ? 'Grab URL copied.' : 'URL copied in this preview.');
+  }
+  if (b.dataset.action === 'upload') {
+    if (live) $('#upload').click();
+    else toast('Upload would land in the library. Preview only. Drive PUT does the same job.');
+  }
+  if (b.dataset.action === 'kit') {
+    if (live) {
+      const phrase = prompt('Vault passphrase for the kit');
+      if (phrase) engine.kit(phrase).then(() => toast('Recovery kit written on the node.')).catch(err => toast(err.message));
+    } else toast('Would write weazlcloud-recovery.wzck. Passphrase stays in your head.');
+  }
+  if (b.dataset.action === 'verify-kit') toast('Checksums would run on the USB. Preview only.');
+  if (b.dataset.action === 'check') {
+    toast(live ? `${files.length} files in the current tree.` : 'Packs look healthy in this preview. Filenames stayed off the page.');
+  }
+  if (b.dataset.action === 'ingest') {
+    if (live) toast('Takeout ingest is not in this build.');
+    else ingest();
+  }
+  if (b.dataset.action === 'toggle-token') { state.tokenShown = !state.tokenShown; renderMain(); }
+  if (b.dataset.action === 'rotate-token') {
+    state.driveToken = `wzcv-${Math.random().toString(36).slice(2, 6)}-mock-token`;
+    state.tokenShown = true;
+    renderMain();
+    toast('Drive token rotated in this preview. Old Files password would die.');
+  }
+  if (b.id === 'do-lock') { $('#modal').close(); if (state.unlocked) lockVault(); }
+});
+
+$('.brand').addEventListener('click', e => { e.preventDefault(); navigate('home'); });
+
+document.addEventListener('change', e => {
+  if (e.target.name === 'gate') {
+    state.gate = e.target.value;
+    renderMain();
+  }
+});
+
+document.addEventListener('input', e => {
+  if (e.target.name === 'phrase' && e.target.closest('#send-form')) state.passphrase = e.target.value;
+  if (e.target.name === 'label') state.label = e.target.value;
+  if (e.target.name === 'expiry') state.expiry = e.target.value;
+  if (e.target.name === 'grabs') state.grabs = e.target.value;
+});
+
+$('#help').onclick = help;
+$('#account').onclick = vaultCard;
+$('#lock').onclick = lockVault;
+$('#send-now').onclick = () => { state.view === 'send' ? mint() : (state.selected ? navigate('send') : navigate('library')); };
+$('#cancel').onclick = () => { stopWork(); toast('Cancelled in this preview.'); };
+$('#side-action').onclick = () => {
+  if (state.view === 'send' || state.view === 'library') {
+    state.selected = null;
+    state.minted = null;
+    renderMain();
+    renderDeck();
+    return;
+  }
+  navigate('places');
+};
+
+function setForgeMode(on) {
+  state.forging = !!on;
+  $('#confirm-row').hidden = !state.forging;
+  const confirm = $('#unlock-form [name=confirm]');
+  if (confirm) confirm.required = false;
+  $('#unlock-description').textContent = state.forging
+    ? 'Forge a vault. Type the passphrase twice. There is no reset. Cut a kit after.'
+    : 'Unlock the vault. The passphrase never leaves this machine.';
+  $('#forge-mode').textContent = state.forging ? 'Already forged? Unlock' : 'New here? Forge a vault';
+  $('#unlock-form .primary').textContent = state.forging ? 'Forge vault →' : 'Unlock →';
+  $('#unlock-error').textContent = '';
+}
+
+$('#forge-mode').onclick = () => setForgeMode(!state.forging);
+
+$('#unlock-form').onsubmit = async e => {
+  e.preventDefault();
+  const form = new FormData(e.target);
+  const pass = String(form.get('passphrase') || '');
+  const confirm = String(form.get('confirm') || '');
+  $('#unlock-error').textContent = '';
+  if (!pass) { $('#unlock-error').textContent = 'Passphrase must not be empty.'; return; }
+  if (state.forging && !confirm) { $('#unlock-error').textContent = 'Confirm the passphrase.'; return; }
+  if (state.forging && pass !== confirm) { $('#unlock-error').textContent = 'Passphrases do not match.'; return; }
+  if (live) {
+    try {
+      if (state.forging) await engine.forge(pass, confirm);
+      else await engine.unlock(pass);
+    } catch (err) {
+      const msg = err.message || 'unlock failed';
+      if (/already exists/i.test(msg)) {
+        setForgeMode(false);
+        $('#unlock-error').textContent = 'This node already has a vault. Unlock with the passphrase.';
+        return;
+      }
+      if (/does not exist|missing/i.test(msg)) {
+        setForgeMode(true);
+        $('#unlock-error').textContent = 'No vault yet. Confirm the passphrase to forge one.';
+        return;
+      }
+      $('#unlock-error').textContent = msg;
+      return;
+    }
+    try {
+      await loadLibrary();
+      await loadCapsules();
+      await refreshPlaces();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+  e.target.reset();
+  openDesk();
+  toast(state.forging
+    ? (live ? 'Vault forged. No recovery. Cut a kit while you remember.' : 'Vault forged in this preview. No recovery. Cut a kit while you remember.')
+    : (live ? 'Vault unlocked. Closing the tab detaches.' : 'Vault unlocked in this preview. Closing the tab would detach.'));
+};
+
+$('#upload').onchange = async e => {
+  if (!live) return;
+  const list = [...e.target.files];
+  e.target.value = '';
+  const prefix = uploadPrefix;
+  uploadPrefix = '';
+  for (const file of list) {
+    try {
+      const path = prefix ? `${prefix}/${file.name}` : file.name;
+      await engine.putLibrary(path, file);
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+  }
+  await loadLibrary();
+  renderMain();
+  renderDeck();
+  toast(list.length === 1 ? `Put ${list[0].name} in the library.` : `Put ${list.length} files in the library.`);
+};
+
+document.addEventListener('submit', e => {
+  if (e.target.id === 'send-form') { e.preventDefault(); mint(); }
+  if (e.target.id === 'places-form') {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    state.grabBase = String(data.get('grab') || '').trim();
+    state.driveBase = String(data.get('drive') || '').trim();
+    if (live) {
+      engine.savePlaces({grab: state.grabBase, drive: state.driveBase})
+        .then(() => toast('Places saved. Mint will use the https grab name.'))
+        .catch(err => toast(err.message));
+    } else {
+      toast(state.grabBase.startsWith('https://') ? 'Places saved in this preview. No proxy was contacted.' : 'Grab base must be https:// or mint will refuse.');
+    }
+    renderMain();
+  }
+  if (e.target.id === 'destroy-form') {
+    e.preventDefault();
+    const phrase = String(new FormData(e.target).get('phrase') || '').trim();
+    if (phrase !== `DESTROY ${state.destroyId}`) { toast(`Type DESTROY ${state.destroyId} exactly.`); return; }
+    revoke(state.destroyId);
+    e.target.reset();
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if ($('#modal').open) return;
+  if (!state.unlocked) return;
+  if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
+  if (e.key === 'Escape') hideMenu();
+  if (e.key === '?') help();
+  if (e.key.toLowerCase() === 'l') lockVault();
+  if (e.key.toLowerCase() === 's') {
+    if (state.selected) { state.view === 'send' ? mint() : navigate('send'); }
+    else navigate('library');
+  }
+  if (/^[1-5]$/.test(e.key)) navigate(['home', 'library', 'send', 'capsules', 'places'][Number(e.key) - 1]);
+});
+
+$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+    return;
+  }
+  if (state.operation === 'mint' && !frame) frame = requestAnimationFrame(tickMint);
+  if (state.operation === 'ingest' && !frame) frame = requestAnimationFrame(tickIngest);
+});
+renderDeck();
+document.addEventListener('contextmenu', e => {
+  const file = e.target.closest('[data-ctx-file]');
+  const folder = e.target.closest('[data-ctx-folder]');
+  const cap = e.target.closest('[data-ctx-capsule]');
+  const tree = e.target.closest('[data-ctx-tree]');
+  if (file) { e.preventDefault(); showMenu(e.clientX, e.clientY, fileMenu(file.dataset.ctxFile)); return; }
+  if (folder) { e.preventDefault(); showMenu(e.clientX, e.clientY, folderMenu(folder.dataset.ctxFolder)); return; }
+  if (cap) { e.preventDefault(); showMenu(e.clientX, e.clientY, capsuleMenu(cap.dataset.ctxCapsule)); return; }
+  if (tree) { e.preventDefault(); showMenu(e.clientX, e.clientY, [{act: 'upload', label: 'Upload…'}]); }
+});
+engine.probe().then(async s => {
+  if (!s) {
+    seedPreview();
+    if (state.unlocked) renderMain();
+    renderDeck();
+    return;
+  }
+  live = true;
+  state.engine = true;
+  const kicker = document.querySelector('#strip-kicker');
+  const dim = document.querySelector('#strip-dim') || document.querySelector('.preview-strip .dim');
+  if (kicker) kicker.textContent = 'THIS NODE';
+  if (dim) dim.textContent = '· engine · this machine';
+  await refreshPlaces();
+  setForgeMode(!s.forged);
+  if (s.unlocked) {
+    await loadLibrary();
+    await loadCapsules();
+    await refreshPlaces();
+    openDesk();
+  } else {
+    renderDeck();
+  }
+});

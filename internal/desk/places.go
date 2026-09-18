@@ -1,0 +1,69 @@
+package desk
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/bprendie/weazlcloud/internal/cryptox"
+)
+
+type places struct {
+	Grab  string `json:"grab"`
+	Drive string `json:"drive"`
+	Token string `json:"token,omitempty"`
+}
+
+func (h *Handler) getPlaces(w http.ResponseWriter, _ *http.Request) {
+	p := places{Grab: h.publicBase, Drive: h.driveBase}
+	if h.vault != nil && h.vault.Unlocked() {
+		if t, err := h.vault.DriveToken(); err == nil {
+			p.Token = t
+		}
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func (h *Handler) savePlaces(w http.ResponseWriter, r *http.Request) {
+	var p places
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
+		return
+	}
+	p.Grab = strings.TrimSpace(p.Grab)
+	p.Drive = strings.TrimSpace(p.Drive)
+	if p.Grab != "" && !strings.HasPrefix(p.Grab, "https://") {
+		http.Error(w, `{"error":"grab base must be https://"}`, http.StatusBadRequest)
+		return
+	}
+	h.publicBase = p.Grab
+	h.driveBase = p.Drive
+	if h.placesPath != "" {
+		b, _ := json.MarshalIndent(p, "", "  ")
+		_ = cryptox.AtomicWrite(h.placesPath, append(b, '\n'), 0o600)
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+func loadPlaces(path, grab, drive string) (string, string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return grab, drive
+	}
+	var p places
+	if json.Unmarshal(b, &p) != nil {
+		return grab, drive
+	}
+	if strings.TrimSpace(p.Grab) != "" {
+		grab = p.Grab
+	}
+	if strings.TrimSpace(p.Drive) != "" {
+		drive = p.Drive
+	}
+	return grab, drive
+}
+
+func placesFile(dataDir string) string { return filepath.Join(dataDir, "places.json") }

@@ -1,0 +1,6 @@
+/weazlcloud
+/data
+.git
+.gocache
+.gomodcache
+*.test

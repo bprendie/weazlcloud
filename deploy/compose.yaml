@@ -1,0 +1,53 @@
+services:
+  weazlcloud:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: weazlcloud:local
+    container_name: weazlcloud
+    environment:
+      WEAZLCLOUD_DATA: /data
+      WEAZLCLOUD_DESK_ADDR: ":7272"
+      WEAZLCLOUD_SHARE_ADDR: ":7273"
+      WEAZLCLOUD_DRIVE_ADDR: ":7274"
+      HOME: /data
+      XDG_CACHE_HOME: /data/cache
+    volumes:
+      - weazlcloud-data:/data
+    expose:
+      - "7272"
+      - "7273"
+      - "7274"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    user: "7272:7272"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/weazlcloud", "-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+# The household already has Traefik. Attach this service to that network
+# instead of publishing host ports:
+#
+#   networks:
+#     default:
+#       name: traefik
+#       external: true
+#
+# Hang three HTTPS names on 7272 (desk), 7273 (grab), 7274 (drive).
+# Do not put unlock on the grab hostname.
+#
+# Local loopback peek while developing (not the product default):
+#   ports:
+#     - "127.0.0.1:7272:7272"
+
+volumes:
+  weazlcloud-data:
