@@ -13,6 +13,7 @@ import (
 
 type File struct {
 	Path    string    `json:"path"`
+	Folder  bool      `json:"folder,omitempty"`
 	Size    int64     `json:"size"`
 	Mtime   time.Time `json:"mtime"`
 	Hash    string    `json:"hash"`
@@ -96,6 +97,28 @@ func (c *Catalog) Put(f File) error {
 	}
 	if !found {
 		c.files = append(c.files, f)
+	}
+	return c.saveLocked()
+}
+
+func (c *Catalog) Mkdir(path string) error {
+	return c.Put(File{Path: path, Folder: true, Mtime: time.Now().UTC(), Present: true})
+}
+
+func (c *Catalog) Rename(oldPath, newPath string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	changed := false
+	for i, f := range c.files {
+		if f.Path != oldPath && !strings.HasPrefix(f.Path, oldPath+"/") {
+			continue
+		}
+		suffix := strings.TrimPrefix(f.Path, oldPath)
+		c.files[i].Path = newPath + suffix
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 	return c.saveLocked()
 }

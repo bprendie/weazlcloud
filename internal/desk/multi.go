@@ -2,7 +2,6 @@ package desk
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -63,6 +62,10 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiGetLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodPut:
 		h.multiGuard(w, r, true, h.multiPutLibrary)
+	case r.URL.Path == "/api/library/folder" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiCreateFolder)
+	case r.URL.Path == "/api/library/rename" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiRename)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodDelete:
 		h.multiGuard(w, r, true, h.multiDeleteLibrary)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodGet:
@@ -404,10 +407,8 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Query().Get("path")
-	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, `{"error":"too large"}`, http.StatusRequestEntityTooLarge)
+	if r.ContentLength < 0 {
+		http.Error(w, `{"error":"content length required for quota reservation"}`, http.StatusLengthRequired)
 		return
 	}
 	if h.quota != nil {
@@ -420,20 +421,59 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 			apiError(w, e)
 			return
 		}
-		release, err := h.quota.Reserve(u.ID, h.users.Count(), used, current, int64(len(body)))
+		release, err := h.quota.Reserve(u.ID, h.users.Count(), used, current, r.ContentLength)
 		if err != nil {
 			apiError(w, err)
 			return
 		}
 		defer release()
 	}
-	f, err := res.lib.Put(r.Context(), path, body)
+	f, err := res.lib.PutReader(r.Context(), path, r.Body, r.ContentLength)
 	if err != nil {
 		apiError(w, err)
 		return
 	}
 	_ = u
 	writeJSON(w, http.StatusOK, fileView{Path: f.Path, Size: f.Size, Mtime: f.Mtime})
+}
+
+func (h *Handler) multiCreateFolder(w http.ResponseWriter, r *http.Request) {
+	res, _, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+	}
+	if !decodeBody(w, r, &body, 4096) {
+		return
+	}
+	if err := res.lib.Mkdir(r.Context(), body.Path); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"path": body.Path, "folder": true})
+}
+
+func (h *Handler) multiRename(w http.ResponseWriter, r *http.Request) {
+	res, _, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	var body struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if !decodeBody(w, r, &body, 4096) {
+		return
+	}
+	if err := res.lib.Rename(r.Context(), body.From, body.To); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "renamed"})
 }
 
 func (h *Handler) multiListCapsules(w http.ResponseWriter, r *http.Request) {

@@ -1,4 +1,4 @@
-import {files, filesInFolder, takeouts, state, selectedName, seedPreview} from './data.js';
+import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
 import {renderMain, renderSide, renderDeck} from './views.js';
 import * as engine from './engine.js';
 
@@ -11,6 +11,11 @@ function libraryPath() {
   const f = files.find(x => x.id === state.selected.id);
   if (!f) return '';
   return f.folders.concat(f.title).join('/');
+}
+
+function filePath(id) {
+  const f = files.find(x => x.id === id);
+  return f ? f.folders.concat(f.title).filter(Boolean).join('/') : id;
 }
 
 function hideMenu() {
@@ -33,8 +38,10 @@ function showMenu(x, y, items) {
 
 function fileMenu(id) {
   return [
-    {act: `send-file:${id}`, label: 'Send grab link'},
+    {act: `send-file:${id}`, label: 'Share this'},
+    {act: `preview-file:${id}`, label: 'Open preview'},
     {act: `download:${id}`, label: 'Download'},
+    {act: `rename-file:${id}`, label: 'Rename'},
     {sep: true},
     {act: `delete-file:${id}`, label: 'Delete'}
   ];
@@ -42,11 +49,65 @@ function fileMenu(id) {
 
 function folderMenu(path) {
   return [
-    {act: `send-folder:${path}`, label: 'Send grab link'},
-    {act: `upload-here:${path}`, label: 'Upload here…'},
+    {act: `send-folder:${path}`, label: 'Share this'},
+    {act: `upload-here:${path}`, label: 'Upload into'},
+    {act: `rename-folder:${path}`, label: 'Rename'},
     {sep: true},
     {act: `delete-folder:${path}`, label: 'Delete'}
   ];
+}
+
+async function previewFile(id) {
+  const f = files.find(x => x.id === id); if (!f || f.folder) return;
+  const path = filePath(id);
+  if (!live) { toast('Preview is available when the node is connected.'); return; }
+  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'MP3', 'WAV', 'FLA', 'MP4', 'MOV', 'WEBM']);
+  if (!previewable.has(String(f.kind).toUpperCase())) { toast('This file opens as a download.'); return; }
+  try {
+    const result = await engine.previewLibrary(path);
+    const url = URL.createObjectURL(result.blob);
+    const type = result.type.split(';')[0];
+    let body;
+    if (type.startsWith('image/')) body = `<img class="file-preview-image" src="${url}" alt="${esc(f.title)}">`;
+    else if (type.startsWith('text/')) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
+    else if (type === 'application/pdf' || type.startsWith('audio/') || type.startsWith('video/')) body = `<iframe class="file-preview-frame" src="${url}" title="${esc(f.title)}"></iframe>`;
+    else { URL.revokeObjectURL(url); toast('This file opens as a download.'); return; }
+    modal(`<span class="eyebrow purple">PREVIEW / ${esc(type)}</span><h2>${esc(f.title)}</h2>${body}<p class="eyebrow">${esc(path)}</p>`);
+    $('#modal').addEventListener('close', () => URL.revokeObjectURL(url), {once: true});
+  } catch (err) { toast(err.message); }
+}
+
+function beginUpload(list, prefix = '') {
+  const filesToUpload = [...list];
+  if (!filesToUpload.length) return;
+  const totalBytes = filesToUpload.reduce((n, f) => n + f.size, 0);
+  state.upload = {active: true, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, failed: []};
+  modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><p id="upload-current">Starting…</p><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length}</p>`);
+  (async () => {
+    let completedBytes = 0;
+    for (const file of filesToUpload) {
+      const relative = file.webkitRelativePath || file.name;
+      const target = [prefix, relative].filter(Boolean).join('/');
+      state.upload.current = target;
+      $('#upload-current')?.replaceChildren(document.createTextNode(target));
+      try {
+        await engine.putLibraryProgress(target, file, (loaded, total) => {
+          const pct = totalBytes ? ((completedBytes + loaded) / totalBytes) * 100 : 100;
+          const bar = $('#upload-progress-bar'); if (bar) bar.value = pct;
+          const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}%`;
+        });
+        state.upload.done++;
+      } catch (err) { state.upload.failed.push(`${target}: ${err.message}`); }
+      completedBytes += file.size;
+      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round((completedBytes / Math.max(1, totalBytes)) * 100)}%`;
+    }
+    state.upload.active = false;
+    await loadLibrary();
+    renderMain(); renderDeck();
+    const failures = state.upload.failed;
+    $('#modal-content').innerHTML = `<span class="eyebrow purple">LIBRARY / UPLOAD COMPLETE</span><h2>${state.upload.done} of ${filesToUpload.length} uploaded</h2>${failures.length ? `<p class="warn">${failures.map(esc).join('<br>')}</p><button class="primary" data-close>Close</button>` : '<p>All files are in the library.</p><button class="primary" data-close>Done</button>'}`;
+    toast(failures.length ? `${failures.length} upload${failures.length === 1 ? '' : 's'} failed.` : 'Upload complete.');
+  })();
 }
 
 function capsuleMenu(id) {
@@ -300,13 +361,22 @@ async function runMenu(act) {
   const key = rest.join(':');
   if (kind === 'send-file') sendFile(key);
   if (kind === 'send-folder') sendFolder(key);
+  if (kind === 'preview-file') previewFile(key);
   if (kind === 'download') {
     const f = files.find(x => x.id === key);
-    const path = f ? f.folders.concat(f.title).join('/') : key;
+    const path = filePath(key);
     if (live) {
       try { await engine.downloadLibrary(path, f?.title || key); }
       catch (err) { toast(err.message); }
     } else toast('Download is the engine. This preview has no bytes.');
+  }
+  if (kind === 'rename-file' || kind === 'rename-folder') {
+    const from = kind === 'rename-file' ? filePath(key) : key;
+    const next = prompt('Rename to', from.split('/').pop());
+    if (!next || next.includes('/')) return;
+    const to = from.split('/').slice(0, -1).concat(next).join('/');
+    if (live) { try { await engine.renameLibrary(from, to); await loadLibrary(); renderMain(); toast('Renamed.'); } catch (err) { toast(err.message); } }
+    else toast('Renamed in the connected node.');
   }
   if (kind === 'delete-file' || kind === 'delete-folder') {
     const f = files.find(x => x.id === key);
@@ -323,7 +393,7 @@ async function runMenu(act) {
       } catch (err) { toast(err.message); }
     } else toast('Delete is the engine. This preview does not drop files.');
   }
-  if (kind === 'upload-here') { uploadPrefix = key; $('#upload').click(); }
+  if (kind === 'upload-here') { uploadPrefix = key; $('#upload-folder').click(); }
   if (kind === 'upload') { uploadPrefix = ''; $('#upload').click(); }
   if (kind === 'copy-capsule') {
     const url = grabHref(key);
@@ -359,7 +429,7 @@ document.addEventListener('click', e => {
     else state.expanded.push(path);
     renderMain();
   }
-  if (b.dataset.selectFile) selectFile(b.dataset.selectFile);
+  if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
   if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
   if (b.dataset.sendFolder) sendFolder(b.dataset.sendFolder);
@@ -377,6 +447,14 @@ document.addEventListener('click', e => {
   if (b.dataset.action === 'upload') {
     if (live) $('#upload').click();
     else toast('Upload would land in the library. Preview only. Drive PUT does the same job.');
+  }
+  if (b.dataset.action === 'upload-folder') { if (live) $('#upload-folder').click(); else toast('Folder upload is available on the connected node.'); }
+  if (b.dataset.action === 'new-folder') {
+    const name = prompt('New folder name');
+    if (name && live) {
+      const base = state.selected?.type === 'folder' ? `${state.selected.path}/` : '';
+      engine.createFolder(base + name.trim()).then(async () => { await loadLibrary(); renderMain(); toast('Folder created.'); }).catch(err => toast(err.message));
+    }
   }
   if (b.dataset.action === 'kit') {
     if (live) {
@@ -509,20 +587,10 @@ $('#upload').onchange = async e => {
   e.target.value = '';
   const prefix = uploadPrefix;
   uploadPrefix = '';
-  for (const file of list) {
-    try {
-      const path = prefix ? `${prefix}/${file.name}` : file.name;
-      await engine.putLibrary(path, file);
-    } catch (err) {
-      toast(err.message);
-      return;
-    }
-  }
-  await loadLibrary();
-  renderMain();
-  renderDeck();
-  toast(list.length === 1 ? `Put ${list[0].name} in the library.` : `Put ${list.length} files in the library.`);
+  beginUpload(list, prefix);
 };
+
+$('#upload-folder').onchange = e => { const list = [...e.target.files]; e.target.value = ''; beginUpload(list, uploadPrefix); uploadPrefix = ''; };
 
 document.addEventListener('submit', e => {
   if (e.target.id === 'send-form') { e.preventDefault(); mint(); }

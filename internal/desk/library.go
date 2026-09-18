@@ -2,16 +2,19 @@ package desk
 
 import (
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 type fileView struct {
-	Path  string    `json:"path"`
-	Size  int64     `json:"size"`
-	Mtime time.Time `json:"mtime"`
+	Path   string    `json:"path"`
+	Folder bool      `json:"folder,omitempty"`
+	Size   int64     `json:"size"`
+	Mtime  time.Time `json:"mtime"`
 }
 
 func (h *Handler) listLibrary(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +33,7 @@ func (h *Handler) listLibrary(w http.ResponseWriter, r *http.Request) {
 	files := h.lib.List()
 	out := make([]fileView, 0, len(files))
 	for _, f := range files {
-		out = append(out, fileView{Path: f.Path, Size: f.Size, Mtime: f.Mtime})
+		out = append(out, fileView{Path: f.Path, Folder: f.Folder, Size: f.Size, Mtime: f.Mtime})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"files": out})
 }
@@ -41,7 +44,6 @@ func (h *Handler) putLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := r.URL.Query().Get("path")
-	r.Body = http.MaxBytesReader(w, r.Body, 512<<20)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, `{"error":"too large"}`, http.StatusRequestEntityTooLarge)
@@ -66,8 +68,16 @@ func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
 		apiError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment")
+	contentType := mime.TypeByExtension(filepath.Ext(path))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	if r.URL.Query().Get("preview") == "" {
+		w.Header().Set("Content-Disposition", "attachment")
+	} else {
+		w.Header().Set("Content-Disposition", "inline")
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(b)
 }

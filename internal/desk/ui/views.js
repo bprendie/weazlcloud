@@ -2,6 +2,7 @@ import {files, filePath, filesInFolder, folderLabel, folderName, takeouts, state
 
 const $ = s => document.querySelector(s);
 const head = (label, title, description) => `<div class="page-head"><span class="eyebrow">${label}</span><h1>${title}</h1><p>${description}</p></div>`;
+const kindClass = kind => `type-${String(kind || 'file').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
 function qrMarkup(token) {
   const cells = [];
@@ -21,7 +22,9 @@ function buildTree(list) {
       if (!node.folders[part]) node.folders[part] = {name: part, path, folders: {}, files: []};
       node = node.folders[part];
     }
-    node.files.push(file);
+    if (file.folder) {
+      if (!node.folders[file.title]) node.folders[file.title] = {name: file.title, path: file.path, folders: {}, files: []};
+    } else node.files.push(file);
   }
   return root;
 }
@@ -43,7 +46,7 @@ function treeRows(node, depth) {
     const n = countNode(child);
     const on = isSelected('folder', child.path);
     html += `<div class="tree-row${on ? ' highlight' : ''}" style="padding-left:${12 + depth * 16}px" data-ctx-folder="${esc(child.path)}">
-      <button class="tree-toggle" data-folder="${esc(child.path)}" aria-expanded="${open}"><span class="twisty">${open ? '−' : '+'}</span><span class="kind">DIR</span><strong>${esc(child.name)}</strong></button>
+      <button class="tree-toggle" data-folder="${esc(child.path)}" aria-expanded="${open}"><span class="twisty">${open ? '−' : '+'}</span><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
       <span class="ver-count">${n} ${n === 1 ? 'file' : 'files'}</span>
       <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
     </div>`;
@@ -52,7 +55,7 @@ function treeRows(node, depth) {
       html += child.files.map(f => {
         const hit = isSelected('file', f.id) ? ' highlight' : '';
         return `<div class="file-row tree-file${hit}" style="padding-left:${28 + (depth + 1) * 16}px" data-ctx-file="${f.id}">
-          <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind">${esc(f.kind)}</span><span><strong>${esc(f.title)}</strong></span></button>
+          <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span><strong>${esc(f.title)}</strong></span></button>
           <span class="size">${esc(f.size)}</span>
           <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
         </div>`;
@@ -80,6 +83,8 @@ function library() {
     `<div class="hero-actions">
       <button class="primary" data-view="send" ${sel ? '' : 'disabled'}>Send ${sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
       <button class="secondary" data-action="upload">Upload…</button>
+      <button class="secondary" data-action="upload-folder">Upload folder…</button>
+      <button class="secondary" data-action="new-folder">New folder</button>
     </div>
     <div class="tree" data-ctx-tree="1">${treeRows(buildTree(files), 0) || '<p class="empty">Library is empty. Upload a weazldoc.</p>'}</div>
     <p class="eyebrow" style="margin-top:22px">NO FUSE. THE DRIVE IS WEBDAV. RESTIC DEDUPES UNDERNEATH.</p>`;

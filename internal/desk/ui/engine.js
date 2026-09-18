@@ -44,6 +44,35 @@ export async function putLibrary(path, body) {
   return j;
 }
 
+export function putLibraryProgress(path, body, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/library?path=' + encodeURIComponent(path));
+    xhr.setRequestHeader('X-Weazl-Desk', '1');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded, e.total); };
+    xhr.onerror = () => reject(new Error('upload failed'));
+    xhr.onload = () => {
+      let j = {};
+      try { j = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if (xhr.status < 200 || xhr.status >= 300) reject(new Error(j.error || 'upload failed'));
+      else resolve(j);
+    };
+    xhr.send(body);
+  });
+}
+
+export const createFolder = path => post('/api/library/folder', {path});
+export const renameLibrary = (from, to) => post('/api/library/rename', {from, to});
+
+export async function previewLibrary(path) {
+  const r = await fetch('/api/library?path=' + encodeURIComponent(path) + '&preview=1');
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.error || 'preview failed');
+  }
+  return {blob: await r.blob(), type: r.headers.get('Content-Type') || 'application/octet-stream'};
+}
+
 export async function deleteLibrary(path) {
   const r = await fetch('/api/library?path=' + encodeURIComponent(path), {
     method: 'DELETE',
@@ -95,6 +124,7 @@ export const savePlaces = body => post('/api/places', body);
 export function toFixture(row) {
   const parts = String(row.path || '').split('/').filter(Boolean);
   const title = parts.pop() || row.path;
+  if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true};
   const ext = title.includes('.') ? title.slice(title.lastIndexOf('.') + 1).toUpperCase() : 'FILE';
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
   return { id: row.path, title, folders: parts.length ? parts : ['library'], kind: ext.slice(0, 3), size };

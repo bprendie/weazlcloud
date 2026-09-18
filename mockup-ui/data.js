@@ -127,6 +127,7 @@ export const state = {
   takeout: 'google',
   destroyId: '',
   capsules: []
+  ,upload: {active: false, current: '', done: 0, total: 0, loaded: 0, totalBytes: 0, failed: []}
 };
 
 export function seedPreview() {

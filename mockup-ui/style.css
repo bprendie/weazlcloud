@@ -96,7 +96,18 @@ dialog.wide{width:min(560px,calc(100% - 32px))}
 .plan-row strong{display:block;font-size:12px}
 .plan-row small{display:block;color:var(--muted);font-size:10px;margin-top:5px}
 .plan-row .text-button{margin-left:auto;color:var(--yellow)}
-.kind{font:9px monospace;letter-spacing:1px;color:var(--purple);border:1px solid #3d3550;padding:5px 6px;min-width:40px;text-align:center;flex-shrink:0}
+.kind{font:9px monospace;letter-spacing:1px;color:var(--purple);border:1px solid currentColor;padding:5px 6px;min-width:40px;text-align:center;flex-shrink:0;box-shadow:0 0 8px color-mix(in srgb,currentColor 25%,transparent)}
+.type-dir{color:#b084ff;background:#241c39}
+.type-img,.type-image,.type-jpg,.type-jpeg,.type-png,.type-gif,.type-webp,.type-heic{color:#ff4fd8;background:#35152f}
+.type-pdf{color:#ff6b7d;background:#391b24}
+.type-doc,.type-docx,.type-txt,.type-md,.type-text{color:#ffd166;background:#382d16}
+.type-csv,.type-xls,.type-xlsx,.type-json,.type-xml{color:#b8f45b;background:#263616}
+.type-js,.type-ts,.type-go,.type-py,.type-rs,.type-sh{color:#43e6ff;background:#12353d}
+.type-mp3,.type-wav,.type-flac,.type-audio{color:#c084ff;background:#2c1c42}
+.type-mp4,.type-mov,.type-webm,.type-video{color:#ff70a6;background:#3d1d2f}
+.type-zip,.type-tar,.type-gz,.type-7z,.type-archive{color:#ff9f43;background:#3d2917}
+.type-iso,.type-img-disk{color:#73ff9b;background:#153523}
+.type-file{color:#a7a9b8;background:#20232b}
 .queue-panel .section-title{margin-bottom:9px}
 .queue-panel h2{font-size:14px}
 .count{font:10px monospace;color:var(--muted);margin-left:5px}
@@ -149,6 +160,10 @@ input:not([type=range]):not([type=search]){background:#141518;border:1px solid #
 dialog{background:#1a1b20;color:var(--text);border:1px solid #625176;width:min(440px,calc(100% - 32px));padding:35px;max-height:calc(100dvh - 32px);overflow-y:auto}
 dialog::backdrop{background:#060609b8}
 .dialog-close{position:absolute;right:12px;top:10px}
+progress{width:100%;height:12px;accent-color:var(--yellow);margin:16px 0}
+.file-preview-image{display:block;max-width:100%;max-height:60vh;object-fit:contain;background:#101114;margin:18px 0}
+.file-preview-frame{display:block;width:100%;height:60vh;border:1px solid var(--line);background:#101114;margin:18px 0}
+.file-preview-text{max-height:60vh;overflow:auto;white-space:pre-wrap;background:#101114;border:1px solid var(--line);padding:16px;font:12px/1.6 monospace;color:#d8d5de;margin:18px 0}
 dialog h2{font-size:26px;margin:13px 0}
 dialog p{font-size:12px;color:var(--muted);line-height:1.7}
 .auth-form{display:grid;gap:14px;margin-top:24px}

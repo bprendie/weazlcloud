@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -69,7 +70,41 @@ func (l *Library) Usage(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+func (l *Library) Mkdir(ctx context.Context, name string) error {
+	name, err := cleanPath(name)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	return l.catalog.Mkdir(name)
+}
+
+func (l *Library) Rename(ctx context.Context, oldName, newName string) error {
+	oldName, err := cleanPath(oldName)
+	if err != nil {
+		return err
+	}
+	newName, err = cleanPath(newName)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	return l.catalog.Rename(oldName, newName)
+}
+
 func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.File, error) {
+	return l.PutReader(ctx, name, bytes.NewReader(body), int64(len(body)))
+}
+
+func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, expected int64) (catalog.File, error) {
 	name, err := cleanPath(name)
 	if err != nil {
 		return catalog.File{}, err
@@ -83,14 +118,34 @@ func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.Fi
 	if err != nil {
 		return catalog.File{}, err
 	}
-	sum := sha256.Sum256(body)
-	hash := hex.EncodeToString(sum[:])
-	snap, err := l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, hash, bytes.NewReader(body))
+	tmp, err := os.CreateTemp(l.repo, ".upload-*")
+	if err != nil {
+		return catalog.File{}, err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	h := sha256.New()
+	size, err := io.Copy(io.MultiWriter(tmp, h), body)
+	if err != nil {
+		tmp.Close()
+		return catalog.File{}, err
+	}
+	if expected >= 0 && size != expected {
+		tmp.Close()
+		return catalog.File{}, errors.New("upload size changed while reading")
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		tmp.Close()
+		return catalog.File{}, err
+	}
+	hash := hex.EncodeToString(h.Sum(nil))
+	snap, err := l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, hash, tmp)
+	_ = tmp.Close()
 	if err != nil {
 		return catalog.File{}, err
 	}
 	f := catalog.File{
-		Path: name, Size: int64(len(body)), Mtime: time.Now().UTC(),
+		Path: name, Size: size, Mtime: time.Now().UTC(),
 		Hash: hash, Snap: snap, Present: true,
 	}
 	if err := l.catalog.Put(f); err != nil {
