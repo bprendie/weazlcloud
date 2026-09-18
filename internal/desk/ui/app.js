@@ -459,6 +459,12 @@ async function refreshPlaces() {
   if (places.token) state.driveToken = places.token;
 }
 
+async function refreshNodeSettings() {
+  if (!state.admin || !live) return;
+  const node = await engine.loadNodeSettings().catch(() => null);
+  if (node?.hostname) { state.nodeHostname = node.hostname; state.grabBase = `https://${node.hostname}`; }
+}
+
 async function loadCapsules() {
   if (!live) return;
   const j = await engine.listCapsules();
@@ -788,16 +794,21 @@ document.addEventListener('submit', e => {
   if (e.target.id === 'places-form') {
     e.preventDefault();
     const data = new FormData(e.target);
-    state.grabBase = String(data.get('grab') || '').trim();
     state.driveBase = String(data.get('drive') || '').trim();
     if (live) {
-      engine.savePlaces({grab: state.grabBase, drive: state.driveBase})
-        .then(() => toast('Places saved. Mint will use the https grab name.'))
+      engine.savePlaces({drive: state.driveBase})
+        .then(() => toast('Files mount address saved. The administrator owns the grab hostname.'))
         .catch(err => toast(err.message));
     } else {
-      toast(state.grabBase.startsWith('https://') ? 'Places saved in this preview. No proxy was contacted.' : 'Grab base must be https:// or mint will refuse.');
+      toast('Files mount address saved in this preview.');
     }
     renderMain();
+  }
+  if (e.target.id === 'node-settings-form') {
+    e.preventDefault();
+    const hostname = String(new FormData(e.target).get('hostname') || '').trim();
+    if (!live) { state.nodeHostname = hostname; state.grabBase = hostname ? `https://${hostname}` : ''; renderMain(); toast('Node hostname saved in this preview.'); return; }
+    engine.saveNodeSettings(hostname).then(result => { state.nodeHostname = result.hostname; state.grabBase = `https://${result.hostname}`; renderMain(); toast('Node hostname saved.'); }).catch(err => toast(err.message));
   }
   if (e.target.id === 'destroy-form') {
     e.preventDefault();
@@ -923,6 +934,7 @@ engine.probe().then(async s => {
   state.admin = !!s.admin;
   $('#admin-nav').hidden = !state.admin;
   setForgeMode(!s.setup);
+  await refreshNodeSettings();
   if (s.authenticated && s.unlocked) {
     const account = await engine.me().catch(() => null); if (account) { state.username = account.username || state.username; state.fullName = account.full_name || ''; state.admin = !!account.admin; }
     await loadLibrary();

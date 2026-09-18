@@ -20,7 +20,7 @@ func TestMultiuserBootstrapLoginUnlockAndIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := NewMulti(us, capsule.New(filepath.Join(dir, "capsules")), quota.New(dir), "", "")
+	h := NewMulti(us, capsule.New(filepath.Join(dir, "capsules")), quota.New(dir), "", "", dir)
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
 	jar, _ := cookiejar.New(nil)

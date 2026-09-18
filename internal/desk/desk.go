@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"sync"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
@@ -26,6 +27,7 @@ type Handler struct {
 	publicBase string
 	driveBase  string
 	placesPath string
+	nodePath   string
 	users      *users.Store
 	quota      *quota.Manager
 	resources  map[string]*userResource
@@ -44,9 +46,11 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 	}
 }
 
-func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase string) *Handler {
+func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase, dataDir string) *Handler {
 	h := New(nil, nil, caps, publicBase, driveBase, "")
 	h.users, h.quota = us, q
+	h.nodePath = filepath.Join(dataDir, "node.json")
+	h.publicBase = loadNodeBase(h.nodePath, h.publicBase)
 	h.resources = make(map[string]*userResource)
 	return h
 }

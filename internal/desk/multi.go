@@ -92,6 +92,10 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiGetPlaces)
 	case r.URL.Path == "/api/places" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiSavePlaces)
+	case r.URL.Path == "/api/node" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.getNodeSettings)
+	case r.URL.Path == "/api/node" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.saveNodeSettings)
 	default:
 		h.files.ServeHTTP(w, r)
 	}
@@ -735,6 +739,39 @@ func (h *Handler) multiSavePlaces(w http.ResponseWriter, r *http.Request) {
 	h2 := *h
 	h2.vault, h2.placesPath = res.vault, h.users.PlacesPath(u)
 	h2.savePlaces(w, r)
+}
+
+func (h *Handler) getNodeSettings(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil || !u.Admin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"hostname": strings.TrimPrefix(h.publicBase, "https://")})
+}
+
+func (h *Handler) saveNodeSettings(w http.ResponseWriter, r *http.Request) {
+	u, err := h.users.Current(r)
+	if err != nil || !u.Admin {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
+		return
+	}
+	var body struct {
+		Hostname string `json:"hostname"`
+	}
+	if !decodeBody(w, r, &body, 4096) {
+		return
+	}
+	host := strings.TrimPrefix(strings.TrimSpace(body.Hostname), "https://")
+	if host == "" || strings.ContainsAny(host, "/?#@") || strings.ContainsAny(host, " \t\r\n") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hostname must be a host only, without https://, a path, or credentials"})
+		return
+	}
+	if err := h.saveNodeBase("https://" + host); err != nil {
+		apiError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"hostname": host})
 }
 
 func apiUsersError(w http.ResponseWriter, err error) {

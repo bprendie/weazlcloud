@@ -140,6 +140,7 @@ export const state = {
   minted: null,
   tokenShown: false,
   grabBase: '',
+  nodeHostname: '',
   driveBase: '',
   driveToken: '',
   takeout: 'google',

@@ -135,6 +135,8 @@ export async function loadPlaces() {
 }
 
 export const savePlaces = body => post('/api/places', body);
+export async function loadNodeSettings() { const r = await fetch('/api/node'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'node settings'); return j; }
+export const saveNodeSettings = hostname => post('/api/node', {hostname});
 
 export function toFixture(row) {
   const parts = String(row.path || '').split('/').filter(Boolean);

@@ -161,7 +161,7 @@ func (n *Node) bind() error {
 	}
 	q := quota.New(n.cfg.DataDir)
 	n.svcs = []*http.Server{
-		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase)),
+		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir)),
 		server(n.share, share.New(n.caps)),
 		server(n.drive, drive.NewMulti(us)),
 	}

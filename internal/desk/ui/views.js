@@ -267,9 +267,9 @@ function places() {
   const token = state.driveToken
     ? (state.tokenShown ? state.driveToken : '···· ···· ····')
     : (state.engine ? 'Unlock the vault to see the Files password.' : 'wzcv-····-····-····');
-  return head('WEAZLCLOUD / PLACES', 'Where can a phone reach this node?', 'Traefik already terminates HTTPS. WeazlCloud does not ship a proxy. Hang two names: grab for Gil, drive for Files.') +
+  return head('WEAZLCLOUD / PLACES', 'Where can a phone reach this node?', 'Traefik already terminates HTTPS. The administrator owns the grab hostname; your Files mount address stays here.') +
     `<form id="places-form" class="auth-form">
-      <label>Grab base (HTTPS)<input name="grab" value="${esc(state.grabBase)}" placeholder="https://grab.your.domain" required maxlength="200"></label>
+      <label>Grab hostname <input value="${esc(state.grabBase.replace(/^https:\/\//, ''))}" readonly></label><p class="eyebrow">Set by the node administrator.</p>
       <label>Drive base (davs://)<input name="drive" value="${esc(state.driveBase)}" placeholder="davs://drive.your.domain" maxlength="200"></label>
       <button class="primary">Save places</button>
     </form>
@@ -334,6 +334,7 @@ function destroy() {
 function admin() {
   const pending = state.requests.filter(q => q.status === 'pending');
   return head('NODE ADMIN / ACCESS', 'Approve local accounts.', 'Identity approval only. User vaults and their contents stay outside the administrator view.') +
+    `<div class="panel" style="margin-bottom:22px"><div class="panel-top"><span>NODE ADDRESS</span><span>ADMIN ONLY</span></div><h3>Grab hostname</h3><p>Users can mint links against this hostname but cannot change it.</p><form id="node-settings-form" class="inline-form"><input name="hostname" value="${esc(state.nodeHostname)}" placeholder="grab.your.domain" maxlength="200" required><button class="primary">Save hostname</button></form></div>` +
     `<div class="file-list admin-requests">${state.requests.length ? state.requests.map(q => `<div class="file-row"><span class="kind ${q.status === 'pending' ? 'type-dir' : ''}">${esc(q.status.toUpperCase())}</span><span><strong>${esc(q.username)}</strong><small>${esc(q.note || 'No note')} · ${esc(new Date(q.created_at).toLocaleString())}</small></span>${q.status === 'pending' ? `<button class="text-button" data-admin-approve="${esc(q.id)}">Approve</button><button class="text-button" data-admin-reject="${esc(q.id)}">Reject</button>` : ''}</div>`).join('') : '<p class="empty">No account requests.</p>'}</div>`;
 }
 

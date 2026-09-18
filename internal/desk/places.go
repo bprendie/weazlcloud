@@ -39,6 +39,9 @@ func (h *Handler) savePlaces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"grab base must be https://"}`, http.StatusBadRequest)
 		return
 	}
+	if h.users != nil {
+		p.Grab = h.publicBase
+	}
 	h.publicBase = p.Grab
 	h.driveBase = p.Drive
 	if h.placesPath != "" {
@@ -46,6 +49,34 @@ func (h *Handler) savePlaces(w http.ResponseWriter, r *http.Request) {
 		_ = cryptox.AtomicWrite(h.placesPath, append(b, '\n'), 0o600)
 	}
 	writeJSON(w, http.StatusOK, p)
+}
+
+func loadNodeBase(path, fallback string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fallback
+	}
+	var n struct {
+		GrabBase string `json:"grab_base"`
+	}
+	if json.Unmarshal(b, &n) != nil || strings.TrimSpace(n.GrabBase) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(n.GrabBase)
+}
+
+func (h *Handler) saveNodeBase(base string) error {
+	h.publicBase = base
+	if h.nodePath == "" {
+		return nil
+	}
+	b, err := json.MarshalIndent(struct {
+		GrabBase string `json:"grab_base"`
+	}{base}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return cryptox.AtomicWrite(h.nodePath, append(b, '\n'), 0o600)
 }
 
 func loadPlaces(path, grab, drive string) (string, string) {

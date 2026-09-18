@@ -94,9 +94,10 @@ cannot unlock the vault. It cannot list the library. It cannot mint. Hang
 **desk** and **grab** on different names so a stolen grab URL is not a stolen
 house.
 
-Set the grab base in Places (`https://…`) before you mint. The desk refuses to
-mint a `http://127.0.0.1/...` link. Gil’s phone has to be able to reach the
-name you hang on Traefik.
+The node administrator sets the grab hostname in **Admin** before anyone
+mints. Users can see the hostname in Places, but cannot change it. The desk
+refuses to mint until that administrator-owned HTTPS name is configured. Gil’s
+phone has to be able to reach the name you hang on Traefik.
 
 The QR on Send is the same URL. Show it in the room; don’t text it twice.
 
@@ -180,7 +181,9 @@ Capsules (vault unlocked to mint/revoke; Gil does not need the vault):
 Places:
 
 - `GET /api/places` / `POST /api/places` — `{grab: "https://…", drive: "davs://…"}`
-  Grab base must be `https://`. Mint refuses without it.
+  Users may update their drive display address; the grab value is read-only.
+- `GET /api/node` / `POST /api/node` — administrator-only node hostname settings,
+  with `{hostname: "grab.your.domain"}`. The value is stored in `/data/node.json`.
 
 The quota hard cap is 97% of the filesystem containing `/data`; the UI meter
 reports that usable limit as 100%. User logical usage is divided by the current
