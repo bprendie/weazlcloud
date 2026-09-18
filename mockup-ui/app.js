@@ -100,9 +100,11 @@ async function previewFile(id) {
 }
 
 function beginUpload(list, prefix = '') {
-  const filesToUpload = [...list];
+  const filesToUpload = [...list].map(item => item.file
+    ? item
+    : {file: item, relative: item.webkitRelativePath || item.name});
   if (!filesToUpload.length) return;
-  const totalBytes = filesToUpload.reduce((n, f) => n + f.size, 0);
+  const totalBytes = filesToUpload.reduce((n, item) => n + item.file.size, 0);
   state.upload = {active: true, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, failed: []};
   const rails = Array.from({length: Math.min(3, filesToUpload.length)}, (_, i) => `<div class="upload-rail" id="upload-rail-${i}"><div><strong>RAIL ${i + 1}</strong><span class="upload-rail-name">Waiting…</span></div><progress max="100" value="0"></progress><small>0%</small></div>`).join('');
   modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><div class="upload-rails">${rails}</div><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length} · parallel rails</p>`);
@@ -119,8 +121,9 @@ function beginUpload(list, prefix = '') {
       while (true) {
         const index = next++;
         if (index >= filesToUpload.length) return;
-        const file = filesToUpload[index];
-        const relative = file.webkitRelativePath || file.name;
+        const item = filesToUpload[index];
+        const file = item.file;
+        const relative = item.relative || file.name;
         const target = [prefix, relative].filter(Boolean).join('/');
         state.upload.current = target;
         const rail = $(`#upload-rail-${slot}`);
@@ -159,6 +162,36 @@ function beginUpload(list, prefix = '') {
     $('#modal-content').innerHTML = `<span class="eyebrow purple">LIBRARY / UPLOAD COMPLETE</span><h2>${state.upload.done} of ${filesToUpload.length} uploaded</h2>${failures.length ? `<p class="warn">${failures.map(esc).join('<br>')}</p><button class="primary" data-close>Close</button>` : '<p>All files are in the library.</p><button class="primary" data-close>Done</button>'}`;
     toast(failures.length ? `${failures.length} upload${failures.length === 1 ? '' : 's'} failed.` : 'Upload complete.');
   })();
+}
+
+function readDirectoryEntries(entry) {
+  return new Promise((resolve, reject) => {
+    const reader = entry.createReader();
+    const entries = [];
+    const read = () => reader.readEntries(batch => {
+      if (!batch.length) return resolve(entries);
+      entries.push(...batch);
+      read();
+    }, reject);
+    read();
+  });
+}
+
+function readDroppedEntry(entry, prefix = '') {
+  if (entry.isFile) {
+    return new Promise((resolve, reject) => entry.file(file => resolve([{file, relative: [prefix, file.name].filter(Boolean).join('/')}]), reject));
+  }
+  if (!entry.isDirectory) return Promise.resolve([]);
+  return readDirectoryEntries(entry).then(entries => Promise.all(entries.map(child => readDroppedEntry(child, [prefix, entry.name].filter(Boolean).join('/')))).then(groups => groups.flat()));
+}
+
+async function droppedUploadItems(dataTransfer) {
+  const entries = [...dataTransfer.items]
+    .filter(item => item.kind === 'file' && item.webkitGetAsEntry)
+    .map(item => item.webkitGetAsEntry())
+    .filter(Boolean);
+  if (!entries.length) return [...dataTransfer.files].map(file => ({file, relative: file.name}));
+  return (await Promise.all(entries.map(entry => readDroppedEntry(entry)))).flat();
 }
 
 function capsuleMenu(id) {
@@ -566,6 +599,7 @@ $('#side-action').onclick = () => {
 
 function setForgeMode(on) {
   state.forging = !!on;
+  setVaultOnly(false);
   $('#confirm-row').hidden = !state.forging;
   const confirm = $('#unlock-form [name=confirm]');
   if (confirm) confirm.required = false;
@@ -575,6 +609,19 @@ function setForgeMode(on) {
   $('#forge-mode').textContent = state.forging ? 'Already set up? Log in' : 'New node? Create the first account';
   $('#unlock-form .primary').textContent = state.forging ? 'Create account →' : 'Log in →';
   $('#unlock-error').textContent = '';
+}
+
+function setVaultOnly(on) {
+  const row = $('#username-row');
+  const username = $('#username-row input');
+  const forge = $('#forge-mode');
+  if (row) row.hidden = on;
+  if (username) username.disabled = on;
+  if (forge) forge.hidden = on;
+  $('#unlock-description').textContent = on
+    ? 'Account signed in. Unlock this user vault. The vault passphrase never leaves this machine.'
+    : 'Unlock the vault. The passphrase never leaves this machine.';
+  $('#unlock-form .primary').textContent = on ? 'Unlock vault →' : (state.forging ? 'Create account →' : 'Log in →');
 }
 
 $('#forge-mode').onclick = () => setForgeMode(!state.forging);
@@ -594,12 +641,17 @@ $('#unlock-form').onsubmit = async e => {
     try {
       if (state.forging) {
         await engine.bootstrap(username, pass, pass, confirm);
+        await engine.unlock(pass);
       } else if (!state.authenticated) {
         await engine.login(username, pass);
         state.authenticated = true;
-        $('#unlock-error').textContent = 'Logged in. Enter the passphrase again to unlock the vault.';
-        $('#unlock-form .primary').textContent = 'Unlock vault →';
-        return;
+        try {
+          await engine.unlock(pass);
+        } catch {
+          setVaultOnly(true);
+          e.target.querySelector('[name=passphrase]').value = '';
+          return;
+        }
       } else {
         await engine.unlock(pass);
       }
@@ -717,10 +769,13 @@ document.addEventListener('dragstart', e => {
 document.addEventListener('dragend', e => e.target.closest('[data-drag-file]')?.classList.remove('dragging'));
 
 document.addEventListener('dragover', e => {
-  const target = e.target.closest('.tree, [data-ctx-folder]');
-  if (!target || !e.dataTransfer?.types.includes('application/x-weazl-path')) return;
+  const target = e.target.closest('.library-workspace, .tree, [data-ctx-folder]');
+  if (!target || !e.dataTransfer) return;
+  const internal = e.dataTransfer.types.includes('application/x-weazl-path');
+  const external = e.dataTransfer.types.includes('Files');
+  if (!internal && !external) return;
   e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
+  e.dataTransfer.dropEffect = internal ? 'move' : 'copy';
   const folder = target.closest('[data-ctx-folder]');
   (folder || target).classList.add('drop-target');
 });
@@ -728,9 +783,16 @@ document.addEventListener('dragover', e => {
 document.addEventListener('dragleave', e => e.target.closest('.drop-target')?.classList.remove('drop-target'));
 
 document.addEventListener('drop', e => {
-  const target = e.target.closest('.tree, [data-ctx-folder]');
+  const target = e.target.closest('.library-workspace, .tree, [data-ctx-folder]');
   if (!target || !e.dataTransfer) return;
   const from = e.dataTransfer.getData('application/x-weazl-path');
+  if (!from && e.dataTransfer.files.length) {
+    e.preventDefault();
+    document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+    const folder = target.closest('[data-ctx-folder]')?.dataset.ctxFolder || state.currentPath;
+    droppedUploadItems(e.dataTransfer).then(items => beginUpload(items, folder)).catch(err => toast(`Drop failed: ${err.message}`));
+    return;
+  }
   if (!from) return;
   e.preventDefault();
   document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
