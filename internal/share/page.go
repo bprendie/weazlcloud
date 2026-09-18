@@ -51,12 +51,14 @@ button{width:100%;border:0;background:var(--yellow);color:#151515;padding:12px;f
 </main>
 <script nonce="` + nonce + `">
 const id = ` + "`" + html.EscapeString(id) + "`" + `;
+let grabKind = 'file';
 const $ = s => document.querySelector(s);
 async function meta(){
   const r = await fetch('/g/'+id+'/meta');
   const j = await r.json();
   if (!r.ok || j.status === 'burned') { gone(j.error); return; }
   $('#t').textContent = j.name;
+  grabKind = j.kind;
   $('#m').textContent = [j.size+' B', j.gate, 'read-only'].join(' · ');
   if (j.gate === 'passphrase') $('#f').hidden = false;
   if (j.kind === 'folder' && j.files) {
@@ -78,8 +80,10 @@ async function grab(){
   a.href = URL.createObjectURL(blob);
   a.download = ($('#t').textContent||'grab');
   a.click();
-  $('#t').textContent = 'Grabbed.';
-  $('#m').textContent = 'This link is done. There is no account to come back to.';
+  const remaining = Math.max(0, Number(r.headers.get('X-Weazl-Grabs-Remaining') || 0));
+  const retryWord = remaining === 1 ? 'retry' : 'retries';
+  $('#t').textContent = (grabKind === 'folder' ? 'Folder' : 'File') + ' Grabbed';
+  $('#m').textContent = remaining + ' ' + retryWord;
   $('#f').hidden = true; $('#g').hidden = true; $('#l').hidden = true;
 }
 meta().catch(() => gone());

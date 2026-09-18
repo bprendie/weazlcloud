@@ -53,8 +53,9 @@ function grab() {
       return;
     }
   }
-  title.textContent = 'Grabbed.';
-  meta.textContent = 'Preview only. No bytes left this machine. A real link would burn after this.';
+  cap.left = Math.max(0, Number(cap.left || 1) - 1);
+  title.textContent = `${cap.kind === 'folder' ? 'Folder' : 'File'} Grabbed`;
+  meta.textContent = `${cap.left} ${cap.left === 1 ? 'retry' : 'retries'}`;
   form.hidden = true;
   list.hidden = true;
   actions.innerHTML = '';

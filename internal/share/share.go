@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
@@ -83,6 +84,11 @@ func (h *Handler) file(w http.ResponseWriter, r *http.Request, id string) {
 		writeGone(w, err)
 		return
 	}
+	remaining := rec.Limit - rec.Used
+	if remaining < 0 {
+		remaining = 0
+	}
+	w.Header().Set("X-Weazl-Grabs-Remaining", strconv.Itoa(remaining))
 	name := rec.Name
 	if rec.Kind == "folder" && !strings.HasSuffix(strings.ToLower(name), ".zip") {
 		name += ".zip"

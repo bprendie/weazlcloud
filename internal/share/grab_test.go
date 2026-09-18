@@ -41,7 +41,7 @@ func TestGrabOpenBurns(t *testing.T) {
 	}
 	got, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != 200 || string(got) != "nug!" {
+	if res.StatusCode != 200 || string(got) != "nug!" || res.Header.Get("X-Weazl-Grabs-Remaining") != "0" {
 		t.Fatalf("file %d %q", res.StatusCode, got)
 	}
 	res, err = http.Post(s.URL+"/g/"+rec.ID+"/file", "application/json", bytes.NewBufferString("{}"))
