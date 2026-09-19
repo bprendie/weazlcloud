@@ -209,8 +209,8 @@ function send() {
   const result = minted ? `<div class="mint-result" id="mint-result">
       <div class="panel-top"><span>GRAB LINK</span><span>${esc(minted.gate).toUpperCase()}</span></div>
       <p class="mint-url">${esc(minted.url)}</p>
-      ${state.engine ? '' : qrMarkup(minted.id)}
-      <p class="eyebrow">${state.engine ? 'SEALED COPY · URL IS THE CAPABILITY' : 'QR FIXTURE · PREVIEW ONLY'}</p>
+      ${state.engine ? `<img class="mint-qr" src="/api/qr?url=${encodeURIComponent(minted.url)}" alt="QR code for this grab link">` : qrMarkup(minted.id)}
+      <p class="eyebrow">${state.engine ? 'SCAN TO OPEN THE GRAB LINK' : 'QR FIXTURE · PREVIEW ONLY'}</p>
       <div class="hero-actions">
         <button class="primary" data-action="copy-url">Copy URL</button>
         <a class="secondary button-link" href="${esc(minted.url && minted.url.startsWith('http') ? minted.url : 'grab.html?c=' + minted.id)}" target="_blank" rel="noopener">Open as recipient ↗</a>
@@ -274,7 +274,7 @@ function places() {
       <button class="primary">Save places</button>
     </form>
     <div class="panel-grid" style="margin-top:28px">
-      <article class="panel active-place"><div class="panel-top"><span>01 / GRAB</span><span>RECIPIENT</span></div><h3>Phone URL</h3><p>Mint refuses to fire until this is an https:// name. Not 127.0.0.1.</p></article>
+      <article class="panel active-place"><div class="panel-top"><span>01 / GRAB</span><span>RECIPIENT</span></div><h3>Grab URL</h3><p>Mint refuses to fire until this is an https:// name. Not 127.0.0.1.</p></article>
       <article class="panel"><div class="panel-top"><span>02 / DRIVE</span><span>FILES</span></div><h3>Connect to Server</h3><p>No FUSE. Files → Other Locations → ${esc(dav)}</p></article>
     </div>
     <div class="panel" style="margin-top:13px">

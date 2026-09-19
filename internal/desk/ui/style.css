@@ -171,6 +171,7 @@ dialog.wide{width:min(560px,calc(100% - 32px))}
 .panel h3{font-size:17px;margin:22px 0 7px}
 .panel p{color:var(--muted);font-size:11px;margin:0 0 8px;line-height:1.5}
 .active-place{border-color:var(--yellow)}
+.mint-qr{display:block;width:180px;height:180px;image-rendering:pixelated;background:#fff;padding:10px;margin:18px auto;border:1px solid var(--line)}
 .empty{padding:35px 0;color:var(--muted);font-size:13px;line-height:1.6}
 .inline-form{display:flex;gap:8px;margin-top:22px}
 .inline-form input{min-width:0;flex:1}

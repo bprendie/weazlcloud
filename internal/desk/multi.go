@@ -70,6 +70,8 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiKit)
 	case r.URL.Path == "/api/quota" && r.Method == http.MethodGet:
 		h.multiQuota(w, r)
+	case r.URL.Path == "/api/qr" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.qr)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet && r.URL.Query().Get("path") == "":
 		h.multiGuard(w, r, true, h.multiListLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet:
