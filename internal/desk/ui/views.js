@@ -413,6 +413,17 @@ export function renderDeck() {
   $('#send-now').disabled = busy || !state.unlocked;
   $('#send-now').hidden = busy;
   $('#username').innerHTML = state.unlocked ? 'vault<small>Open · this session owns the key</small>' : 'vault<small>Locked</small>';
+  renderUploadTray();
+}
+
+export function renderUploadTray() {
+  const tray = $('#upload-tray');
+  const upload = state.upload;
+  if (!tray || !upload || (!upload.active && !upload.total) || upload.dismissed) { if (tray) tray.hidden = true; return; }
+  tray.hidden = false;
+  const title = upload.active ? 'Uploading files' : `${upload.done} of ${upload.total} uploaded`;
+  const rails = (upload.rails || []).map((rail, index) => `<div class="upload-rail"><div><strong>RAIL ${index + 1}</strong><span class="upload-rail-name">${esc(rail.name || 'Waiting…')}</span></div><progress max="100" value="${rail.pct || 0}"></progress><small>${esc(rail.status || 'waiting')}</small></div>`).join('');
+  tray.innerHTML = `<div class="upload-tray-head"><div><span class="eyebrow purple">LIBRARY / UPLOAD</span><strong>${title}</strong></div>${upload.active ? '' : '<button class="text-button" data-dismiss-upload>Dismiss</button>'}</div><div class="upload-rails">${rails}</div><progress max="100" value="${upload.percent || 0}"></progress><p class="eyebrow">${upload.done} / ${upload.total} · ${Math.round(upload.percent || 0)}%${upload.failed?.length ? ` · ${upload.failed.length} failed` : ''}</p>`;
 }
 
 function formatBytes(value) {

@@ -1,5 +1,5 @@
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
-import {renderMain, renderSide, renderDeck} from './views.js';
+import {renderMain, renderSide, renderDeck, renderUploadTray} from './views.js';
 import * as engine from './engine.js';
 
 const $ = s => document.querySelector(s);
@@ -131,16 +131,15 @@ function beginUpload(list, prefix = '') {
     : {file: item, relative: item.webkitRelativePath || item.name});
   if (!filesToUpload.length) return;
   const totalBytes = filesToUpload.reduce((n, item) => n + item.file.size, 0);
-  state.upload = {active: true, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, failed: []};
-  const rails = Array.from({length: Math.min(3, filesToUpload.length)}, (_, i) => `<div class="upload-rail" id="upload-rail-${i}"><div><strong>RAIL ${i + 1}</strong><span class="upload-rail-name">Waiting…</span></div><progress max="100" value="0"></progress><small>0%</small></div>`).join('');
-  modal(`<span class="eyebrow purple">LIBRARY / UPLOAD</span><h2>Uploading files</h2><div class="upload-rails">${rails}</div><progress id="upload-progress-bar" max="100" value="0"></progress><p id="upload-progress-text" class="eyebrow">0 / ${filesToUpload.length} · parallel rails</p>`);
+  state.upload = {active: true, dismissed: false, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, percent: 0, failed: [], rails: Array.from({length: Math.min(3, filesToUpload.length)}, () => ({name: 'Waiting…', pct: 0, status: 'waiting'}))};
+  renderUploadTray();
   (async () => {
     const loaded = new Array(filesToUpload.length).fill(0);
     const updateProgress = () => {
       const sent = loaded.reduce((n, value) => n + value, 0);
       const pct = totalBytes ? (sent / totalBytes) * 100 : 100;
-      const bar = $('#upload-progress-bar'); if (bar) bar.value = pct;
-      const text = $('#upload-progress-text'); if (text) text.textContent = `${state.upload.done} / ${filesToUpload.length} · ${Math.round(pct)}%`;
+      state.upload.percent = pct;
+      renderUploadTray();
     };
     let next = 0;
     const worker = async slot => {
@@ -152,31 +151,23 @@ function beginUpload(list, prefix = '') {
         const relative = item.relative || file.name;
         const target = [prefix, relative].filter(Boolean).join('/');
         state.upload.current = target;
-        const rail = $(`#upload-rail-${slot}`);
-        const railName = rail?.querySelector('.upload-rail-name');
-        const railProgress = rail?.querySelector('progress');
-        const railPercent = rail?.querySelector('small');
-        if (railName) railName.textContent = target;
-        if (railProgress) railProgress.value = 0;
-        if (railPercent) railPercent.textContent = '0%';
+        const rail = state.upload.rails[slot];
+        rail.name = target; rail.pct = 0; rail.status = '0%'; renderUploadTray();
         try {
           await engine.putLibraryProgress(target, file, (sent) => {
             loaded[index] = sent;
             const pct = file.size ? (sent / file.size) * 100 : 100;
             const sentComplete = sent >= file.size;
-            if (railProgress) railProgress.value = sentComplete ? 99 : pct;
-            if (railPercent) railPercent.textContent = sentComplete ? 'saving…' : `${Math.round(pct)}%`;
+            rail.pct = sentComplete ? 99 : pct; rail.status = sentComplete ? 'saving…' : `${Math.round(pct)}%`;
+            renderUploadTray();
             updateProgress();
           });
           loaded[index] = file.size;
           state.upload.done++;
-          if (railName) railName.textContent = `✓ ${target}`;
-          if (railProgress) railProgress.value = 100;
-          if (railPercent) railPercent.textContent = 'done';
+          rail.name = `✓ ${target}`; rail.pct = 100; rail.status = 'done'; renderUploadTray();
         } catch (err) {
           state.upload.failed.push(`${target}: ${err.message}`); loaded[index] = file.size;
-          if (railName) railName.textContent = `× ${target}`;
-          if (railPercent) railPercent.textContent = 'failed';
+          rail.name = `× ${target}`; rail.status = 'failed'; renderUploadTray();
         }
         updateProgress();
       }
@@ -186,7 +177,6 @@ function beginUpload(list, prefix = '') {
     await loadLibrary();
     renderMain(); renderDeck();
     const failures = state.upload.failed;
-    $('#modal-content').innerHTML = `<span class="eyebrow purple">LIBRARY / UPLOAD COMPLETE</span><h2>${state.upload.done} of ${filesToUpload.length} uploaded</h2>${failures.length ? `<p class="warn">${failures.map(esc).join('<br>')}</p><button class="primary" data-close>Close</button>` : '<p>All files are in the library.</p><button class="primary" data-close>Done</button>'}`;
     toast(failures.length ? `${failures.length} upload${failures.length === 1 ? '' : 's'} failed.` : 'Upload complete.');
   })();
 }
@@ -557,6 +547,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button, a.button-link');
   if (!b) return;
   if (b.classList.contains('dialog-close') || b.dataset.close !== undefined) { $('#modal').close(); return; }
+  if (b.dataset.dismissUpload !== undefined) { state.upload.dismissed = true; renderUploadTray(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }

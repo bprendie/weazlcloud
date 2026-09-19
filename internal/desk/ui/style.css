@@ -133,6 +133,8 @@ dialog.wide{width:min(560px,calc(100% - 32px))}
 .stat-card{margin-bottom:14px;border-color:#3d5c50}
 .signal-heading{display:flex;justify-content:space-between;font:8px monospace;letter-spacing:1px;color:var(--purple)}
 .stat-card .signal-heading{color:var(--mint)}
+.upload-tray{margin-top:13px;border:1px solid var(--purple);padding:14px;background:#17151e;box-shadow:0 0 18px #a17bff22}
+.upload-tray-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.upload-tray-head>div{display:grid;gap:5px;min-width:0}.upload-tray-head strong{font-size:14px}.upload-tray .upload-rails{margin:12px 0 0}.upload-tray .upload-rail{padding:8px}.upload-tray>progress{margin:12px 0 3px;height:7px}.upload-tray>p{margin:0}.upload-tray .text-button{flex-shrink:0}
 .stat-card p,.signal-card p{font-weight:bold;font-size:24px;line-height:1.2;letter-spacing:-.7px;margin:10px 0 8px}
 .stat-card em,.signal-card em{font-style:normal;color:var(--yellow)}
 .stat-card em{font-size:42px;letter-spacing:-2px;color:var(--mint)}
