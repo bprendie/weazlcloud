@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"image/color"
 	"net/http"
 	"net/url"
 
@@ -14,7 +15,14 @@ func (h *Handler) qr(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid QR URL"}`, http.StatusBadRequest)
 		return
 	}
-	png, err := qrcode.Encode(raw, qrcode.Medium, 320)
+	code, err := qrcode.New(raw, qrcode.Medium)
+	if err != nil {
+		http.Error(w, `{"error":"QR generation failed"}`, http.StatusInternalServerError)
+		return
+	}
+	code.ForegroundColor = color.RGBA{R: 212, G: 92, B: 255, A: 255}
+	code.BackgroundColor = color.RGBA{R: 16, G: 17, B: 20, A: 255}
+	png, err := code.PNG(320)
 	if err != nil {
 		http.Error(w, `{"error":"QR generation failed"}`, http.StatusInternalServerError)
 		return
