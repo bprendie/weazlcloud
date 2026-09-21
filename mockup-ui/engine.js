@@ -103,15 +103,10 @@ export async function deleteLibrary(path) {
 }
 
 export async function downloadLibrary(path, name) {
-  const r = await fetch('/api/library?path=' + encodeURIComponent(path));
-  if (!r.ok) {
-    const j = await r.json().catch(() => ({}));
-    throw new Error(j.error || 'download failed');
-  }
-  const blob = await r.blob();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name || path.split('/').pop();
+  a.href = '/api/library?path=' + encodeURIComponent(path);
+  if (name) a.download = name;
+  a.rel = 'noopener';
   a.click();
 }
 
