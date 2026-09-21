@@ -74,11 +74,44 @@ func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault
 		return
 	}
 	path := r.URL.Query().Get("path")
-	b, err := l.Get(r.Context(), path)
+	f, err := l.Metadata(r.Context(), path)
 	if err != nil {
 		apiError(w, err)
 		return
 	}
+	if r.URL.Query().Get("preview") != "" {
+		b, err := l.Get(r.Context(), path)
+		if err != nil {
+			apiError(w, err)
+			return
+		}
+		contentType := libraryContentType(path, b)
+		if rendered, renderedType, ok := renderedPreview(path, b); ok {
+			b, contentType = rendered, renderedType
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(b)))
+		w.Header().Set("Content-Disposition", "inline")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
+		return
+	}
+	contentType := libraryContentType(path, nil)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "attachment")
+	w.Header().Set("Accept-Ranges", "bytes")
+	if r.Header.Get("Range") != "" {
+		serveLibraryRange(w, r, l, path, f.Size, contentType)
+		return
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(f.Size, 10))
+	w.WriteHeader(http.StatusOK)
+	if err := l.StreamTo(r.Context(), path, w); err != nil {
+		return
+	}
+}
+
+func libraryContentType(path string, sample []byte) string {
 	contentType := mime.TypeByExtension(filepath.Ext(path))
 	if contentType == "" {
 		contentType = map[string]string{
@@ -90,23 +123,73 @@ func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	if contentType == "application/octet-stream" {
-		contentType = http.DetectContentType(b)
+	if contentType == "application/octet-stream" && len(sample) > 0 {
+		contentType = http.DetectContentType(sample)
 	}
-	if r.URL.Query().Get("preview") != "" {
-		if rendered, renderedType, ok := renderedPreview(path, b); ok {
-			b, contentType = rendered, renderedType
+	return contentType
+}
+
+func serveLibraryRange(w http.ResponseWriter, r *http.Request, l *library.Library, path string, size int64, contentType string) {
+	start, end, ok := byteRange(r.Header.Get("Range"), size)
+	if !ok {
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+	length := end - start + 1
+	w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+"/"+strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
+	w.WriteHeader(http.StatusPartialContent)
+	pr, pw := io.Pipe()
+	go func() {
+		pw.CloseWithError(l.StreamTo(r.Context(), path, pw))
+	}()
+	defer pr.Close()
+	if start > 0 {
+		if _, err := io.CopyN(io.Discard, pr, start); err != nil {
+			return
 		}
 	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(b)))
-	if r.URL.Query().Get("preview") == "" {
-		w.Header().Set("Content-Disposition", "attachment")
-	} else {
-		w.Header().Set("Content-Disposition", "inline")
+	_, _ = io.CopyN(w, pr, length)
+}
+
+func byteRange(raw string, size int64) (int64, int64, bool) {
+	if size < 0 || !strings.HasPrefix(raw, "bytes=") {
+		return 0, 0, false
 	}
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(b)
+	parts := strings.Split(strings.TrimPrefix(raw, "bytes="), ",")
+	if len(parts) != 1 {
+		return 0, 0, false
+	}
+	bounds := strings.SplitN(strings.TrimSpace(parts[0]), "-", 2)
+	if len(bounds) != 2 || size == 0 {
+		return 0, 0, false
+	}
+	if bounds[0] == "" {
+		n, err := strconv.ParseInt(bounds[1], 10, 64)
+		if err != nil || n <= 0 {
+			return 0, 0, false
+		}
+		if n > size {
+			n = size
+		}
+		return size - n, size - 1, true
+	}
+	start, err := strconv.ParseInt(bounds[0], 10, 64)
+	if err != nil || start < 0 || start >= size {
+		return 0, 0, false
+	}
+	end := size - 1
+	if bounds[1] != "" {
+		end, err = strconv.ParseInt(bounds[1], 10, 64)
+		if err != nil || end < start {
+			return 0, 0, false
+		}
+		if end >= size {
+			end = size - 1
+		}
+	}
+	return start, end, true
 }
 
 func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) {

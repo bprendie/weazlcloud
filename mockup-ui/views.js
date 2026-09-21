@@ -421,9 +421,12 @@ export function renderUploadTray() {
   const upload = state.upload;
   if (!tray || !upload || (!upload.active && !upload.total) || upload.dismissed) { if (tray) tray.hidden = true; return; }
   tray.hidden = false;
-  const title = upload.active ? 'Uploading files' : `${upload.done} of ${upload.total} uploaded`;
-  const rails = (upload.rails || []).map((rail, index) => `<div class="upload-rail"><div><strong>RAIL ${index + 1}</strong><span class="upload-rail-name">${esc(rail.name || 'Waiting…')}</span></div><progress max="100" value="${rail.pct || 0}"></progress><small>${esc(rail.status || 'waiting')}</small></div>`).join('');
-  tray.innerHTML = `<div class="upload-tray-head"><div><span class="eyebrow purple">LIBRARY / UPLOAD</span><strong>${title}</strong></div>${upload.active ? '' : '<button class="text-button" data-dismiss-upload>Dismiss</button>'}</div><div class="upload-rails">${rails}</div><progress max="100" value="${upload.percent || 0}"></progress><p class="eyebrow">${upload.done} / ${upload.total} · ${Math.round(upload.percent || 0)}%${upload.failed?.length ? ` · ${upload.failed.length} failed` : ''}</p>`;
+  const failed = upload.items?.filter(item => item.status === 'failed') || [];
+  const title = upload.active ? `Uploading · ${upload.done} of ${upload.total} complete` : `${upload.done} of ${upload.total} uploaded`;
+  const rails = (upload.rails || []).map((rail, index) => `<div class="upload-rail"><div><strong>RAIL ${index + 1}</strong><span class="upload-rail-name">${esc(rail.name || 'Waiting…')}</span></div><progress max="100" value="${Math.min(100, rail.pct || 0)}"></progress><small>${esc(rail.status || 'waiting')}</small></div>`).join('');
+  const errors = failed.length ? `<div class="upload-errors">${failed.slice(0, 4).map(item => `<div><strong>${esc(item.target)}</strong><span>${esc(item.error || 'Upload failed')}</span></div>`).join('')}${failed.length > 4 ? `<small>…and ${failed.length - 4} more</small>` : ''}</div>` : '';
+  const controls = `<div class="upload-controls">${failed.length ? '<button class="text-button" data-upload-retry>Retry failed</button>' : ''}${upload.active ? '<button class="text-button" data-upload-cancel>Cancel</button>' : '<button class="text-button" data-dismiss-upload>Dismiss</button>'}<button class="text-button" data-upload-collapse>${upload.collapsed ? 'Show details' : 'Collapse'}</button></div>`;
+  tray.innerHTML = `<div class="upload-tray-head"><div><span class="eyebrow purple">LIBRARY / UPLOAD · 3 RAILS</span><strong>${title}</strong></div>${controls}</div>${upload.collapsed ? '' : `<div class="upload-rails">${rails}</div>${errors}`}<progress max="100" value="${Math.min(100, upload.percent || 0)}"></progress><p class="eyebrow">${Math.round(upload.percent || 0)}% of ${formatBytes(upload.totalBytes || 0)} · ${failed.length ? `${failed.length} failed` : upload.active ? 'working in the background' : 'ready'}</p>`;
 }
 
 function formatBytes(value) {

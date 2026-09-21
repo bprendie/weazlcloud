@@ -3,6 +3,7 @@ package share
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -96,7 +97,23 @@ func (h *Handler) file(w http.ResponseWriter, r *http.Request, id string) {
 			phrase = body.Passphrase
 		}
 	}
-	plain, rec, err := h.store.Grab(id, phrase)
+	var rec capsule.Record
+	rec, err := h.store.StreamGrab(id, phrase, func(grab capsule.Record) (io.Writer, error) {
+		rec = grab
+		remaining := rec.Limit - rec.Used
+		if remaining < 0 {
+			remaining = 0
+		}
+		w.Header().Set("X-Weazl-Grabs-Remaining", strconv.Itoa(remaining))
+		name := rec.Name
+		if rec.Kind == "folder" && !strings.HasSuffix(strings.ToLower(name), ".zip") {
+			name += ".zip"
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(name)+`"`)
+		w.WriteHeader(http.StatusOK)
+		return w, nil
+	})
 	if err != nil {
 		if !errors.Is(err, capsule.ErrPhrase) {
 			h.limit.Reset(key)
@@ -105,19 +122,6 @@ func (h *Handler) file(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	h.limit.Reset(key)
-	remaining := rec.Limit - rec.Used
-	if remaining < 0 {
-		remaining = 0
-	}
-	w.Header().Set("X-Weazl-Grabs-Remaining", strconv.Itoa(remaining))
-	name := rec.Name
-	if rec.Kind == "folder" && !strings.HasSuffix(strings.ToLower(name), ".zip") {
-		name += ".zip"
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+safeFilename(name)+`"`)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(plain)
 }
 
 func writeGone(w http.ResponseWriter, err error) {

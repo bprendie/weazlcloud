@@ -52,6 +52,13 @@ func TestPutGetDeleteAndDedupe(t *testing.T) {
 	if !bytes.Equal(got, payload) {
 		t.Fatal("get mismatch")
 	}
+	var streamed bytes.Buffer
+	if err := lib.StreamTo(ctx, "Documents/a.txt", &streamed); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(streamed.Bytes(), payload) {
+		t.Fatal("stream mismatch")
+	}
 	if err := lib.Delete("Documents/a.txt"); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package capsule
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 
@@ -41,6 +42,10 @@ func (s *Store) Meta(id string) (Record, error) {
 func (s *Store) Grab(id, phrase string) ([]byte, Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.grabLocked(id, phrase)
+}
+
+func (s *Store) grabLocked(id, phrase string) ([]byte, Record, error) {
 	dir := filepath.Join(s.root, id)
 	rec, err := readMeta(dir)
 	if err != nil {
@@ -61,12 +66,24 @@ func (s *Store) Grab(id, phrase string) ([]byte, Record, error) {
 	if err != nil {
 		return nil, rec, ErrGone
 	}
-	if len(blob) < 12 {
+	if len(blob) < 4 {
 		return nil, rec, ErrGone
 	}
-	plain, err := cryptox.Open(key, blob[:12], blob[12:])
-	if err != nil {
-		return nil, rec, ErrGone
+	var plain []byte
+	if string(blob[:len(streamMagic)]) == streamMagic {
+		var buf bytes.Buffer
+		if err := decryptStream(bytes.NewReader(blob[len(streamMagic):]), key, &buf); err != nil {
+			return nil, rec, err
+		}
+		plain = buf.Bytes()
+	} else {
+		if len(blob) < 12 {
+			return nil, rec, ErrGone
+		}
+		plain, err = cryptox.Open(key, blob[:12], blob[12:])
+		if err != nil {
+			return nil, rec, ErrGone
+		}
 	}
 	rec.Used++
 	terminal := rec.Used >= rec.Limit

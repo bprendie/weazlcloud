@@ -246,10 +246,28 @@ func (l *Library) Delete(name string) error {
 }
 
 func (l *Library) WriteTo(ctx context.Context, name string, w io.Writer) error {
-	b, err := l.Get(ctx, name)
+	return l.StreamTo(ctx, name, w)
+}
+
+// StreamTo restores a file directly into w. The caller controls buffering;
+// this keeps large downloads and WebDAV reads out of process memory.
+func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error {
+	name, err := cleanPath(name)
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(b)
-	return err
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	f, ok := l.catalog.Get(name)
+	if !ok {
+		return errors.New("file is not in the library")
+	}
+	pass, _, err := l.vault.Secrets()
+	if err != nil {
+		return err
+	}
+	return l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, f.Hash, w)
 }

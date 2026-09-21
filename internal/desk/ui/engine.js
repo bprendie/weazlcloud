@@ -53,13 +53,16 @@ export async function putLibrary(path, body) {
 }
 
 export function putLibraryProgress(path, body, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  let xhr;
+  const request = new Promise((resolve, reject) => {
+    xhr = new XMLHttpRequest();
     xhr.open('PUT', '/api/library?path=' + encodeURIComponent(path));
     xhr.setRequestHeader('X-Weazl-Desk', '1');
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded, e.total); };
     xhr.onerror = () => reject(new Error('upload failed'));
+    xhr.onabort = () => reject(new Error('upload cancelled'));
     xhr.onload = () => {
+      onProgress?.(body.size || 0, body.size || 0, 'saving');
       let j = {};
       try { j = JSON.parse(xhr.responseText || '{}'); } catch {}
       if (xhr.status < 200 || xhr.status >= 300) reject(new Error(j.error || 'upload failed'));
@@ -67,6 +70,8 @@ export function putLibraryProgress(path, body, onProgress) {
     };
     xhr.send(body);
   });
+  request.abort = () => xhr?.abort();
+  return request;
 }
 
 export const createFolder = path => post('/api/library/folder', {path});

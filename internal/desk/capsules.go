@@ -2,14 +2,15 @@ package desk
 
 import (
 	"archive/zip"
-	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
+	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
@@ -52,12 +53,12 @@ func (h *Handler) mintCapsule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
 		return
 	}
-	payload, rec, err := h.seal(r, body)
+	rec, source, err := h.seal(r, body)
 	if err != nil {
 		apiError(w, err)
 		return
 	}
-	got, err := h.caps.Mint(rec, body.Passphrase, payload)
+	got, err := h.caps.MintStream(rec, body.Passphrase, source)
 	if err != nil {
 		apiError(w, err)
 		return
@@ -85,11 +86,11 @@ func (h *Handler) revokeCapsule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "revoked"})
 }
 
-func (h *Handler) seal(r *http.Request, body mintBody) ([]byte, capsule.Record, error) {
+func (h *Handler) seal(r *http.Request, body mintBody) (capsule.Record, capsule.StreamSource, error) {
 	return h.sealFor(r, body, h.vault, h.lib)
 }
 
-func (h *Handler) sealFor(r *http.Request, body mintBody, v *vault.Vault, l *library.Library) ([]byte, capsule.Record, error) {
+func (h *Handler) sealFor(r *http.Request, body mintBody, v *vault.Vault, l *library.Library) (capsule.Record, capsule.StreamSource, error) {
 	rec := capsule.Record{
 		Label: body.Label, Name: body.Path, Kind: body.Kind, Gate: body.Gate,
 		Expires: time.Now().Add(parseExpiry(body.Expiry)), Limit: body.Grabs,
@@ -106,52 +107,53 @@ func (h *Handler) sealFor(r *http.Request, body mintBody, v *vault.Vault, l *lib
 	if rec.Kind == "folder" {
 		return h.sealFolderFor(r, body.Path, rec, l)
 	}
-	b, err := l.Get(r.Context(), body.Path)
+	f, err := l.Metadata(r.Context(), body.Path)
 	if err != nil {
-		return nil, rec, err
+		return rec, nil, err
 	}
-	rec.Size = int64(len(b))
+	rec.Size = f.Size
 	rec.Name = path.Base(body.Path)
 	rec.Files = []capsule.Member{{Title: rec.Name, Size: rec.Size, Kind: "FILE"}}
-	return b, rec, nil
+	return rec, func(dst io.Writer) error { return l.StreamTo(r.Context(), body.Path, dst) }, nil
 }
 
-func (h *Handler) sealFolderFor(r *http.Request, prefix string, rec capsule.Record, l *library.Library) ([]byte, capsule.Record, error) {
+func (h *Handler) sealFolderFor(r *http.Request, prefix string, rec capsule.Record, l *library.Library) (capsule.Record, capsule.StreamSource, error) {
 	if err := l.Ensure(r.Context()); err != nil {
-		return nil, rec, err
+		return rec, nil, err
 	}
-	var buf bytes.Buffer
-	z := zip.NewWriter(&buf)
+	var selected []catalog.File
 	for _, f := range l.List() {
 		if f.Path != prefix && !strings.HasPrefix(f.Path, strings.TrimSuffix(prefix, "/")+"/") {
 			continue
 		}
-		b, err := l.Get(r.Context(), f.Path)
-		if err != nil {
-			return nil, rec, err
+		if f.Folder {
+			continue
 		}
-		name := strings.TrimPrefix(f.Path, strings.TrimSuffix(prefix, "/")+"/")
-		if name == f.Path {
-			name = path.Base(f.Path)
-		}
-		w, err := z.Create(name)
-		if err != nil {
-			return nil, rec, err
-		}
-		if _, err := w.Write(b); err != nil {
-			return nil, rec, err
-		}
+		selected = append(selected, f)
 		rec.Files = append(rec.Files, capsule.Member{Title: path.Base(f.Path), Size: f.Size, Kind: "FILE"})
-	}
-	if err := z.Close(); err != nil {
-		return nil, rec, err
+		rec.Size += f.Size
 	}
 	if len(rec.Files) == 0 {
-		return nil, rec, capsule.ErrNeedPath
+		return rec, nil, capsule.ErrNeedPath
 	}
-	rec.Size = int64(buf.Len())
 	rec.Name = path.Base(prefix)
-	return buf.Bytes(), rec, nil
+	return rec, func(dst io.Writer) error {
+		z := zip.NewWriter(dst)
+		for _, f := range selected {
+			name := strings.TrimPrefix(f.Path, strings.TrimSuffix(prefix, "/")+"/")
+			if name == f.Path {
+				name = path.Base(f.Path)
+			}
+			entry, err := z.Create(name)
+			if err != nil {
+				return err
+			}
+			if err := l.StreamTo(r.Context(), f.Path, entry); err != nil {
+				return err
+			}
+		}
+		return z.Close()
+	}, nil
 }
 
 func parseExpiry(v string) time.Duration {

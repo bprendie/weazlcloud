@@ -690,7 +690,7 @@ func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
-	payload, rec, err := h.sealFor(r, b, res.Vault, res.Lib)
+	rec, source, err := h.sealFor(r, b, res.Vault, res.Lib)
 	if err != nil {
 		apiError(w, err)
 		return
@@ -703,14 +703,14 @@ func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
 			apiError(w, e)
 			return
 		}
-		release, err = h.quota.Reserve(u.ID, h.users.Count(), used, 0, int64(len(payload)))
+		release, err = h.quota.Reserve(u.ID, h.users.Count(), used, 0, rec.Size)
 		if err != nil {
 			apiError(w, err)
 			return
 		}
 		defer release()
 	}
-	got, err := h.caps.Mint(rec, b.Passphrase, payload)
+	got, err := h.caps.MintStream(rec, b.Passphrase, source)
 	if err != nil {
 		apiError(w, err)
 		return

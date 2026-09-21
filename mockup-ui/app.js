@@ -4,6 +4,10 @@ import * as engine from './engine.js';
 
 const $ = s => document.querySelector(s);
 let noticeTimer, frame, live = false, uploadPrefix = '';
+const UPLOAD_RAILS = 3;
+const uploadRequests = new Map();
+let uploadWorkersRunning = false;
+let uploadRefreshTimer;
 
 function libraryPath() {
   if (!state.selected) return '';
@@ -125,60 +129,132 @@ async function previewFile(id) {
   } catch (err) { toast(err.message); }
 }
 
+function newUploadID() {
+  return globalThis.crypto?.randomUUID?.() || `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function uploadState() {
+  if (!state.upload.items) state.upload.items = [];
+  if (!state.upload.rails?.length) state.upload.rails = Array.from({length: UPLOAD_RAILS}, () => ({name: 'Waiting…', pct: 0, status: 'waiting'}));
+  return state.upload;
+}
+
+function refreshUploadSummary() {
+  const upload = uploadState();
+  upload.total = upload.items.length;
+  upload.totalBytes = upload.items.reduce((n, item) => n + item.size, 0);
+  upload.done = upload.items.filter(item => item.status === 'done').length;
+  upload.failed = upload.items.filter(item => item.status === 'failed');
+  upload.loaded = upload.items.reduce((n, item) => n + Math.min(item.loaded || 0, item.size), 0);
+  upload.percent = upload.totalBytes ? (upload.loaded / upload.totalBytes) * 100 : (upload.total ? 100 : 0);
+  upload.active = upload.items.some(item => item.status === 'queued' || item.status === 'uploading' || item.status === 'saving');
+  upload.current = upload.items.find(item => item.status === 'uploading')?.target || '';
+  renderUploadTray();
+}
+
+function scheduleUploadRefresh() {
+  clearTimeout(uploadRefreshTimer);
+  uploadRefreshTimer = setTimeout(async () => {
+    if (!live) return;
+    try { await loadLibrary(); renderMain(); renderDeck(); } catch (err) { toast(err.message); }
+  }, 180);
+}
+
+function uploadItemForSlot(slot) {
+  const upload = uploadState();
+  const item = upload.items.find(candidate => candidate.status === 'queued');
+  if (!item) return null;
+  item.status = 'uploading';
+  item.slot = slot;
+  upload.rails[slot] = {name: item.target, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: '0%'};
+  refreshUploadSummary();
+  return item;
+}
+
+async function uploadWorker(slot) {
+  while (true) {
+    const item = uploadItemForSlot(slot);
+    if (!item) return;
+    try {
+      const request = engine.putLibraryProgress(item.target, item.file, (sent, _total, phase) => {
+        item.loaded = sent;
+        const pct = item.size ? (sent / item.size) * 100 : 100;
+        item.status = phase === 'saving' ? 'saving' : 'uploading';
+        state.upload.rails[slot] = {name: item.target, pct, status: phase || `${Math.round(pct)}%`};
+        refreshUploadSummary();
+      });
+      uploadRequests.set(item.id, request);
+      await request;
+      item.loaded = item.size;
+      item.status = 'done';
+      item.error = '';
+      state.upload.rails[slot] = {name: `✓ ${item.target}`, pct: 100, status: 'done'};
+      scheduleUploadRefresh();
+    } catch (err) {
+      if (item.status === 'cancelled') {
+        state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: 'cancelled'};
+      } else {
+        item.status = 'failed';
+        item.error = err.message;
+        state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: 'failed'};
+      }
+    } finally {
+      uploadRequests.delete(item.id);
+      item.slot = null;
+      refreshUploadSummary();
+    }
+  }
+}
+
+async function runUploadQueue() {
+  if (uploadWorkersRunning) return;
+  uploadWorkersRunning = true;
+  try {
+    await Promise.all(Array.from({length: UPLOAD_RAILS}, (_, slot) => uploadWorker(slot)));
+  } finally {
+    uploadWorkersRunning = false;
+    refreshUploadSummary();
+    if (!state.upload.active && state.upload.total) {
+      scheduleUploadRefresh();
+      const failures = state.upload.failed;
+      toast(failures.length ? `${failures.length} upload${failures.length === 1 ? '' : 's'} failed.` : 'Upload complete.');
+    }
+  }
+}
+
 function beginUpload(list, prefix = '') {
   const filesToUpload = [...list].map(item => item.file
     ? item
     : {file: item, relative: item.webkitRelativePath || item.name});
   if (!filesToUpload.length) return;
-  const totalBytes = filesToUpload.reduce((n, item) => n + item.file.size, 0);
-  state.upload = {active: true, dismissed: false, current: '', done: 0, total: filesToUpload.length, loaded: 0, totalBytes, percent: 0, failed: [], rails: Array.from({length: Math.min(3, filesToUpload.length)}, () => ({name: 'Waiting…', pct: 0, status: 'waiting'}))};
-  renderUploadTray();
-  (async () => {
-    const loaded = new Array(filesToUpload.length).fill(0);
-    const updateProgress = () => {
-      const sent = loaded.reduce((n, value) => n + value, 0);
-      const pct = totalBytes ? (sent / totalBytes) * 100 : 100;
-      state.upload.percent = pct;
-      renderUploadTray();
-    };
-    let next = 0;
-    const worker = async slot => {
-      while (true) {
-        const index = next++;
-        if (index >= filesToUpload.length) return;
-        const item = filesToUpload[index];
-        const file = item.file;
-        const relative = item.relative || file.name;
-        const target = [prefix, relative].filter(Boolean).join('/');
-        state.upload.current = target;
-        const rail = state.upload.rails[slot];
-        rail.name = target; rail.pct = 0; rail.status = '0%'; renderUploadTray();
-        try {
-          await engine.putLibraryProgress(target, file, (sent) => {
-            loaded[index] = sent;
-            const pct = file.size ? (sent / file.size) * 100 : 100;
-            const sentComplete = sent >= file.size;
-            rail.pct = sentComplete ? 99 : pct; rail.status = sentComplete ? 'saving…' : `${Math.round(pct)}%`;
-            renderUploadTray();
-            updateProgress();
-          });
-          loaded[index] = file.size;
-          state.upload.done++;
-          rail.name = `✓ ${target}`; rail.pct = 100; rail.status = 'done'; renderUploadTray();
-        } catch (err) {
-          state.upload.failed.push(`${target}: ${err.message}`); loaded[index] = file.size;
-          rail.name = `× ${target}`; rail.status = 'failed'; renderUploadTray();
-        }
-        updateProgress();
-      }
-    };
-    await Promise.all(Array.from({length: Math.min(3, filesToUpload.length)}, (_, slot) => worker(slot)));
-    state.upload.active = false;
-    await loadLibrary();
-    renderMain(); renderDeck();
-    const failures = state.upload.failed;
-    toast(failures.length ? `${failures.length} upload${failures.length === 1 ? '' : 's'} failed.` : 'Upload complete.');
-  })();
+  const upload = uploadState();
+  upload.dismissed = false;
+  upload.collapsed = false;
+  upload.items.push(...filesToUpload.map(item => {
+    const file = item.file;
+    const relative = item.relative || file.name;
+    return {id: newUploadID(), file, relative, target: [prefix, relative].filter(Boolean).join('/'), size: file.size, loaded: 0, status: 'queued', attempts: 0, error: ''};
+  }));
+  refreshUploadSummary();
+  runUploadQueue();
+}
+
+function retryFailedUploads() {
+  const upload = uploadState();
+  upload.items.filter(item => item.status === 'failed').forEach(item => { item.status = 'queued'; item.loaded = 0; item.error = ''; item.attempts = (item.attempts || 0) + 1; });
+  upload.dismissed = false;
+  refreshUploadSummary();
+  runUploadQueue();
+}
+
+function cancelUploads() {
+  const upload = uploadState();
+  upload.items.filter(item => item.status === 'queued').forEach(item => { item.status = 'cancelled'; });
+  uploadRequests.forEach((request, id) => {
+    const item = upload.items.find(candidate => candidate.id === id);
+    if (item) { item.status = 'cancelled'; request.abort?.(); }
+  });
+  refreshUploadSummary();
 }
 
 function readDirectoryEntries(entry) {
@@ -548,6 +624,9 @@ document.addEventListener('click', e => {
   if (!b) return;
   if (b.classList.contains('dialog-close') || b.dataset.close !== undefined) { $('#modal').close(); return; }
   if (b.dataset.dismissUpload !== undefined) { state.upload.dismissed = true; renderUploadTray(); return; }
+  if (b.dataset.uploadCollapse !== undefined) { state.upload.collapsed = !state.upload.collapsed; renderUploadTray(); return; }
+  if (b.dataset.uploadRetry !== undefined) { retryFailedUploads(); return; }
+  if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }

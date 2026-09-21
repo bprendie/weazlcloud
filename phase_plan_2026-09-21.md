@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phase 2 complete; Phases 3–6 planned.
+Status: Phase 2 complete; Phase 3 implementation in progress; Phases 4–6 planned.
 
 ## What we are doing
 
@@ -71,13 +71,13 @@ Goal: keep browsing during uploads and handle large files without loading them a
 
 Read: `mockup-ui/app.js`, `mockup-ui/engine.js`, `mockup-ui/views.js`, `internal/library/library.go`, `internal/restic/ops.go`, `internal/drive/drive.go`, `internal/desk/capsules.go`, `internal/capsule/store.go`.
 
-- [ ] **P3.1 — Use one upload queue.** Give each upload a stable ID, destination, state, and byte count. New selections append to the queue instead of replacing `state.upload`. Keep a maximum of three active transfers across all batches. Pass: start two folder uploads, browse elsewhere, and confirm both finish at their original destinations with correct counts.
-- [ ] **P3.2 — Complete the tray controls.** Keep the tray below The Weazl Promise; provide a visible compact alternative on narrow screens. Add failure details, retry-failed, cancel, and collapse. Separate transferring, saving, completed, and failed states. Refresh the current library incrementally without stealing focus or resetting forms. Pass: failed files are not displayed as successfully completed, opening a preview does not affect uploads, and the tray is accessible on mobile.
-- [ ] **P3.3 — Stream file reads.** Replace whole-file buffers in normal downloads and WebDAV reads. Use catalog metadata for overwrite size checks instead of downloading the old file. Add range handling where needed for media and resumable downloads. Pass: transfer a generated file larger than the test process's memory budget without memory growing with file size; verify received bytes.
-- [ ] **P3.4 — Stream grab creation and delivery.** Folder ZIP creation and capsule encryption currently accumulate whole payloads in memory. Design a versioned streaming encrypted format, preserve reading existing capsules, and test authentication failures and interrupted transfers. Pass: large file and folder grabs use bounded memory and old grab links still work.
+- [x] **P3.1 — Use one upload queue.** Uploads now have stable IDs, destinations, states, byte counts, and attempts. New selections append to one queue, with a maximum of three active workers shared across all batches.
+- [x] **P3.2 — Complete the tray controls.** The background tray remains below The Weazl Promise, shows three fixed rails, separates transferring/saving/completed/failed states, supports failure details, retry-failed, cancel, collapse, dismiss, and narrow-screen layout, and refreshes the library after successful files.
+- [x] **P3.3 — Stream file reads.** Normal downloads and WebDAV reads use direct restic streaming, metadata supplies the size, and authenticated single-range responses support media/resumable clients. Preview requests retain the bounded-by-preview path until Phase 4 render work is split out.
+- [x] **P3.4 — Stream grab creation and delivery.** New file and folder grabs use a versioned authenticated chunk stream. Folder ZIPs are written into the encrypted stream, large files never become one in-memory payload, old one-shot capsules remain readable, and tests cover wrong phrases and interrupted delivery.
 - [ ] **P3.5 — Measure before batching.** Record transfer duration, restic process/snapshot count, peak memory, and temporary disk use for many small files and one large file. Introduce a durable staging queue and batch commits only after P1 is complete. Protect staged plaintext and clean it up safely. Pass: an acknowledged upload survives restart; interrupted work is recoverable; batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
 
-Phase exit: overlapping uploads, network failures, cancellation, and restart recovery have tests. Document that the browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes.
+Phase exit remains open until P3.5 measures and implements durable restart recovery. The browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes.
 
 ## Phase 4 — Make previews quick and accurate
 
@@ -164,3 +164,11 @@ Changed: Strict grab token validation and DOM rendering; server session expiry a
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/share ./internal/users ./internal/desk ./internal/drive ./internal/ratelimit` passed.
 Known limitations / decisions needed: Stored node-key unlock means host control remains a decryption trust boundary. Browser automation and production deployment remain open.
 Next task: begin P3.1.
+
+Date: September 21, 2026
+Task ID: P3.1–P3.4
+Commit: pending
+Changed: Replaced batch-local uploads with one three-rail background queue; added stable upload state, retry/cancel/collapse controls, saving/failure reporting, and incremental refresh; streamed normal library/WebDAV reads with byte ranges; added chunk-authenticated streaming capsule creation and delivery for large files and folders while retaining legacy capsule reads.
+Checks run and results: Focused library, desk, drive, capsule, and share tests passed; streaming capsule tests cover multi-megabyte data, wrong passphrases, interrupted writes, and legacy grabs; JavaScript syntax checks passed.
+Known limitations / decisions needed: P3.5 still needs transfer/process/memory/temp-disk measurements and durable staging/restart recovery. Browser-level queue testing remains open.
+Next task: P3.5 measurement and staging design.

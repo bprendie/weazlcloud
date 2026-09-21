@@ -3,6 +3,7 @@ package desk
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -59,5 +60,16 @@ func TestLibraryAPI(t *testing.T) {
 	res.Body.Close()
 	if buf.String() != string(payload) {
 		t.Fatalf("get %q", buf.String())
+	}
+	req, _ = http.NewRequest(http.MethodGet, s.URL+"/api/library?path=weazldocs/gil-setlist.md", nil)
+	req.Header.Set("Range", "bytes=1-4")
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ranged, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusPartialContent || string(ranged) != string(payload[1:5]) {
+		t.Fatalf("range status=%d body=%q", res.StatusCode, ranged)
 	}
 }
