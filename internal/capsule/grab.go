@@ -69,13 +69,22 @@ func (s *Store) Grab(id, phrase string) ([]byte, Record, error) {
 		return nil, rec, ErrGone
 	}
 	rec.Used++
-	if rec.Used >= rec.Limit {
+	terminal := rec.Used >= rec.Limit
+	if terminal {
 		rec.Revoked = true
-		_ = os.Remove(filepath.Join(dir, "open.key"))
-		_ = os.Remove(filepath.Join(dir, "pass.wrap"))
-		_ = os.Remove(filepath.Join(dir, "payload"))
 	}
-	_ = writeMeta(dir, rec)
+	if err := writeMeta(dir, rec); err != nil {
+		cryptox.Zero(plain)
+		return nil, rec, ErrStorage
+	}
+	if terminal {
+		for _, name := range []string{"open.key", "pass.wrap", "payload"} {
+			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+				cryptox.Zero(plain)
+				return nil, rec, ErrStorage
+			}
+		}
+	}
 	return plain, rec, nil
 }
 

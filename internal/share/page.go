@@ -3,7 +3,6 @@ package share
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"html"
 	"net/http"
 	"strings"
 )
@@ -50,7 +49,7 @@ button{width:100%;border:0;background:var(--yellow);color:#151515;padding:12px;f
 <p class="eyebrow">NO ACCOUNT. ONE LINK. THEN GONE.</p>
 </main>
 <script nonce="` + nonce + `">
-const id = ` + "`" + html.EscapeString(id) + "`" + `;
+const id = '` + id + `';
 let grabKind = 'file';
 const $ = s => document.querySelector(s);
 async function meta(){
@@ -63,7 +62,8 @@ async function meta(){
   if (j.gate === 'passphrase') $('#f').hidden = false;
   if (j.kind === 'folder' && j.files) {
     $('#l').hidden = false;
-    $('#l').innerHTML = j.files.map(f => '<div class="row"><strong>'+f.title+'</strong></div>').join('');
+    $('#l').textContent = '';
+    for (const f of j.files) { const row=document.createElement('div'); row.className='row'; const title=document.createElement('strong'); title.textContent=f.title; row.append(title); $('#l').append(row); }
     $('#g').textContent = 'Grab folder →';
   }
   $('#g').hidden = false;
@@ -71,10 +71,12 @@ async function meta(){
 }
 function gone(msg){ $('#t').textContent = 'This grab is gone.'; $('#m').textContent = msg || 'Burned after read.'; $('#f').hidden = true; $('#g').hidden = true; $('#l').hidden = true; }
 async function grab(){
+  if (grab.busy) return;
+  grab.busy = true; $('#g').disabled = true;
   $('#e').textContent = '';
   const phrase = ($('#f [name=phrase]')||{}).value || '';
   const r = await fetch('/g/'+id+'/file', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({passphrase:phrase})});
-  if (!r.ok) { const j = await r.json().catch(()=>({})); if (r.status===401){ $('#e').textContent='Wrong passphrase. Phrase rides a second channel.'; return;} gone(j.error); return; }
+  if (!r.ok) { const j = await r.json().catch(()=>({})); if (r.status===401){ $('#e').textContent='Wrong passphrase. Phrase rides a second channel.'; grab.busy=false; $('#g').disabled=false; return;} gone(j.error); return; }
   const blob = await r.blob();
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -84,7 +86,9 @@ async function grab(){
   const retryWord = remaining === 1 ? 'retry' : 'retries';
   $('#t').textContent = (grabKind === 'folder' ? 'Folder' : 'File') + ' Grabbed';
   $('#m').textContent = remaining + ' ' + retryWord;
-  $('#f').hidden = true; $('#g').hidden = true; $('#l').hidden = true;
+  $('#f').hidden = remaining === 0; $('#g').hidden = remaining === 0; $('#l').hidden = true;
+  $('#g').textContent = remaining === 1 ? 'Download again →' : 'Download again →';
+  grab.busy = false; $('#g').disabled = false;
 }
 meta().catch(() => gone());
 </script>

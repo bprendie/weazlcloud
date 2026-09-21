@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/recovery"
@@ -204,7 +205,7 @@ func (h *Handler) bootstrap(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	users.SetSession(w, token)
+	h.users.SetSession(w, token)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": u.ID, "username": u.Username, "admin": u.Admin})
 }
 
@@ -227,23 +228,34 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
+	key := authKey("login", r, b.Username)
+	if !h.authLimit.Allow(key) {
+		rateLimitResponse(w)
+		return
+	}
 	u, err := h.users.Authenticate(b.Username, b.Password)
 	if err != nil {
 		apiUsersError(w, err)
 		return
 	}
+	h.authLimit.Reset(key)
 	token, err := h.users.Login(u)
 	if err != nil {
 		apiUsersError(w, err)
 		return
 	}
-	users.SetSession(w, token)
+	h.users.SetSession(w, token)
 	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "admin": u.Admin})
 }
 
 func (h *Handler) requestAccess(w http.ResponseWriter, r *http.Request) {
 	var b accessRequestBody
 	if !decodeBody(w, r, &b, 8192) {
+		return
+	}
+	key := authKey("access", r, b.Username)
+	if !h.authLimit.Allow(key) {
+		rateLimitResponse(w)
 		return
 	}
 	q, err := h.users.RequestAccess(b.Username, b.Note)
@@ -441,9 +453,14 @@ func (h *Handler) multiStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
-	res, _, err := h.currentResource(r)
+	res, u, err := h.currentResource(r)
 	if err != nil {
 		apiUsersError(w, err)
+		return
+	}
+	key := authKey("unlock", r, u.ID)
+	if !h.authLimit.Allow(key) {
+		rateLimitResponse(w)
 		return
 	}
 	var b passBody
@@ -454,6 +471,7 @@ func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
 		apiError(w, err)
 		return
 	}
+	h.authLimit.Reset(key)
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "unlocked"})
 }
 
@@ -651,7 +669,7 @@ func (h *Handler) multiListCapsules(w http.ResponseWriter, r *http.Request) {
 	for _, rec := range h.caps.ListOwner(u.ID) {
 		out = append(out, rec.View())
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"capsules": out, "base": h.publicBase})
+	writeJSON(w, http.StatusOK, map[string]any{"capsules": out, "base": h.grabBase()})
 }
 
 func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
@@ -662,6 +680,10 @@ func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
 	}
 	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
+		return
+	}
+	if strings.TrimSpace(h.grabBase()) == "" || !strings.HasPrefix(h.grabBase(), "https://") {
+		apiError(w, capsule.ErrNeedBase)
 		return
 	}
 	var b mintBody
@@ -694,7 +716,7 @@ func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := got.View()
-	view["url"] = strings.TrimRight(h.publicBase, "/") + "/g/" + got.ID
+	view["url"] = strings.TrimRight(h.grabBase(), "/") + "/g/" + got.ID
 	writeJSON(w, http.StatusOK, view)
 }
 func (h *Handler) multiRevokeCapsule(w http.ResponseWriter, r *http.Request) {
@@ -716,12 +738,13 @@ func (h *Handler) multiRevokeCapsule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiGetPlaces(w http.ResponseWriter, r *http.Request) {
-	res, _, err := h.currentResource(r)
+	res, u, err := h.currentResource(r)
 	if err != nil {
 		apiUsersError(w, err)
 		return
 	}
-	h.getPlacesFor(w, res.Vault)
+	grab, drive := loadPlaces(h.users.PlacesPath(u), h.grabBase(), h.driveBase)
+	h.getPlacesForBase(w, res.Vault, grab, drive)
 }
 func (h *Handler) multiSavePlaces(w http.ResponseWriter, r *http.Request) {
 	res, u, err := h.currentResource(r)
@@ -738,7 +761,7 @@ func (h *Handler) getNodeSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator required"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"hostname": strings.TrimPrefix(h.publicBase, "https://")})
+	writeJSON(w, http.StatusOK, map[string]string{"hostname": strings.TrimPrefix(h.grabBase(), "https://")})
 }
 
 func (h *Handler) saveNodeSettings(w http.ResponseWriter, r *http.Request) {
@@ -754,8 +777,8 @@ func (h *Handler) saveNodeSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := strings.TrimPrefix(strings.TrimSpace(body.Hostname), "https://")
-	if host == "" || strings.ContainsAny(host, "/?#@") || strings.ContainsAny(host, " \t\r\n") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hostname must be a host only, without https://, a path, or credentials"})
+	if err := validateHostname(host); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "hostname must be a valid host only, without https://, a path, or credentials"})
 		return
 	}
 	if err := h.saveNodeBase("https://" + host); err != nil {

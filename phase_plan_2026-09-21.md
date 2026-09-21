@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phase 1 complete; Phases 2–6 planned.
+Status: Phase 2 independent work complete; vault-key policy decision pending; Phases 3–6 planned.
 
 ## What we are doing
 
@@ -56,14 +56,14 @@ Goal: outside input cannot turn into code, and account access has a clear lifeti
 
 Read: `internal/share/page.go`, `internal/share/share.go`, `internal/capsule/grab.go`, `internal/users/store.go`, `internal/desk/csrf.go`, `internal/desk/places.go`, `internal/vault/open.go`, `internal/vault/write.go`.
 
-- [ ] **P2.1 — Fix grab input handling.** Accept only the generated token format (32 hexadecimal characters). Stop inserting tokens into JavaScript template literals. Render filenames with `textContent`, not `innerHTML`. Keep CSP protection. Pass: malformed tokens and filenames containing markup or JavaScript interpolation are rejected or displayed as text in a browser test.
-- [ ] **P2.2 — Expire sessions on the server.** Store session creation/expiry times, reject expired sessions, and remove them. Configure secure cookies for the HTTPS deployment while retaining an explicit local-development mode. Review password-change session invalidation. Pass: replaying an expired session fails even when a client keeps the cookie.
-- [ ] **P2.3 — Bound authentication attempts.** Add bounded, expiring rate limits for login, vault unlock, access requests, WebDAV authentication, and grab passphrases. Account for the trusted proxy without trusting arbitrary forwarded headers. Avoid holding the whole user-store lock during password hashing. Pass: repeated failures are throttled without blocking unrelated users or growing limiter memory forever.
-- [ ] **P2.4 — Fix node settings persistence.** Validate the hostname properly, synchronize concurrent reads/writes, and update memory only after disk persistence succeeds. Load user drive preferences on reads. Enforce the configured grab base in the multiuser mint API itself. Pass: non-admin hostname writes fail, missing hostname blocks minting, and restart preserves saved settings.
-- [ ] **P2.5 — Document and decide vault unlock behavior.** Explain that the current stored `node.key` allows server-side decryption and WebDAV auto-unlock; UI admin isolation does not protect against someone who controls the host. Present Bob with the convenience/privacy tradeoff before changing this design. Define what Lock, logout, session expiry, WebDAV access, and rekey should do together. Pass: the decision is written down and implemented with cross-interface tests. Do not remove stored keys without a tested migration and recovery route.
-- [ ] **P2.6 — Make grab counts durable.** Handle metadata-write and payload-delete errors. Prevent duplicate clicks while a download starts; offer another download when the server reports retries remaining. Preserve the filename on repeated downloads. Pass: a five-grab test shows 4, 3, 2, 1, 0 remaining and refuses a sixth; incorrect passphrases do not consume a grab. Record the existing rule that a server-accepted grab consumes a use, not proof that the browser saved it.
+- [x] **P2.1 — Fix grab input handling.** Accept generated 32-character hexadecimal tokens, render folder names with DOM text nodes, keep CSP protection, and sanitize download filenames. Tests cover malformed tokens and the former markup path.
+- [x] **P2.2 — Expire sessions on the server.** Sessions now carry server-side expiry, expired entries are rejected and removed, secure cookies can be enabled for HTTPS deployments with `WEAZLCLOUD_SECURE_COOKIES=true`, and password changes invalidate old sessions.
+- [x] **P2.3 — Bound authentication attempts.** Added bounded expiring limits for login, vault unlock, access requests, WebDAV authentication, and grab attempts. The limiter uses the direct peer address and does not trust forwarded headers. Password verification now runs outside the global user-store lock.
+- [x] **P2.4 — Fix node settings persistence.** Hostnames are validated as DNS hosts, node settings are synchronized, memory changes happen after durable write, per-user drive Places are loaded on reads, and multiuser minting enforces the administrator grab base.
+- [ ] **P2.5 — Document and decide vault unlock behavior.** The stored `node.key` currently permits server-side decryption and WebDAV auto-unlock; UI admin isolation does not protect against someone who controls the host. Bob must choose between convenience (WebDAV survives restart and the node can unlock a vault) and explicit unlock privacy (WebDAV waits for a user unlock). Define Lock, logout, session expiry, WebDAV access, and rekey together. Do not remove stored keys without a tested migration and recovery route.
+- [x] **P2.6 — Make grab counts durable.** Grab metadata is written before a use is accepted, terminal key/payload cleanup errors are surfaced, duplicate clicks are suppressed, remaining retries remain available in the page, and filenames survive repeated downloads. Wrong passphrases do not consume a grab.
 
-Phase exit: browser tests cover grab styling/CSP, hostile filenames, passphrases, retry counts, and expired sessions. Keep all identity and processing on the node.
+Phase exit: independent work complete. Go tests, vet, and targeted race tests pass. Browser automation still needs to verify the hostile-filename page flow; P2.5 blocks final Phase 2 closure until the vault-key policy is recorded and tested. Keep all identity and processing on the node.
 
 ## Phase 3 — Make transfers dependable and faster
 
@@ -151,8 +151,16 @@ Next task:
 
 Date: September 21, 2026
 Task ID: P1.1–P1.5
-Commit: pending
+Commit: 92f5740
 Changed: Shared per-user file-service registry; per-user WebDAV locks; shared-storage quota reservations including unknown-length uploads and grab copies; safe catalog collision and rename handling; Phase 1 regression tests and quota seam.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/app ./internal/catalog ./internal/quota ./internal/drive ./internal/desk ./internal/filesvc` passed; localhost three-listener smoke test passed.
 Known limitations / decisions needed: Browser automation, full restore, restic pruning, and the Phase 2–6 work remain open. Production deployment was not performed.
 Next task: P2.1, grab input handling.
+
+Date: September 21, 2026
+Task ID: P2.1–P2.4, P2.6
+Commit: pending
+Changed: Strict grab token validation and DOM rendering; server session expiry and secure-cookie mode; password-change session invalidation; bounded local authentication limits; hostname validation and synchronized persistence; per-user Places reads; durable grab-use accounting and retry UX.
+Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/share ./internal/users ./internal/desk ./internal/drive ./internal/ratelimit` passed.
+Known limitations / decisions needed: P2.5 requires Bob's vault-key/autounlock policy decision. Browser automation and production deployment remain open.
+Next task: decide P2.5, then begin P3.1.

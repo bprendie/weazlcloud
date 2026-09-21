@@ -5,12 +5,15 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
+	"github.com/bprendie/weazlcloud/internal/ratelimit"
 	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -28,9 +31,11 @@ type Handler struct {
 	driveBase  string
 	placesPath string
 	nodePath   string
+	nodeMu     sync.RWMutex
 	users      *users.Store
 	quota      *quota.Manager
 	registry   *filesvc.Registry
+	authLimit  *ratelimit.Limiter
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -42,6 +47,7 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 	return &Handler{
 		files: http.FileServer(http.FS(sub)), vault: v, lib: lib, caps: caps,
 		publicBase: grab, driveBase: drive, placesPath: placesPath,
+		authLimit: ratelimit.New(time.Minute, 8, 4096),
 	}
 }
 

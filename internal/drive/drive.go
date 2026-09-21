@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
+	"github.com/bprendie/weazlcloud/internal/ratelimit"
 	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/users"
 )
@@ -30,6 +32,7 @@ type Handler struct {
 	registry *filesvc.Registry
 	mu       sync.Mutex
 	locks    map[string]webdav.LockSystem
+	limit    *ratelimit.Limiter
 }
 type resource struct {
 	service *filesvc.Resource
@@ -44,7 +47,7 @@ func NewMultiWith(us *users.Store, q *quota.Manager, registry *filesvc.Registry)
 	if registry == nil {
 		registry = filesvc.NewRegistry(us)
 	}
-	return &Handler{users: us, quota: q, registry: registry, locks: make(map[string]webdav.LockSystem)}
+	return &Handler{users: us, quota: q, registry: registry, locks: make(map[string]webdav.LockSystem), limit: ratelimit.New(time.Minute, 8, 4096)}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +75,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		challenge(w, "weazlcloud: authentication required")
 		return
 	}
+	remote := r.RemoteAddr
+	if host, _, splitErr := net.SplitHostPort(remote); splitErr == nil {
+		remote = host
+	}
+	key := username + ":" + remote
+	if !h.limit.Allow(key) {
+		w.Header().Set("Retry-After", "60")
+		challenge(w, "weazlcloud: too many authentication attempts")
+		return
+	}
 	u, err := h.users.Authenticate(username, password)
 	if err != nil {
 		challenge(w, "weazlcloud: authentication required")
 		return
 	}
+	h.limit.Reset(key)
 	service := h.registry.For(u)
 	if err := service.Vault.UnlockNode(); err != nil {
 		http.Error(w, "weazlcloud: vault unavailable", http.StatusServiceUnavailable)

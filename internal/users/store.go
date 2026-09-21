@@ -26,6 +26,7 @@ var (
 )
 
 const cookieName = "weazl_session"
+const sessionTTL = 24 * time.Hour
 
 var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$`)
 
@@ -38,6 +39,11 @@ type User struct {
 	Salt      string    `json:"salt"`
 	Verifier  string    `json:"verifier"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type session struct {
+	userID  string
+	expires time.Time
 }
 
 func (s *Store) UpdateProfile(id, fullName string) (User, error) {
@@ -64,36 +70,54 @@ func (s *Store) ChangePassword(id, current, next string) error {
 		return errors.New("password must be at least 8 characters")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i := range s.users {
-		u := &s.users[i]
-		if u.ID != id {
-			continue
+	var index int
+	var candidate User
+	for i, u := range s.users {
+		if u.ID == id {
+			index, candidate = i, u
+			break
 		}
-		salt, err := cryptox.B64d(u.Salt)
-		if err != nil {
-			return ErrBadCredentials
-		}
-		want, err := cryptox.B64d(u.Verifier)
-		if err != nil {
-			return ErrBadCredentials
-		}
-		got := cryptox.Derive([]byte(current), salt)
-		valid := subtle.ConstantTimeCompare(got, want) == 1
-		cryptox.Zero(got)
-		if !valid {
-			return ErrBadCredentials
-		}
-		newSalt, err := cryptox.Random(cryptox.SaltBytes)
-		if err != nil {
-			return err
-		}
-		key := cryptox.Derive([]byte(next), newSalt)
-		defer cryptox.Zero(key)
-		u.Salt, u.Verifier = cryptox.B64(newSalt), cryptox.B64(key)
-		return s.saveLocked()
 	}
-	return errors.New("user not found")
+	s.mu.Unlock()
+	if candidate.ID == "" {
+		return errors.New("user not found")
+	}
+	salt, err := cryptox.B64d(candidate.Salt)
+	if err != nil {
+		return ErrBadCredentials
+	}
+	want, err := cryptox.B64d(candidate.Verifier)
+	if err != nil {
+		return ErrBadCredentials
+	}
+	got := cryptox.Derive([]byte(current), salt)
+	valid := subtle.ConstantTimeCompare(got, want) == 1
+	cryptox.Zero(got)
+	cryptox.Zero(salt)
+	cryptox.Zero(want)
+	if !valid {
+		return ErrBadCredentials
+	}
+	newSalt, err := cryptox.Random(cryptox.SaltBytes)
+	if err != nil {
+		return err
+	}
+	key := cryptox.Derive([]byte(next), newSalt)
+	defer cryptox.Zero(key)
+	newSaltB64, keyB64 := cryptox.B64(newSalt), cryptox.B64(key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index >= len(s.users) || s.users[index].ID != id {
+		return errors.New("user changed while password was being updated")
+	}
+	oldSalt, oldVerifier := s.users[index].Salt, s.users[index].Verifier
+	s.users[index].Salt, s.users[index].Verifier = newSaltB64, keyB64
+	if err := s.saveLocked(); err != nil {
+		s.users[index].Salt, s.users[index].Verifier = oldSalt, oldVerifier
+		return err
+	}
+	s.invalidateSessionsLocked(id)
+	return nil
 }
 
 type AccessRequest struct {
@@ -113,16 +137,17 @@ type file struct {
 }
 
 type Store struct {
-	mu       sync.Mutex
-	path     string
-	userRoot string
-	users    []User
-	requests []AccessRequest
-	sessions map[string]string
+	mu            sync.Mutex
+	path          string
+	userRoot      string
+	users         []User
+	requests      []AccessRequest
+	sessions      map[string]session
+	secureCookies bool
 }
 
 func New(path, userRoot string) (*Store, error) {
-	s := &Store{path: path, userRoot: userRoot, sessions: make(map[string]string)}
+	s := &Store{path: path, userRoot: userRoot, sessions: make(map[string]session)}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -340,28 +365,34 @@ func (s *Store) Create(username, password string, admin bool) (User, error) {
 
 func (s *Store) Authenticate(username, password string) (User, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	var candidate User
 	for _, u := range s.users {
 		if !strings.EqualFold(u.Username, strings.TrimSpace(username)) {
 			continue
 		}
 		if u.Disabled {
+			s.mu.Unlock()
 			return User{}, ErrDisabled
 		}
-		salt, err := cryptox.B64d(u.Salt)
-		if err != nil {
-			return User{}, ErrBadCredentials
-		}
-		want, err := cryptox.B64d(u.Verifier)
-		if err != nil {
-			return User{}, ErrBadCredentials
-		}
-		got := cryptox.Derive([]byte(password), salt)
-		defer cryptox.Zero(got)
-		if subtle.ConstantTimeCompare(got, want) == 1 {
-			return u, nil
-		}
+		candidate = u
+		break
+	}
+	s.mu.Unlock()
+	if candidate.ID == "" {
 		return User{}, ErrBadCredentials
+	}
+	salt, err := cryptox.B64d(candidate.Salt)
+	if err != nil {
+		return User{}, ErrBadCredentials
+	}
+	want, err := cryptox.B64d(candidate.Verifier)
+	if err != nil {
+		return User{}, ErrBadCredentials
+	}
+	got := cryptox.Derive([]byte(password), salt)
+	defer cryptox.Zero(got)
+	if subtle.ConstantTimeCompare(got, want) == 1 {
+		return candidate, nil
 	}
 	return User{}, ErrBadCredentials
 }
@@ -373,7 +404,7 @@ func (s *Store) Login(u User) (string, error) {
 	}
 	token := hexToken(b)
 	s.mu.Lock()
-	s.sessions[token] = u.ID
+	s.sessions[token] = session{userID: u.ID, expires: time.Now().Add(sessionTTL)}
 	s.mu.Unlock()
 	return token, nil
 }
@@ -384,24 +415,38 @@ func (s *Store) Current(r *http.Request) (User, error) {
 		return User{}, ErrNoSession
 	}
 	s.mu.Lock()
-	id := s.sessions[c.Value]
+	sess, ok := s.sessions[c.Value]
 	s.mu.Unlock()
-	if id == "" {
+	if !ok || time.Now().After(sess.expires) {
+		if ok {
+			s.mu.Lock()
+			delete(s.sessions, c.Value)
+			s.mu.Unlock()
+		}
 		return User{}, ErrNoSession
 	}
-	u, ok := s.User(id)
+	u, ok := s.User(sess.userID)
 	if !ok || u.Disabled {
 		return User{}, ErrNoSession
 	}
 	return u, nil
 }
 
-func SetSession(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 86400})
+func (s *Store) SetSession(w http.ResponseWriter, token string) {
+	s.mu.Lock()
+	secure := s.secureCookies
+	s.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 86400})
 }
 
 func ClearSession(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode, MaxAge: -1})
+}
+
+func (s *Store) SetSecureCookies(secure bool) {
+	s.mu.Lock()
+	s.secureCookies = secure
+	s.mu.Unlock()
 }
 
 func (s *Store) Logout(r *http.Request) {
@@ -409,6 +454,14 @@ func (s *Store) Logout(r *http.Request) {
 		s.mu.Lock()
 		delete(s.sessions, c.Value)
 		s.mu.Unlock()
+	}
+}
+
+func (s *Store) invalidateSessionsLocked(userID string) {
+	for token, sess := range s.sessions {
+		if sess.userID == userID {
+			delete(s.sessions, token)
+		}
 	}
 }
 

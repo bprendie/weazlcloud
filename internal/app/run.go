@@ -160,6 +160,7 @@ func (n *Node) bind() error {
 	if err != nil {
 		return err
 	}
+	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us)
 	n.svcs = []*http.Server{

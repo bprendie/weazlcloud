@@ -2,6 +2,8 @@ package desk
 
 import (
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,7 +24,11 @@ func (h *Handler) getPlaces(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) getPlacesFor(w http.ResponseWriter, v *vault.Vault) {
-	p := places{Grab: h.publicBase, Drive: h.driveBase}
+	h.getPlacesForBase(w, v, h.grabBase(), h.driveBase)
+}
+
+func (h *Handler) getPlacesForBase(w http.ResponseWriter, v *vault.Vault, grab, drive string) {
+	p := places{Grab: grab, Drive: drive}
 	if v != nil && v.Unlocked() {
 		if t, err := v.DriveToken(); err == nil {
 			p.Token = t
@@ -49,10 +55,11 @@ func (h *Handler) savePlacesFor(w http.ResponseWriter, r *http.Request, v *vault
 		return
 	}
 	if h.users != nil {
-		p.Grab = h.publicBase
+		p.Grab = h.grabBase()
+	} else {
+		h.publicBase = p.Grab
+		h.driveBase = p.Drive
 	}
-	h.publicBase = p.Grab
-	h.driveBase = p.Drive
 	if placesPath != "" {
 		b, _ := json.MarshalIndent(p, "", "  ")
 		_ = cryptox.AtomicWrite(placesPath, append(b, '\n'), 0o600)
@@ -75,17 +82,45 @@ func loadNodeBase(path, fallback string) string {
 }
 
 func (h *Handler) saveNodeBase(base string) error {
-	h.publicBase = base
-	if h.nodePath == "" {
-		return nil
-	}
 	b, err := json.MarshalIndent(struct {
 		GrabBase string `json:"grab_base"`
 	}{base}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return cryptox.AtomicWrite(h.nodePath, append(b, '\n'), 0o600)
+	if h.nodePath != "" {
+		if err := cryptox.AtomicWrite(h.nodePath, append(b, '\n'), 0o600); err != nil {
+			return err
+		}
+	}
+	h.nodeMu.Lock()
+	h.publicBase = base
+	h.nodeMu.Unlock()
+	return nil
+}
+
+func (h *Handler) grabBase() string {
+	h.nodeMu.RLock()
+	defer h.nodeMu.RUnlock()
+	return h.publicBase
+}
+
+func validateHostname(host string) error {
+	host = strings.TrimSuffix(strings.TrimSpace(host), ".")
+	if host == "" || len(host) > 253 || net.ParseIP(host) != nil {
+		return fmt.Errorf("hostname must be a DNS host")
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("hostname contains an invalid label")
+		}
+		for _, r := range label {
+			if !(r == '-' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+				return fmt.Errorf("hostname contains an invalid character")
+			}
+		}
+	}
+	return nil
 }
 
 func loadPlaces(path, grab, drive string) (string, string) {

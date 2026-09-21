@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -76,5 +77,47 @@ func TestGrabMetaJSON(t *testing.T) {
 	}
 	if meta["name"] != "pic.jpg" || meta["status"] != "live" {
 		t.Fatalf("%v", meta)
+	}
+}
+
+func TestGrabTokenMustBeGeneratedHex(t *testing.T) {
+	valid := strings.Repeat("a", 32)
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/g/" + valid + "/meta", true},
+		{"/g/" + strings.Repeat("a", 31) + "/meta", false},
+		{"/g/" + strings.Repeat("g", 32) + "/meta", false},
+		{"/g/" + strings.Repeat("a", 32) + "x/meta", false},
+		{"/g/${alert(1)}/meta", false},
+	} {
+		id, rest := grabParts(tc.path)
+		if (id != "" && rest == "meta") != tc.want {
+			t.Fatalf("grabParts(%q) = %q, %q; want valid=%t", tc.path, id, rest, tc.want)
+		}
+	}
+}
+
+func TestGrabPageDoesNotBuildMarkupFromMembers(t *testing.T) {
+	store := capsule.New(t.TempDir())
+	rec, err := store.Mint(capsule.Record{
+		Name: "folder", Kind: "folder", Gate: "open", Expires: time.Now().Add(time.Hour), Limit: 1,
+		Files: []capsule.Member{{Title: `<img src=x onerror=alert(1)>`, Size: 1, Kind: "FILE"}},
+	}, "", []byte("zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(New(store))
+	t.Cleanup(s.Close)
+	res, err := http.Get(s.URL + "/g/" + rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	page := string(body)
+	if strings.Contains(page, "innerHTML = j.files") || !strings.Contains(page, "title.textContent=f.title") {
+		t.Fatalf("grab page still renders member names as markup")
 	}
 }

@@ -10,6 +10,7 @@ var (
 	ErrPhrase   = errors.New("incorrect passphrase")
 	ErrNeedBase = errors.New("set an https grab base in Places before minting")
 	ErrNeedPath = errors.New("pick a file or a folder first")
+	ErrStorage  = errors.New("grab storage failure")
 )
 
 type Member struct {

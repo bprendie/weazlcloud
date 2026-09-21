@@ -18,12 +18,13 @@ var forbiddenEnv = []string{
 }
 
 type Config struct {
-	DataDir    string
-	DeskAddr   string
-	ShareAddr  string
-	DriveAddr  string
-	PublicBase string
-	DriveBase  string
+	DataDir       string
+	DeskAddr      string
+	ShareAddr     string
+	DriveAddr     string
+	PublicBase    string
+	DriveBase     string
+	SecureCookies bool
 }
 
 func Load() (Config, error) {
@@ -31,12 +32,13 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		DataDir:    env("WEAZLCLOUD_DATA", "data"),
-		DeskAddr:   env("WEAZLCLOUD_DESK_ADDR", "127.0.0.1:7272"),
-		ShareAddr:  env("WEAZLCLOUD_SHARE_ADDR", "127.0.0.1:7273"),
-		DriveAddr:  env("WEAZLCLOUD_DRIVE_ADDR", "127.0.0.1:7274"),
-		PublicBase: strings.TrimSpace(os.Getenv("WEAZLCLOUD_PUBLIC_BASE")),
-		DriveBase:  strings.TrimSpace(os.Getenv("WEAZLCLOUD_DRIVE_BASE")),
+		DataDir:       env("WEAZLCLOUD_DATA", "data"),
+		DeskAddr:      env("WEAZLCLOUD_DESK_ADDR", "127.0.0.1:7272"),
+		ShareAddr:     env("WEAZLCLOUD_SHARE_ADDR", "127.0.0.1:7273"),
+		DriveAddr:     env("WEAZLCLOUD_DRIVE_ADDR", "127.0.0.1:7274"),
+		PublicBase:    strings.TrimSpace(os.Getenv("WEAZLCLOUD_PUBLIC_BASE")),
+		DriveBase:     strings.TrimSpace(os.Getenv("WEAZLCLOUD_DRIVE_BASE")),
+		SecureCookies: strings.EqualFold(strings.TrimSpace(os.Getenv("WEAZLCLOUD_SECURE_COOKIES")), "true"),
 	}
 	return cfg, cfg.Validate()
 }
