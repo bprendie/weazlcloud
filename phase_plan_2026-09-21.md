@@ -75,7 +75,7 @@ Read: `mockup-ui/app.js`, `mockup-ui/engine.js`, `mockup-ui/views.js`, `internal
 - [x] **P3.2 — Complete the tray controls.** The background tray remains below The Weazl Promise, shows three fixed rails, separates transferring/saving/completed/failed states, supports failure details, retry-failed, cancel, collapse, dismiss, and narrow-screen layout, and refreshes the library after successful files.
 - [x] **P3.3 — Stream file reads.** Normal downloads and WebDAV reads use direct restic streaming, metadata supplies the size, and authenticated single-range responses support media/resumable clients. Preview requests retain the bounded-by-preview path until Phase 4 render work is split out.
 - [x] **P3.4 — Stream grab creation and delivery.** New file and folder grabs use a versioned authenticated chunk stream. Folder ZIPs are written into the encrypted stream, large files never become one in-memory payload, old one-shot capsules remain readable, and tests cover wrong phrases and interrupted delivery.
-- [ ] **P3.5 — Measure before batching.** Record transfer duration, restic process/snapshot count, peak memory, and temporary disk use for many small files and one large file. Introduce a durable staging queue and batch commits only after P1 is complete. Protect staged plaintext and clean it up safely. Pass: an acknowledged upload survives restart; interrupted work is recoverable; batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
+- [ ] **P3.5 — Measure before batching.** Durable per-user staging is now in place: plaintext stages use a protected directory and manifest, are published only after restic/catalog success, and recover on the next library ensure after an interruption. Still open: record transfer duration, restic process/snapshot count, peak memory, and temporary disk use for many small files and one large file; introduce batching only if those measurements justify it. Pass: an acknowledged upload survives restart; interrupted work is recoverable; any batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
 
 Phase exit remains open until P3.5 measures and implements durable restart recovery. The browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes.
 
@@ -172,3 +172,11 @@ Changed: Replaced batch-local uploads with one three-rail background queue; adde
 Checks run and results: Focused library, desk, drive, capsule, and share tests passed; streaming capsule tests cover multi-megabyte data, wrong passphrases, interrupted writes, and legacy grabs; JavaScript syntax checks passed.
 Known limitations / decisions needed: P3.5 still needs transfer/process/memory/temp-disk measurements and durable staging/restart recovery. Browser-level queue testing remains open.
 Next task: P3.5 measurement and staging design.
+
+Date: September 21, 2026
+Task ID: P3.5 staging recovery
+Commit: pending
+Changed: Replaced transient upload spools with protected per-user staging data and durable manifests. A later library ensure resumes restic/catalog publication after an interrupted process; successful stages are removed, and stale stages lose to a later overwrite. Added a recovery regression test using an ISO-shaped payload.
+Checks run and results: `go test ./...` passed; `go vet ./...` passed; focused `go test -race ./internal/library ./internal/desk ./internal/drive` passed.
+Known limitations / decisions needed: Transfer measurements and restic batching are not yet implemented. The line-count policy still reports the existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
+Next task: measure small-file versus large-file transfer cost before choosing a batch format.

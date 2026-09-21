@@ -105,6 +105,36 @@ func TestPutGetPNG(t *testing.T) {
 	}
 }
 
+func TestStagedUploadRecoversOnNextEnsure(t *testing.T) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	payload := bytes.Repeat([]byte("recover-me"), 10000)
+	stage, err := lib.stageReader("recovered.iso", bytes.NewReader(payload), int64(len(payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib.setStageActive(stage.ID, false)
+	if err := lib.Ensure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := lib.Get(context.Background(), "recovered.iso")
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("recovered upload err=%v size=%d", err, len(got))
+	}
+	if entries, err := os.ReadDir(lib.stageDir()); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	} else if len(entries) != 0 {
+		t.Fatalf("staging files remain: %v", entries)
+	}
+}
+
 func TestLockedPut(t *testing.T) {
 	dir := t.TempDir()
 	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))

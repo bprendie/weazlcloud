@@ -3,13 +3,9 @@ package library
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"io"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/restic"
@@ -17,26 +13,32 @@ import (
 )
 
 type Library struct {
-	mu      sync.Mutex
-	repo    string
-	vault   *vault.Vault
-	catalog *catalog.Catalog
-	restic  restic.Runner
+	mu           sync.Mutex
+	stageMu      sync.Mutex
+	activeStages map[string]struct{}
+	repo         string
+	vault        *vault.Vault
+	catalog      *catalog.Catalog
+	restic       restic.Runner
 }
 
 func New(repo, catalogPath string, v *vault.Vault) *Library {
 	return &Library{
-		repo:    repo,
-		vault:   v,
-		catalog: catalog.New(catalogPath, v),
-		restic:  restic.New(),
+		repo:         repo,
+		vault:        v,
+		catalog:      catalog.New(catalogPath, v),
+		restic:       restic.New(),
+		activeStages: make(map[string]struct{}),
 	}
 }
 
 func (l *Library) Ensure(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.ensure(ctx)
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	return l.recoverStaged(ctx)
 }
 
 func (l *Library) ensure(ctx context.Context) error {
@@ -152,56 +154,17 @@ func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, ex
 	if err != nil {
 		return catalog.File{}, err
 	}
-	// Spool the request before taking the repository mutex. Multiple uploads
-	// can receive data concurrently; only the restic/catalog commit is serialized.
-	if err := os.MkdirAll(l.repo, 0o700); err != nil {
-		return catalog.File{}, err
-	}
-	tmp, err := os.CreateTemp(l.repo, ".upload-*")
+	stage, err := l.stageReader(name, body, expected)
 	if err != nil {
 		return catalog.File{}, err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-	h := sha256.New()
-	size, err := io.Copy(io.MultiWriter(tmp, h), body)
-	if err != nil {
-		tmp.Close()
-		return catalog.File{}, err
-	}
-	if expected >= 0 && size != expected {
-		tmp.Close()
-		return catalog.File{}, errors.New("upload size changed while reading")
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		tmp.Close()
-		return catalog.File{}, err
-	}
-	hash := hex.EncodeToString(h.Sum(nil))
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	defer l.setStageActive(stage.ID, false)
 	if err := l.ensure(ctx); err != nil {
-		tmp.Close()
 		return catalog.File{}, err
 	}
-	pass, _, err := l.vault.Secrets()
-	if err != nil {
-		tmp.Close()
-		return catalog.File{}, err
-	}
-	snap, err := l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, hash, tmp)
-	_ = tmp.Close()
-	if err != nil {
-		return catalog.File{}, err
-	}
-	f := catalog.File{
-		Path: name, Size: size, Mtime: time.Now().UTC(),
-		Hash: hash, Snap: snap, Present: true,
-	}
-	if err := l.catalog.Put(f); err != nil {
-		return catalog.File{}, err
-	}
-	return f, nil
+	return l.commitStaged(ctx, stage)
 }
 
 func (l *Library) Get(ctx context.Context, name string) ([]byte, error) {
