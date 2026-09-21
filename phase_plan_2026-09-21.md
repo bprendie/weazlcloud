@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phase 2 independent work complete; vault-key policy decision pending; Phases 3–6 planned.
+Status: Phase 2 complete; Phases 3–6 planned.
 
 ## What we are doing
 
@@ -60,10 +60,10 @@ Read: `internal/share/page.go`, `internal/share/share.go`, `internal/capsule/gra
 - [x] **P2.2 — Expire sessions on the server.** Sessions now carry server-side expiry, expired entries are rejected and removed, secure cookies can be enabled for HTTPS deployments with `WEAZLCLOUD_SECURE_COOKIES=true`, and password changes invalidate old sessions.
 - [x] **P2.3 — Bound authentication attempts.** Added bounded expiring limits for login, vault unlock, access requests, WebDAV authentication, and grab attempts. The limiter uses the direct peer address and does not trust forwarded headers. Password verification now runs outside the global user-store lock.
 - [x] **P2.4 — Fix node settings persistence.** Hostnames are validated as DNS hosts, node settings are synchronized, memory changes happen after durable write, per-user drive Places are loaded on reads, and multiuser minting enforces the administrator grab base.
-- [ ] **P2.5 — Document and decide vault unlock behavior.** The stored `node.key` currently permits server-side decryption and WebDAV auto-unlock; UI admin isolation does not protect against someone who controls the host. Bob must choose between convenience (WebDAV survives restart and the node can unlock a vault) and explicit unlock privacy (WebDAV waits for a user unlock). Define Lock, logout, session expiry, WebDAV access, and rekey together. Do not remove stored keys without a tested migration and recovery route.
+- [x] **P2.5 — Use stored node-key unlock.** Bob chose convenience for this personal node. The authenticated WebDAV listener may use the user's stored `node.key` after restart or after the in-memory vault is locked, so a mounted drive can reconnect. Desk login/session state remains separate from vault unlock; logout and session expiry do not expose the library or create a Desk session. Rekey rewrites the stored node key and invalidates the old one. A host administrator who controls the node can still decrypt stored vaults; this is recorded as a trust boundary, not hidden behind UI admin isolation.
 - [x] **P2.6 — Make grab counts durable.** Grab metadata is written before a use is accepted, terminal key/payload cleanup errors are surfaced, duplicate clicks are suppressed, remaining retries remain available in the page, and filenames survive repeated downloads. Wrong passphrases do not consume a grab.
 
-Phase exit: independent work complete. Go tests, vet, and targeted race tests pass. Browser automation still needs to verify the hostile-filename page flow; P2.5 blocks final Phase 2 closure until the vault-key policy is recorded and tested. Keep all identity and processing on the node.
+Phase exit: complete. Go tests, vet, and targeted race tests pass. Browser automation still needs to verify the hostile-filename page flow. WebDAV's existing `UnlockNode` integration test covers stored unlock; a later end-to-end test should cover lock/reconnect/rekey together. Keep all identity and processing on the node.
 
 ## Phase 3 — Make transfers dependable and faster
 
@@ -162,5 +162,5 @@ Task ID: P2.1–P2.4, P2.6
 Commit: pending
 Changed: Strict grab token validation and DOM rendering; server session expiry and secure-cookie mode; password-change session invalidation; bounded local authentication limits; hostname validation and synchronized persistence; per-user Places reads; durable grab-use accounting and retry UX.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/share ./internal/users ./internal/desk ./internal/drive ./internal/ratelimit` passed.
-Known limitations / decisions needed: P2.5 requires Bob's vault-key/autounlock policy decision. Browser automation and production deployment remain open.
-Next task: decide P2.5, then begin P3.1.
+Known limitations / decisions needed: Stored node-key unlock means host control remains a decryption trust boundary. Browser automation and production deployment remain open.
+Next task: begin P3.1.

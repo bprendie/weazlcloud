@@ -167,6 +167,11 @@ The passphrase never lives in Compose `environment`. Lose it and the kit is a br
 An existing single-user root vault is adopted by the first administrator after
 its vault passphrase verifies.
 
+WebDAV uses each user's stored node key to unlock that user's vault after a
+restart or an in-memory lock, so a mounted drive can reconnect. Desk sessions
+and vault unlock remain separate. Rekey replaces the stored node key. Anyone
+who controls the node host is inside the vault decryption trust boundary.
+
 Library (vault must be unlocked):
 
 - `GET /api/library` — current files (path, size, mtime). No engine words.
