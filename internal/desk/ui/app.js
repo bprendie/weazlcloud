@@ -27,21 +27,69 @@ function hideMenu() {
   if (el) el.hidden = true;
 }
 
-async function hydrateGridTextPreviews() {
-  const previews = [...document.querySelectorAll('[data-grid-text-preview]:not([data-loaded])')];
-  await Promise.all(previews.map(async el => {
-    el.dataset.loaded = '1';
+const GRID_PREVIEW_RAILS = 4;
+const gridTextQueue = [];
+const gridThumbQueue = [];
+let gridTextActive = 0;
+let gridThumbActive = 0;
+const gridPreviewObserver = 'IntersectionObserver' in window
+  ? new IntersectionObserver(entries => entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    const el = entry.target;
+    gridPreviewObserver.unobserve(el);
+    el.dataset.previewQueued = '1';
+    if (el.dataset.gridTextPreview !== undefined) gridTextQueue.push(el);
+    else gridThumbQueue.push(el);
+    pumpGridTextPreviews();
+    pumpGridThumbnails();
+  }), {rootMargin: '500px 0px'})
+  : null;
+
+function pumpGridTextPreviews() {
+  while (gridTextActive < 3 && gridTextQueue.length) {
+    const el = gridTextQueue.shift();
+    if (!el?.isConnected) continue;
+    gridTextActive++;
     const path = el.dataset.gridTextPreview || '';
-    try {
-      const response = await fetch(`/api/library?path=${encodeURIComponent(path)}&preview=1`);
-      if (!response.ok) throw new Error('preview unavailable');
-      const text = await response.text();
-      el.textContent = text.slice(0, 1200) || '(empty file)';
-    } catch (_) {
-      el.textContent = 'Preview unavailable';
-      el.classList.add('preview-unavailable');
+    fetch(`/api/library?path=${encodeURIComponent(path)}&preview=1`)
+      .then(response => { if (!response.ok) throw new Error('preview unavailable'); return response.text(); })
+      .then(text => { el.textContent = text.slice(0, 1200) || '(empty file)'; })
+      .catch(() => { el.textContent = 'Preview unavailable'; el.classList.add('preview-unavailable'); })
+      .finally(() => { gridTextActive--; pumpGridTextPreviews(); });
+  }
+}
+
+function pumpGridThumbnails() {
+  while (gridThumbActive < GRID_PREVIEW_RAILS && gridThumbQueue.length) {
+    const el = gridThumbQueue.shift();
+    if (!el?.isConnected) continue;
+    gridThumbActive++;
+    const path = el.dataset.gridThumbnail || '';
+    el.src = `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
+    const done = () => { gridThumbActive--; pumpGridThumbnails(); };
+    el.addEventListener('load', done, {once: true});
+    el.addEventListener('error', () => {
+      el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
+      done();
+    }, {once: true});
+  }
+}
+
+function hydrateGridTextPreviews() {
+  const observe = (el, queue) => {
+    if (el.dataset.previewQueued !== undefined || el.dataset.previewObserved !== undefined) return;
+    if (gridPreviewObserver) {
+      el.dataset.previewObserved = '1';
+      gridPreviewObserver.observe(el);
+      return;
     }
-  }));
+    el.dataset.previewQueued = '1';
+    queue.push(el);
+  };
+  document.querySelectorAll('[data-grid-text-preview]').forEach(el => observe(el, gridTextQueue));
+  document.querySelectorAll('[data-grid-thumbnail]').forEach(el => observe(el, gridThumbQueue));
+  pumpGridTextPreviews();
+  pumpGridThumbnails();
 }
 
 const contentObserver = new MutationObserver(() => { hydrateGridTextPreviews(); });
@@ -107,8 +155,16 @@ async function previewFile(id) {
   const f = files.find(x => x.id === id); if (!f || f.folder) return;
   const path = filePath(id);
   if (!live) { toast('Preview is available when the node is connected.'); return; }
-  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLA', 'MP4', 'MOV', 'WEBM']);
+  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'FLA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
   if (!previewable.has(String(f.kind).toUpperCase())) { toast('This file opens as a download.'); return; }
+  const mediaKind = new Set(['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
+  if (mediaKind.has(String(f.kind).toUpperCase())) {
+    const mediaURL = `/api/library?path=${encodeURIComponent(path)}&inline=1`;
+    const isVideo = ['MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V'].includes(String(f.kind).toUpperCase());
+    const tag = isVideo ? 'video' : 'audio';
+    modal(`<span class="eyebrow purple">PREVIEW / ${isVideo ? 'VIDEO' : 'AUDIO'}</span><h2>${esc(f.title)}</h2><${tag} class="file-preview-media" src="${mediaURL}" controls preload="metadata"></${tag}><div class="preview-actions"><a class="secondary button-link" href="${mediaURL}" download="${esc(f.title)}">Download</a></div><p class="eyebrow">${esc(path)}</p>`, true);
+    return;
+  }
   try {
     const result = await engine.previewLibrary(path);
     const url = URL.createObjectURL(result.blob);
@@ -620,7 +676,8 @@ document.addEventListener('click', e => {
     return;
   }
   hideMenu();
-  const b = e.target.closest('button, a.button-link');
+  if (e.target.closest('.grid-media-player')) return;
+  const b = e.target.closest('button, a.button-link, [role="button"]');
   if (!b) return;
   if (b.classList.contains('dialog-close') || b.dataset.close !== undefined) { $('#modal').close(); return; }
   if (b.dataset.dismissUpload !== undefined) { state.upload.dismissed = true; renderUploadTray(); return; }

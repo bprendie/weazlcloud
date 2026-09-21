@@ -112,6 +112,9 @@ func apiError(w http.ResponseWriter, err error) {
 	if err == library.ErrBadPath {
 		status = http.StatusBadRequest
 	}
+	if err == library.ErrPreviewTooLarge {
+		status = http.StatusRequestEntityTooLarge
+	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 

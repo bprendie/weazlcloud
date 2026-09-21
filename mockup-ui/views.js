@@ -103,13 +103,24 @@ function gridFileCard(f, fullPath = false) {
   const href = `/api/library?path=${encodeURIComponent(path)}&preview=1`;
   const kind = String(f.kind || '').toUpperCase();
   const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1).toLowerCase() : '';
-  const preview = ['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'STL', '3MF'].includes(kind)
-    ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
+  const audio = ['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA'].includes(kind) || ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga'].includes(ext);
+  const video = ['MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V'].includes(kind) || ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'].includes(ext);
+  const media = audio || video;
+  const raster = ['JPG', 'JPEG', 'PNG', 'GIF'].includes(kind) || ['jpg', 'jpeg', 'png', 'gif'].includes(ext);
+  const preview = media
+    ? `<${audio ? 'audio' : 'video'} class="grid-media-player" src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
+    : raster
+    ? `<img class="grid-preview" data-grid-thumbnail="${esc(path)}" alt="" loading="lazy">`
+    : ['WEB', 'WEBP', 'SVG', 'STL', '3MF'].includes(kind)
+      ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
     : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP'].includes(kind) || ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(ext)
-    ? `<div class="grid-text-preview" data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
-    : `<div class="grid-kind"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
+      ? `<div class="grid-text-preview" data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
+      : `<div class="grid-kind"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
+  const opener = media
+    ? `<div class="grid-open grid-media" data-select-file="${f.id}" role="button" tabindex="0" aria-label="Open ${esc(f.title)}">${preview}</div>`
+    : `<button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>`;
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
-    <button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>
+    ${opener}
     <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong>${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
     <button class="icon-button menu-btn grid-menu" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
   </div>`;

@@ -23,6 +23,7 @@ type Library struct {
 	batchPending  []batchRequest
 	batchWake     chan struct{}
 	batchRunning  bool
+	thumbMu       sync.Mutex
 	repo          string
 	vault         *vault.Vault
 	catalog       *catalog.Catalog

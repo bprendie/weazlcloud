@@ -80,6 +80,25 @@ func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault
 		return
 	}
 	if r.URL.Query().Get("preview") != "" {
+		if browserNativePreview(path) {
+			w.Header().Set("Content-Type", libraryContentType(path, nil))
+			w.Header().Set("Content-Disposition", "inline")
+			w.Header().Set("Accept-Ranges", "bytes")
+			if r.Header.Get("Range") != "" {
+				serveLibraryRange(w, r, l, path, f.Size, libraryContentType(path, nil))
+				return
+			}
+			w.Header().Set("Content-Length", strconv.FormatInt(f.Size, 10))
+			w.WriteHeader(http.StatusOK)
+			if err := l.StreamTo(r.Context(), path, w); err != nil {
+				return
+			}
+			return
+		}
+		if f.Size > 64<<20 {
+			apiError(w, library.ErrPreviewTooLarge)
+			return
+		}
 		b, err := l.Get(r.Context(), path)
 		if err != nil {
 			apiError(w, err)
@@ -98,7 +117,11 @@ func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault
 	}
 	contentType := libraryContentType(path, nil)
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", "attachment")
+	if r.URL.Query().Get("inline") != "" {
+		w.Header().Set("Content-Disposition", "inline")
+	} else {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
 	w.Header().Set("Accept-Ranges", "bytes")
 	if r.Header.Get("Range") != "" {
 		serveLibraryRange(w, r, l, path, f.Size, contentType)
@@ -109,6 +132,11 @@ func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault
 	if err := l.StreamTo(r.Context(), path, w); err != nil {
 		return
 	}
+}
+
+func browserNativePreview(path string) bool {
+	typeName := libraryContentType(path, nil)
+	return strings.HasPrefix(typeName, "image/") || strings.HasPrefix(typeName, "audio/") || strings.HasPrefix(typeName, "video/") || typeName == "application/pdf"
 }
 
 func libraryContentType(path string, sample []byte) string {

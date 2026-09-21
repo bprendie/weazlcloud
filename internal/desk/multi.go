@@ -58,6 +58,8 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.qr)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet && r.URL.Query().Get("path") == "":
 		h.multiGuard(w, r, true, h.multiListLibrary)
+	case r.URL.Path == "/api/library/thumbnail" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiThumbnailLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiGetLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodPut:
@@ -561,6 +563,19 @@ func (h *Handler) multiGetLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.getLibraryFor(w, r, res.Vault, res.Lib)
+}
+
+func (h *Handler) multiThumbnailLibrary(w http.ResponseWriter, r *http.Request) {
+	res, _, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	if !res.Vault.Unlocked() {
+		apiError(w, vault.ErrLocked)
+		return
+	}
+	h.thumbnailLibraryFor(w, r, res.Vault, res.Lib)
 }
 func (h *Handler) multiDeleteLibrary(w http.ResponseWriter, r *http.Request) {
 	res, _, err := h.currentResource(r)
