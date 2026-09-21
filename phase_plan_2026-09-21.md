@@ -186,8 +186,16 @@ Task ID: P4.1 foundation
 Commit: 8f50855
 Changed: Added encrypted private raster thumbnail caching with file-version/renderer/size keys and bounded eviction; added an authenticated multiuser and single-user thumbnail route; made native image, audio, video, and PDF previews stream from restic instead of buffering them in Go; added grid thumbnail rails with intersection-based look-ahead, bounded document-preview work, and inline range-backed audio/video cards. Synced both frontend source copies.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; `node --check mockup-ui/app.js` and `node --check mockup-ui/views.js` passed; `git diff --check` passed; localhost bootstrap/unlock/upload/thumbnail smoke passed.
-Known limitations / decisions needed: Format capability detection, XLSX/3MF renderer improvements, single-player lifecycle, server-side shared preview jobs, and the 100/500-file cold/warm benchmark remain open. The existing repository line-count check still reports the pre-existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
+Known limitations / decisions needed: Format capability detection, XLSX/3MF renderer improvements, single-player lifecycle, and the 100/500-file browser cold/warm benchmark remain open. The existing repository line-count check still reports the pre-existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
 Next task: P4.2 bounded server preview jobs and the large-folder baseline.
+
+Date: September 21, 2026
+Task ID: P4.2 foundation
+Commit: pending
+Changed: Added a process-wide four-worker thumbnail semaphore and per-user in-flight job sharing keyed by the encrypted file-version thumbnail key. Duplicate visible requests now wait on one restore/decode/cache write; cancelled waiters stop waiting without interrupting an already useful shared cache job. Added `scripts/measure-previews.sh` plus 100-item and 500-item renderer benchmarks with allocation reporting.
+Checks run and results: `go test ./internal/library ./internal/desk` passed; targeted `go test -race ./internal/library ./internal/desk` passed; `go vet ./...` passed; JavaScript syntax checks passed; preview benchmark completed at approximately 1.12 seconds/557 MiB allocations for 100 synthetic thumbnails and 5.54 seconds/2.79 GiB allocations for 500 synthetic thumbnails on this workstation.
+Known limitations / decisions needed: The benchmark is a renderer baseline, not a browser paint or network measurement. Parser execution limits, true obsolete-job cancellation, shared capability detection, and the 100/500-file browser/node benchmark remain open.
+Next task: P4.3/P4.4 document and 3D model preview accuracy.
 
 Measurement run, September 21, 2026:
 
