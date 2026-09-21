@@ -75,7 +75,7 @@ Read: `mockup-ui/app.js`, `mockup-ui/engine.js`, `mockup-ui/views.js`, `internal
 - [x] **P3.2 — Complete the tray controls.** The background tray remains below The Weazl Promise, shows three fixed rails, separates transferring/saving/completed/failed states, supports failure details, retry-failed, cancel, collapse, dismiss, and narrow-screen layout, and refreshes the library after successful files.
 - [x] **P3.3 — Stream file reads.** Normal downloads and WebDAV reads use direct restic streaming, metadata supplies the size, and authenticated single-range responses support media/resumable clients. Preview requests retain the bounded-by-preview path until Phase 4 render work is split out.
 - [x] **P3.4 — Stream grab creation and delivery.** New file and folder grabs use a versioned authenticated chunk stream. Folder ZIPs are written into the encrypted stream, large files never become one in-memory payload, old one-shot capsules remain readable, and tests cover wrong phrases and interrupted delivery.
-- [ ] **P3.5 — Measure before batching.** Durable per-user staging is now in place: plaintext stages use a protected directory and manifest, are published only after restic/catalog success, and recover on the next library ensure after an interruption. Still open: record transfer duration, restic process/snapshot count, peak memory, and temporary disk use for many small files and one large file; introduce batching only if those measurements justify it. Pass: an acknowledged upload survives restart; interrupted work is recoverable; any batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
+- [ ] **P3.5 — Measure before batching.** Durable per-user staging is now in place: plaintext stages use a protected directory and manifest, are published only after restic/catalog success, and recover on the next library ensure after an interruption. A reproducible measurement harness now compares many small files with one equal-sized large file and reports elapsed time, restic commit count, repository growth, and Go allocation data; the node lacks `/usr/bin/time`, so peak RSS still needs a host run. Still open: choose and implement batching only if the measurements justify it. Pass: an acknowledged upload survives restart; interrupted work is recoverable; any batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
 
 Phase exit remains open until P3.5 measures and implements durable restart recovery. The browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes.
 
@@ -180,3 +180,11 @@ Changed: Replaced transient upload spools with protected per-user staging data a
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; focused `go test -race ./internal/library ./internal/desk ./internal/drive` passed.
 Known limitations / decisions needed: Transfer measurements and restic batching are not yet implemented. The line-count policy still reports the existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
 Next task: measure small-file versus large-file transfer cost before choosing a batch format.
+
+Measurement run, September 21, 2026:
+
+- 24 unique 256 KiB files: 6,291,456 logical bytes, 24 restic commits, 20.176 seconds, 6,319,412 repository bytes.
+- One generated 6 MiB disk-image-shaped file: 1 restic commit, 0.775 seconds, 2,072 additional repository bytes because restic deduplicated the generated pattern against existing chunks.
+- Go total-allocation delta: 4,378,168 bytes; staging bytes after completion: 0. Peak RSS was not available because this system has no `/usr/bin/time`.
+
+The result is enough to justify investigating a batch format, but it is not a claimed speed multiplier for production hardware. The measurement harness is `scripts/measure-transfers.sh` and can use `WEAZLCLOUD_MEASURE_ROOT` to place its temporary repository on the configured data volume.
