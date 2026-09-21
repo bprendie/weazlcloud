@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
+	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 type places struct {
@@ -17,9 +18,13 @@ type places struct {
 }
 
 func (h *Handler) getPlaces(w http.ResponseWriter, _ *http.Request) {
+	h.getPlacesFor(w, h.vault)
+}
+
+func (h *Handler) getPlacesFor(w http.ResponseWriter, v *vault.Vault) {
 	p := places{Grab: h.publicBase, Drive: h.driveBase}
-	if h.vault != nil && h.vault.Unlocked() {
-		if t, err := h.vault.DriveToken(); err == nil {
+	if v != nil && v.Unlocked() {
+		if t, err := v.DriveToken(); err == nil {
 			p.Token = t
 		}
 	}
@@ -27,6 +32,10 @@ func (h *Handler) getPlaces(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) savePlaces(w http.ResponseWriter, r *http.Request) {
+	h.savePlacesFor(w, r, h.vault, h.placesPath)
+}
+
+func (h *Handler) savePlacesFor(w http.ResponseWriter, r *http.Request, v *vault.Vault, placesPath string) {
 	var p places
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
@@ -44,9 +53,9 @@ func (h *Handler) savePlaces(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publicBase = p.Grab
 	h.driveBase = p.Drive
-	if h.placesPath != "" {
+	if placesPath != "" {
 		b, _ := json.MarshalIndent(p, "", "  ")
-		_ = cryptox.AtomicWrite(h.placesPath, append(b, '\n'), 0o600)
+		_ = cryptox.AtomicWrite(placesPath, append(b, '\n'), 0o600)
 	}
 	writeJSON(w, http.StatusOK, p)
 }

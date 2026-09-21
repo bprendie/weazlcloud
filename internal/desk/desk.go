@@ -5,9 +5,9 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
-	"sync"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
+	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
@@ -30,8 +30,7 @@ type Handler struct {
 	nodePath   string
 	users      *users.Store
 	quota      *quota.Manager
-	resources  map[string]*userResource
-	resourceMu sync.Mutex
+	registry   *filesvc.Registry
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -46,12 +45,16 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 	}
 }
 
-func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase, dataDir string) *Handler {
+func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase, dataDir string, registries ...*filesvc.Registry) *Handler {
 	h := New(nil, nil, caps, publicBase, driveBase, "")
 	h.users, h.quota = us, q
 	h.nodePath = filepath.Join(dataDir, "node.json")
 	h.publicBase = loadNodeBase(h.nodePath, h.publicBase)
-	h.resources = make(map[string]*userResource)
+	if len(registries) > 0 && registries[0] != nil {
+		h.registry = registries[0]
+	} else {
+		h.registry = filesvc.NewRegistry(us)
+	}
 	return h
 }
 

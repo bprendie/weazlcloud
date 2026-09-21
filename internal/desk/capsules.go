@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
+	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 type mintBody struct {
@@ -84,6 +86,10 @@ func (h *Handler) revokeCapsule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) seal(r *http.Request, body mintBody) ([]byte, capsule.Record, error) {
+	return h.sealFor(r, body, h.vault, h.lib)
+}
+
+func (h *Handler) sealFor(r *http.Request, body mintBody, v *vault.Vault, l *library.Library) ([]byte, capsule.Record, error) {
 	rec := capsule.Record{
 		Label: body.Label, Name: body.Path, Kind: body.Kind, Gate: body.Gate,
 		Expires: time.Now().Add(parseExpiry(body.Expiry)), Limit: body.Grabs,
@@ -98,9 +104,9 @@ func (h *Handler) seal(r *http.Request, body mintBody) ([]byte, capsule.Record, 
 		rec.Limit = 1
 	}
 	if rec.Kind == "folder" {
-		return h.sealFolder(r, body.Path, rec)
+		return h.sealFolderFor(r, body.Path, rec, l)
 	}
-	b, err := h.lib.Get(r.Context(), body.Path)
+	b, err := l.Get(r.Context(), body.Path)
 	if err != nil {
 		return nil, rec, err
 	}
@@ -110,17 +116,17 @@ func (h *Handler) seal(r *http.Request, body mintBody) ([]byte, capsule.Record, 
 	return b, rec, nil
 }
 
-func (h *Handler) sealFolder(r *http.Request, prefix string, rec capsule.Record) ([]byte, capsule.Record, error) {
-	if err := h.lib.Ensure(r.Context()); err != nil {
+func (h *Handler) sealFolderFor(r *http.Request, prefix string, rec capsule.Record, l *library.Library) ([]byte, capsule.Record, error) {
+	if err := l.Ensure(r.Context()); err != nil {
 		return nil, rec, err
 	}
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
-	for _, f := range h.lib.List() {
+	for _, f := range l.List() {
 		if f.Path != prefix && !strings.HasPrefix(f.Path, strings.TrimSuffix(prefix, "/")+"/") {
 			continue
 		}
-		b, err := h.lib.Get(r.Context(), f.Path)
+		b, err := l.Get(r.Context(), f.Path)
 		if err != nil {
 			return nil, rec, err
 		}

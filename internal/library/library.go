@@ -70,6 +70,23 @@ func (l *Library) Usage(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
+func (l *Library) Metadata(ctx context.Context, name string) (catalog.File, error) {
+	name, err := cleanPath(name)
+	if err != nil {
+		return catalog.File{}, err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return catalog.File{}, err
+	}
+	f, ok := l.catalog.Get(name)
+	if !ok {
+		return catalog.File{}, errors.New("file is not in the library")
+	}
+	return f, nil
+}
+
 func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

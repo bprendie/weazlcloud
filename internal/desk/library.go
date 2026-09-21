@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -20,19 +21,23 @@ type fileView struct {
 }
 
 func (h *Handler) listLibrary(w http.ResponseWriter, r *http.Request) {
-	if h.lib == nil {
+	h.listLibraryFor(w, r, h.vault, h.lib)
+}
+
+func (h *Handler) listLibraryFor(w http.ResponseWriter, r *http.Request, v *vault.Vault, l *library.Library) {
+	if l == nil {
 		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
 		return
 	}
-	if h.vault == nil || !h.vault.Unlocked() {
+	if v == nil || !v.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	if err := h.lib.Ensure(r.Context()); err != nil {
+	if err := l.Ensure(r.Context()); err != nil {
 		apiError(w, err)
 		return
 	}
-	files := h.lib.List()
+	files := l.List()
 	out := make([]fileView, 0, len(files))
 	for _, f := range files {
 		out = append(out, fileView{Path: f.Path, Folder: f.Folder, Size: f.Size, Mtime: f.Mtime})
@@ -60,12 +65,16 @@ func (h *Handler) putLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
-	if h.lib == nil || h.vault == nil {
+	h.getLibraryFor(w, r, h.vault, h.lib)
+}
+
+func (h *Handler) getLibraryFor(w http.ResponseWriter, r *http.Request, v *vault.Vault, l *library.Library) {
+	if l == nil || v == nil {
 		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
 		return
 	}
 	path := r.URL.Query().Get("path")
-	b, err := h.lib.Get(r.Context(), path)
+	b, err := l.Get(r.Context(), path)
 	if err != nil {
 		apiError(w, err)
 		return
@@ -101,12 +110,16 @@ func (h *Handler) getLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) {
-	if h.lib == nil || h.vault == nil {
+	h.deleteLibraryFor(w, r, h.vault, h.lib)
+}
+
+func (h *Handler) deleteLibraryFor(w http.ResponseWriter, r *http.Request, v *vault.Vault, l *library.Library) {
+	if l == nil || v == nil {
 		http.Error(w, `{"error":"not yet"}`, http.StatusNotImplemented)
 		return
 	}
 	path := r.URL.Query().Get("path")
-	if err := h.lib.Delete(path); err != nil {
+	if err := l.Delete(path); err != nil {
 		apiError(w, err)
 		return
 	}

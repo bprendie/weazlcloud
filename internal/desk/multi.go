@@ -2,35 +2,18 @@ package desk
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/recovery"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
-
-type userResource struct {
-	vault *vault.Vault
-	lib   *library.Library
-}
-
-func (h *Handler) resource(u users.User) *userResource {
-	h.resourceMu.Lock()
-	defer h.resourceMu.Unlock()
-	if res := h.resources[u.ID]; res != nil {
-		return res
-	}
-	v := vault.New(h.users.VaultPath(u), h.users.NodeKeyPath(u))
-	l := library.New(h.users.LibraryPath(u), h.users.CatalogPath(u), v)
-	res := &userResource{vault: v, lib: l}
-	h.resources[u.ID] = res
-	return res
-}
 
 func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 	switch {
@@ -382,12 +365,12 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "logged out"})
 }
 
-func (h *Handler) currentResource(r *http.Request) (*userResource, users.User, error) {
+func (h *Handler) currentResource(r *http.Request) (*filesvc.Resource, users.User, error) {
 	u, err := h.users.Current(r)
 	if err != nil {
 		return nil, users.User{}, err
 	}
-	res := h.resource(u)
+	res := h.registry.For(u)
 	return res, u, nil
 }
 
@@ -397,7 +380,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "full_name": u.FullName, "admin": u.Admin, "unlocked": h.resource(u).vault.Unlocked()})
+	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "username": u.Username, "full_name": u.FullName, "admin": u.Admin, "unlocked": h.registry.For(u).Vault.Unlocked()})
 }
 
 func (h *Handler) saveSettings(w http.ResponseWriter, r *http.Request) {
@@ -434,7 +417,7 @@ func (h *Handler) rekeyVault(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
-	if err := res.vault.Rekey([]byte(b.Current), []byte(b.Next), []byte(b.Confirm)); err != nil {
+	if err := res.Vault.Rekey([]byte(b.Current), []byte(b.Next), []byte(b.Confirm)); err != nil {
 		apiError(w, err)
 		return
 	}
@@ -447,7 +430,7 @@ func (h *Handler) multiStatus(w http.ResponseWriter, r *http.Request) {
 		out["authenticated"] = true
 		out["username"] = u.Username
 		out["admin"] = u.Admin
-		out["unlocked"] = h.resource(u).vault.Unlocked()
+		out["unlocked"] = h.registry.For(u).Vault.Unlocked()
 	}
 	if h.quota != nil {
 		if q, err := h.quota.Status(h.users.Count()); err == nil {
@@ -467,7 +450,7 @@ func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
-	if err := res.vault.Unlock([]byte(b.Passphrase)); err != nil {
+	if err := res.Vault.Unlock([]byte(b.Passphrase)); err != nil {
 		apiError(w, err)
 		return
 	}
@@ -480,7 +463,7 @@ func (h *Handler) multiLock(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	res.vault.Lock()
+	res.Vault.Lock()
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "locked"})
 }
 
@@ -494,13 +477,13 @@ func (h *Handler) multiKit(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
-	if err := res.vault.Check([]byte(b.Passphrase)); err != nil {
+	if err := res.Vault.Check([]byte(b.Passphrase)); err != nil {
 		apiError(w, err)
 		return
 	}
-	out := filepath.Join(filepath.Dir(res.vault.Path()), "weazlcloud-recovery.wzck")
+	out := filepath.Join(filepath.Dir(res.Vault.Path()), "weazlcloud-recovery.wzck")
 	cfg, _ := json.Marshal(map[string]string{"format": "weazlcloud-places"})
-	if err := recovery.Export(out, res.vault.Path(), cfg, []byte(b.Passphrase)); err != nil {
+	if err := recovery.Export(out, res.Vault.Path(), cfg, []byte(b.Passphrase)); err != nil {
 		apiError(w, err)
 		return
 	}
@@ -527,8 +510,8 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{"capacity": q.Capacity, "used": q.Used, "limit": q.Limit, "percent": q.Percent, "users": q.Users}
-	if res.vault.Unlocked() {
-		if dedupe, logical, unique, e := res.lib.Dedupe(r.Context()); e == nil {
+	if res.Vault.Unlocked() {
+		if dedupe, logical, unique, e := res.Lib.Dedupe(r.Context()); e == nil {
 			out["dedupe_percent"] = dedupe
 			out["logical_bytes"] = logical
 			out["unique_bytes"] = unique
@@ -543,13 +526,11 @@ func (h *Handler) multiListLibrary(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	if !res.vault.Unlocked() {
+	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.lib = res.vault, res.lib
-	h2.listLibrary(w, r)
+	h.listLibraryFor(w, r, res.Vault, res.Lib)
 }
 func (h *Handler) multiGetLibrary(w http.ResponseWriter, r *http.Request) {
 	res, _, err := h.currentResource(r)
@@ -557,13 +538,11 @@ func (h *Handler) multiGetLibrary(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	if !res.vault.Unlocked() {
+	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.lib = res.vault, res.lib
-	h2.getLibrary(w, r)
+	h.getLibraryFor(w, r, res.Vault, res.Lib)
 }
 func (h *Handler) multiDeleteLibrary(w http.ResponseWriter, r *http.Request) {
 	res, _, err := h.currentResource(r)
@@ -571,13 +550,11 @@ func (h *Handler) multiDeleteLibrary(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	if !res.vault.Unlocked() {
+	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.lib = res.vault, res.lib
-	h2.deleteLibrary(w, r)
+	h.deleteLibraryFor(w, r, res.Vault, res.Lib)
 }
 
 func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
@@ -586,38 +563,34 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	if !res.vault.Unlocked() {
+	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
 	path := r.URL.Query().Get("path")
-	if r.ContentLength < 0 {
-		http.Error(w, `{"error":"content length required for quota reservation"}`, http.StatusLengthRequired)
-		return
-	}
 	if h.quota != nil {
 		current := int64(0)
-		if old, e := res.lib.Get(r.Context(), path); e == nil {
-			current = int64(len(old))
+		if old, e := res.Lib.Metadata(r.Context(), path); e == nil {
+			current = old.Size
 		}
-		used, e := res.lib.Usage(r.Context())
+		used, e := res.Lib.Usage(r.Context())
 		if e != nil {
 			apiError(w, e)
 			return
 		}
-		release, err := h.quota.Reserve(u.ID, h.users.Count(), used, current, r.ContentLength)
+		guarded, release, err := h.quota.GuardReader(u.ID, h.users.Count(), used, current, r.ContentLength, r.Body)
 		if err != nil {
 			apiError(w, err)
 			return
 		}
 		defer release()
+		r.Body = io.NopCloser(guarded)
 	}
-	f, err := res.lib.PutReader(r.Context(), path, r.Body, r.ContentLength)
+	f, err := res.Lib.PutReader(r.Context(), path, r.Body, r.ContentLength)
 	if err != nil {
 		apiError(w, err)
 		return
 	}
-	_ = u
 	writeJSON(w, http.StatusOK, fileView{Path: f.Path, Size: f.Size, Mtime: f.Mtime})
 }
 
@@ -627,13 +600,17 @@ func (h *Handler) multiCreateFolder(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
+	if !res.Vault.Unlocked() {
+		apiError(w, vault.ErrLocked)
+		return
+	}
 	var body struct {
 		Path string `json:"path"`
 	}
 	if !decodeBody(w, r, &body, 4096) {
 		return
 	}
-	if err := res.lib.Mkdir(r.Context(), body.Path); err != nil {
+	if err := res.Lib.Mkdir(r.Context(), body.Path); err != nil {
 		apiError(w, err)
 		return
 	}
@@ -646,6 +623,10 @@ func (h *Handler) multiRename(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
+	if !res.Vault.Unlocked() {
+		apiError(w, vault.ErrLocked)
+		return
+	}
 	var body struct {
 		From string `json:"from"`
 		To   string `json:"to"`
@@ -653,7 +634,7 @@ func (h *Handler) multiRename(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body, 4096) {
 		return
 	}
-	if err := res.lib.Rename(r.Context(), body.From, body.To); err != nil {
+	if err := res.Lib.Rename(r.Context(), body.From, body.To); err != nil {
 		apiError(w, err)
 		return
 	}
@@ -679,22 +660,34 @@ func (h *Handler) multiMintCapsule(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	if !res.vault.Unlocked() {
+	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.lib = res.vault, res.lib
 	var b mintBody
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
-	payload, rec, err := h2.seal(r, b)
+	payload, rec, err := h.sealFor(r, b, res.Vault, res.Lib)
 	if err != nil {
 		apiError(w, err)
 		return
 	}
 	rec.Owner = u.ID
+	var release func()
+	if h.quota != nil {
+		used, e := res.Lib.Usage(r.Context())
+		if e != nil {
+			apiError(w, e)
+			return
+		}
+		release, err = h.quota.Reserve(u.ID, h.users.Count(), used, 0, int64(len(payload)))
+		if err != nil {
+			apiError(w, err)
+			return
+		}
+		defer release()
+	}
 	got, err := h.caps.Mint(rec, b.Passphrase, payload)
 	if err != nil {
 		apiError(w, err)
@@ -723,14 +716,12 @@ func (h *Handler) multiRevokeCapsule(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiGetPlaces(w http.ResponseWriter, r *http.Request) {
-	res, u, err := h.currentResource(r)
+	res, _, err := h.currentResource(r)
 	if err != nil {
 		apiUsersError(w, err)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.placesPath = res.vault, h.users.PlacesPath(u)
-	h2.getPlaces(w, r)
+	h.getPlacesFor(w, res.Vault)
 }
 func (h *Handler) multiSavePlaces(w http.ResponseWriter, r *http.Request) {
 	res, u, err := h.currentResource(r)
@@ -738,9 +729,7 @@ func (h *Handler) multiSavePlaces(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	h2 := *h
-	h2.vault, h2.placesPath = res.vault, h.users.PlacesPath(u)
-	h2.savePlaces(w, r)
+	h.savePlacesFor(w, r, res.Vault, h.users.PlacesPath(u))
 }
 
 func (h *Handler) getNodeSettings(w http.ResponseWriter, r *http.Request) {

@@ -16,6 +16,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/config"
 	"github.com/bprendie/weazlcloud/internal/desk"
 	"github.com/bprendie/weazlcloud/internal/drive"
+	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/share"
@@ -160,10 +161,11 @@ func (n *Node) bind() error {
 		return err
 	}
 	q := quota.New(n.cfg.DataDir)
+	registry := filesvc.NewRegistry(us)
 	n.svcs = []*http.Server{
-		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir)),
+		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)),
 		server(n.share, share.New(n.caps)),
-		server(n.drive, drive.NewMulti(us)),
+		server(n.drive, drive.NewMultiWith(us, q, registry)),
 	}
 	return nil
 }

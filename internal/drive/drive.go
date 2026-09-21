@@ -16,27 +16,35 @@ import (
 
 	"golang.org/x/net/webdav"
 
+	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/users"
-	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 type Handler struct {
-	users     *users.Store
-	mu        sync.Mutex
-	resources map[string]*resource
-	locks     webdav.LockSystem
+	users    *users.Store
+	quota    *quota.Manager
+	registry *filesvc.Registry
+	mu       sync.Mutex
+	locks    map[string]webdav.LockSystem
 }
 type resource struct {
-	vault *vault.Vault
-	lib   *library.Library
+	service *filesvc.Resource
+	locks   webdav.LockSystem
 }
 
 func New() *Handler { return &Handler{} }
 func NewMulti(us *users.Store) *Handler {
-	return &Handler{users: us, resources: make(map[string]*resource), locks: webdav.NewMemLS()}
+	return NewMultiWith(us, nil, filesvc.NewRegistry(us))
+}
+func NewMultiWith(us *users.Store, q *quota.Manager, registry *filesvc.Registry) *Handler {
+	if registry == nil {
+		registry = filesvc.NewRegistry(us)
+	}
+	return &Handler{users: us, quota: q, registry: registry, locks: make(map[string]webdav.LockSystem)}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,19 +77,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		challenge(w, "weazlcloud: authentication required")
 		return
 	}
-	h.mu.Lock()
-	res := h.resources[u.ID]
-	if res == nil {
-		v := vault.New(h.users.VaultPath(u), h.users.NodeKeyPath(u))
-		res = &resource{vault: v, lib: library.New(h.users.LibraryPath(u), h.users.CatalogPath(u), v)}
-		h.resources[u.ID] = res
-	}
-	h.mu.Unlock()
-	if err := res.vault.UnlockNode(); err != nil {
+	service := h.registry.For(u)
+	if err := service.Vault.UnlockNode(); err != nil {
 		http.Error(w, "weazlcloud: vault unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	dav := &webdav.Handler{FileSystem: &fileSystem{lib: res.lib}, LockSystem: h.locks, Logger: func(req *http.Request, err error) {
+	h.mu.Lock()
+	locks := h.locks[u.ID]
+	if locks == nil {
+		locks = webdav.NewMemLS()
+		h.locks[u.ID] = locks
+	}
+	h.mu.Unlock()
+	dav := &webdav.Handler{FileSystem: &fileSystem{lib: service.Lib, userID: u.ID, users: h.users.Count(), quota: h.quota}, LockSystem: locks, Logger: func(req *http.Request, err error) {
 		if err != nil {
 			log.Printf("webdav %s %s: %v", req.Method, req.URL.Path, err)
 		}
@@ -118,7 +126,12 @@ func forbidden(path string) bool {
 	return strings.HasPrefix(path, "/desk")
 }
 
-type fileSystem struct{ lib *library.Library }
+type fileSystem struct {
+	lib    *library.Library
+	userID string
+	users  int
+	quota  *quota.Manager
+}
 
 func clean(name string) (string, error) {
 	name = strings.TrimPrefix(name, "/")
@@ -210,7 +223,11 @@ func (f *fileSystem) OpenFile(ctx context.Context, name string, flag int, _ os.F
 	if err != nil {
 		return nil, err
 	}
-	d := &davFile{file: tmp, name: name, lib: f.lib, write: write, info: info{name: filepath.Base(name), mode: 0o600, mod: time.Now().UTC()}}
+	var current int64
+	if statErr == nil {
+		current = st.Size()
+	}
+	d := &davFile{file: tmp, name: name, lib: f.lib, userID: f.userID, users: f.users, quota: f.quota, current: current, write: write, info: info{name: filepath.Base(name), mode: 0o600, mod: time.Now().UTC()}}
 	if !write {
 		if err := f.lib.WriteTo(ctx, name, tmp); err != nil {
 			tmp.Close()
@@ -250,13 +267,17 @@ func (f *fileSystem) directory(name string) []os.FileInfo {
 }
 
 type davFile struct {
-	file   *os.File
-	lib    *library.Library
-	name   string
-	write  bool
-	info   os.FileInfo
-	dir    []os.FileInfo
-	closed bool
+	file    *os.File
+	lib     *library.Library
+	userID  string
+	users   int
+	quota   *quota.Manager
+	name    string
+	write   bool
+	current int64
+	info    os.FileInfo
+	dir     []os.FileInfo
+	closed  bool
 }
 
 func (d *davFile) Close() error {
@@ -269,6 +290,28 @@ func (d *davFile) Close() error {
 	}
 	defer os.Remove(d.file.Name())
 	if d.write {
+		if err := d.file.Sync(); err != nil {
+			d.file.Close()
+			return err
+		}
+		stat, err := d.file.Stat()
+		if err != nil {
+			d.file.Close()
+			return err
+		}
+		if d.quota != nil {
+			used, err := d.lib.Usage(context.Background())
+			if err != nil {
+				d.file.Close()
+				return mapError(err)
+			}
+			release, err := d.quota.Reserve(d.userID, d.users, used, d.current, stat.Size())
+			if err != nil {
+				d.file.Close()
+				return mapError(err)
+			}
+			defer release()
+		}
 		if _, err := d.file.Seek(0, io.SeekStart); err != nil {
 			d.file.Close()
 			return err

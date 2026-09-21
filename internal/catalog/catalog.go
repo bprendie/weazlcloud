@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -9,6 +10,12 @@ import (
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 	"github.com/bprendie/weazlcloud/internal/vault"
+)
+
+var (
+	ErrConflict   = errors.New("library path conflicts with an existing file or folder")
+	ErrNotFound   = errors.New("library path does not exist")
+	ErrDescendant = errors.New("cannot move a folder into itself or a descendant")
 )
 
 type File struct {
@@ -87,50 +94,109 @@ func (c *Catalog) Put(f File) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f.Present = true
+	for _, x := range c.files {
+		if !x.Present {
+			continue
+		}
+		if x.Path == f.Path && x.Folder != f.Folder {
+			return ErrConflict
+		}
+		if x.Path != f.Path && !x.Folder && strings.HasPrefix(f.Path, x.Path+"/") {
+			return ErrConflict
+		}
+		if f.Folder && x.Path != f.Path && strings.HasPrefix(x.Path, f.Path+"/") {
+			return ErrConflict
+		}
+	}
+	next := append([]File(nil), c.files...)
 	found := false
-	for i, x := range c.files {
+	for i, x := range next {
 		if x.Path == f.Path {
-			c.files[i] = f
+			next[i] = f
 			found = true
 			break
 		}
 	}
 	if !found {
-		c.files = append(c.files, f)
+		next = append(next, f)
 	}
-	return c.saveLocked()
+	if err := c.saveFilesLocked(next); err != nil {
+		return err
+	}
+	c.files = next
+	return nil
 }
 
 func (c *Catalog) Mkdir(path string) error {
-	return c.Put(File{Path: path, Folder: true, Mtime: time.Now().UTC(), Present: true})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, f := range c.files {
+		if !f.Present {
+			continue
+		}
+		if f.Path == path || (!f.Folder && strings.HasPrefix(path, f.Path+"/")) {
+			return ErrConflict
+		}
+	}
+	next := append([]File(nil), c.files...)
+	next = append(next, File{Path: path, Folder: true, Mtime: time.Now().UTC(), Present: true})
+	if err := c.saveFilesLocked(next); err != nil {
+		return err
+	}
+	c.files = next
+	return nil
 }
 
 func (c *Catalog) Rename(oldPath, newPath string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	changed := false
-	for i, f := range c.files {
-		if f.Path != oldPath && !strings.HasPrefix(f.Path, oldPath+"/") {
+	if oldPath == newPath {
+		return nil
+	}
+	if strings.HasPrefix(newPath, oldPath+"/") {
+		return ErrDescendant
+	}
+	found := false
+	for _, f := range c.files {
+		if f.Present && (f.Path == oldPath || strings.HasPrefix(f.Path, oldPath+"/")) {
+			found = true
+		}
+	}
+	if !found {
+		return ErrNotFound
+	}
+	for _, f := range c.files {
+		if !f.Present || f.Path == oldPath || strings.HasPrefix(f.Path, oldPath+"/") {
+			continue
+		}
+		if f.Path == newPath || strings.HasPrefix(f.Path, newPath+"/") || strings.HasPrefix(newPath, f.Path+"/") {
+			return ErrConflict
+		}
+	}
+	next := append([]File(nil), c.files...)
+	for i, f := range next {
+		if !f.Present || (f.Path != oldPath && !strings.HasPrefix(f.Path, oldPath+"/")) {
 			continue
 		}
 		suffix := strings.TrimPrefix(f.Path, oldPath)
-		c.files[i].Path = newPath + suffix
-		changed = true
+		next[i].Path = newPath + suffix
 	}
-	if !changed {
-		return nil
+	if err := c.saveFilesLocked(next); err != nil {
+		return err
 	}
-	return c.saveLocked()
+	c.files = next
+	return nil
 }
 
 func (c *Catalog) Delete(path string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	changed := false
-	for i, f := range c.files {
+	next := append([]File(nil), c.files...)
+	for i, f := range next {
 		if f.Path == path || strings.HasPrefix(f.Path, path+"/") {
 			if f.Present {
-				c.files[i].Present = false
+				next[i].Present = false
 				changed = true
 			}
 		}
@@ -138,11 +204,19 @@ func (c *Catalog) Delete(path string) error {
 	if !changed {
 		return nil
 	}
-	return c.saveLocked()
+	if err := c.saveFilesLocked(next); err != nil {
+		return err
+	}
+	c.files = next
+	return nil
 }
 
 func (c *Catalog) saveLocked() error {
-	plain, err := json.Marshal(tree{Files: c.files})
+	return c.saveFilesLocked(c.files)
+}
+
+func (c *Catalog) saveFilesLocked(files []File) error {
+	plain, err := json.Marshal(tree{Files: files})
 	if err != nil {
 		return err
 	}

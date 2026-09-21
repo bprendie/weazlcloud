@@ -185,10 +185,11 @@ Places:
 - `GET /api/node` / `POST /api/node` — administrator-only node hostname settings,
   with `{hostname: "grab.your.domain"}`. The value is stored in `/data/node.json`.
 
-The quota hard cap is 97% of the filesystem containing `/data`; the UI meter
-reports that usable limit as 100%. User logical usage is divided by the current
-number of local users, while physical filesystem headroom remains the final
-write guard. Cross-user deduplication remains a separate privacy decision.
+The storage hard cap is 97% of the filesystem containing `/data`; the UI meter
+reports that usable limit as 100%. Approved users share whatever usable disk is
+available. User logical usage is informational, while physical filesystem
+headroom remains the final write guard. Cross-user deduplication remains a
+separate privacy decision.
 
 The desk mockup talks to these endpoints when it is served by the node
 (`engine.js`). `make mockup` on :3001 stays a preview with no engine.

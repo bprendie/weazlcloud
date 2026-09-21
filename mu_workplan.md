@@ -15,19 +15,21 @@ Identity is local to the WeazlCloud node. There will be no third-party identity 
 - The node has a local user registry stored in the data volume. It is the sole identity authority for the node.
 - Every user has a separate vault and encryption root. A user can unlock only their own vault.
 - User credentials are verifier material only; passwords are never stored in plaintext or passed through Compose environment variables.
-- The first account is the node administrator. It can create, disable, and remove users and configure the node quota.
+- The first account is the node administrator. It can create, disable, and remove users and monitor node storage. It does not allocate per-user storage quotas.
 - Library, capsule, Places, and recovery-kit operations carry an authenticated user identity.
 - A capsule remains a capability link, but its owner and revocation authority are recorded.
 - Sessions are short-lived, server-side or signed with keys held by the node, and must not place passwords in URLs or local storage.
 
 ### Global quota
 
+Updated September 21, 2026: this is a personal cloud with shared available disk, not a hosted storage service. This policy supersedes earlier equal-share and per-user allocation requirements.
+
 - The usable quota is 97% of the filesystem capacity of the Docker data volume.
 - The remaining 3% is reserved for filesystem safety, metadata, temporary restic work, and recovery operations.
 - The quota meter displays `used / usable quota`, so reaching 97% physical usage displays as 100%.
-- There is no per-file filesize quota. Users may store large files such as ISO images, provided the write fits within the remaining global and user allocation.
+- There is no per-file filesize quota. Users may store large files such as ISO images, provided the write and its temporary working space fit within the remaining usable disk.
 - Writes are rejected before they can exceed the usable quota. Failed writes must not leave catalog entries or orphaned temporary objects.
-- Each user receives an allocated share from the global quota. The first version should support an administrator-set per-user quota, with the sum of allocations limited to the global usable quota.
+- Every approved user may use as much remaining usable disk as is available. No equal shares, reserved user allocations, or administrator-set per-user caps. Adding an account does not reduce anyone's allowance; accounting by user is informational.
 - Usage accounting must distinguish logical user bytes, deduplicated physical bytes, and temporary working bytes.
 
 The quota needs a defined source of truth. Do not derive it only from `statfs` or only from the encrypted catalog. Use filesystem capacity for the hard global ceiling and a durable object index for logical and physical accounting.
@@ -61,10 +63,11 @@ consistent, and available from the item being acted on.
 - Add right-click context menus for files and folders. A file menu includes **Share this**, **Open preview** when the browser can render the file, **Download**, **Rename**, and **Delete**. A folder menu includes **Open**, **Upload into**, **Share this**, **Rename**, and **Delete**.
 - Keep context-menu actions keyboard accessible and provide an equivalent action menu for touch devices. Right-click cannot be the only route to sharing or destructive actions.
 - Clicking a browser-readable file opens an in-library preview. Start with images, PDF, plain text, Markdown, audio, and browser-renderable video. Unsupported files open a details/download view.
+- Downloading multiple selected files or a folder prepares a ZIP on the server, preserving nested paths and empty folders. Preparation runs in the background with progress and cancellation; the user can keep browsing. Support large archives with bounded memory and temporary storage on the data volume, owner-only access, resumable downloads, and automatic cleanup. Single files download directly. Implementation tasks are P5.2a–P5.2c in `phase_plan_2026-09-21.md`.
 - Previews use the authenticated user’s authorization and never create public URLs. **Share this** remains an explicit sealed capsule action.
 - Add recursive folder upload. Preserve the selected destination and every file’s relative path, including nested directories and empty folders where supported.
 - Show aggregate upload progress and per-file progress, current filename, bytes transferred, failures, retry controls, and a final summary. A failed file must not hide successful files or leave partial catalog records.
-- Do not impose an application-level per-file size limit. Large files are limited only by available global quota and the user’s allocation.
+- Do not impose an application-level per-file size limit. Large files are limited only by shared available usable disk, including temporary working space.
 
 ## Implementation order for today
 
@@ -100,7 +103,7 @@ Acceptance criteria:
 
 - Detect the Docker volume filesystem capacity.
 - Calculate `usable = floor(capacity * 0.97)`.
-- Expose sanitized quota status: physical used, usable limit, displayed percentage, and per-user allocation/usage.
+- Expose sanitized storage status: physical used, usable limit, displayed percentage, and the signed-in user's informational usage. Do not expose other users' files or individual usage to ordinary users. Label the normal UI “Storage,” not “Your quota”; keep the 3% reserve invisible.
 - Reserve space for a write before invoking restic or object storage.
 - Reconcile usage at startup and provide an administrator repair/recount operation.
 - Test full-volume behavior, concurrent uploads, deletion, failed uploads, and restart recovery.
