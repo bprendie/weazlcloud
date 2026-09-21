@@ -10,6 +10,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,15 +47,30 @@ func TestTransferMeasurement(t *testing.T) {
 	const smallCount = 24
 	const smallBytes = int64(256 * 1024)
 	largeBytes := smallBytes * smallCount
-	small := make([]byte, smallBytes)
+	smallPayloads := make([][]byte, smallCount)
+	for i := range smallPayloads {
+		smallPayloads[i] = make([]byte, smallBytes)
+		if _, err := rand.Read(smallPayloads[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	smallStart := time.Now()
+	var wg sync.WaitGroup
+	errs := make(chan error, smallCount)
 	for i := 0; i < smallCount; i++ {
-		if _, err := rand.Read(small); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := lib.PutReader(ctx, fmt.Sprintf("small/file-%02d.bin", i), bytes.NewReader(small), int64(len(small))); err != nil {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := lib.PutReader(ctx, fmt.Sprintf("small/file-%02d.bin", i), bytes.NewReader(smallPayloads[i]), int64(len(smallPayloads[i])))
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -61,6 +79,10 @@ func TestTransferMeasurement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	single, batches := lib.ResticCommitCounts()
+	fmt.Printf("MEASURE small_files count=%d bytes=%d restic_commits=%d batch_commits=%d duration=%s repo_bytes=%d\n", smallCount, smallBytes*smallCount, single+batches, batches, smallDuration, smallDisk)
+	singleBeforeLarge := single
+	batchBeforeLarge := batches
 	largeStart := time.Now()
 	if _, err := lib.PutReader(ctx, "large/disk-image.iso", io.LimitReader(patternReader{}, largeBytes), largeBytes); err != nil {
 		t.Fatal(err)
@@ -70,10 +92,29 @@ func TestTransferMeasurement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	single, batches = lib.ResticCommitCounts()
 	runtime.ReadMemStats(&after)
-	fmt.Printf("MEASURE small_files count=%d bytes=%d restic_commits=%d duration=%s repo_bytes=%d\n", smallCount, smallBytes*smallCount, smallCount, smallDuration, smallDisk)
-	fmt.Printf("MEASURE large_file count=1 bytes=%d restic_commits=1 duration=%s repo_bytes_delta=%d\n", largeBytes, largeDuration, largeDisk-smallDisk)
-	fmt.Printf("MEASURE go_total_alloc_delta=%d heap_alloc_after=%d staging_bytes_after=0\n", after.TotalAlloc-before.TotalAlloc, after.HeapAlloc)
+	fmt.Printf("MEASURE large_file count=1 bytes=%d restic_commits=%d batch_commits=%d duration=%s repo_bytes_delta=%d\n", largeBytes, single-singleBeforeLarge, batches-batchBeforeLarge, largeDuration, largeDisk-smallDisk)
+	fmt.Printf("MEASURE go_total_alloc_delta=%d heap_alloc_after=%d process_hwm_kb=%d staging_bytes_after=0\n", after.TotalAlloc-before.TotalAlloc, after.HeapAlloc, processHighWaterKB())
+}
+
+func processHighWaterKB() int64 {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "VmHWM:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0
+		}
+		n, _ := strconv.ParseInt(fields[1], 10, 64)
+		return n
+	}
+	return 0
 }
 
 type patternReader struct{}

@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phase 2 complete; Phase 3 implementation in progress; Phases 4–6 planned.
+Status: Phases 2–3 complete; Phases 4–6 planned.
 
 ## What we are doing
 
@@ -75,9 +75,9 @@ Read: `mockup-ui/app.js`, `mockup-ui/engine.js`, `mockup-ui/views.js`, `internal
 - [x] **P3.2 — Complete the tray controls.** The background tray remains below The Weazl Promise, shows three fixed rails, separates transferring/saving/completed/failed states, supports failure details, retry-failed, cancel, collapse, dismiss, and narrow-screen layout, and refreshes the library after successful files.
 - [x] **P3.3 — Stream file reads.** Normal downloads and WebDAV reads use direct restic streaming, metadata supplies the size, and authenticated single-range responses support media/resumable clients. Preview requests retain the bounded-by-preview path until Phase 4 render work is split out.
 - [x] **P3.4 — Stream grab creation and delivery.** New file and folder grabs use a versioned authenticated chunk stream. Folder ZIPs are written into the encrypted stream, large files never become one in-memory payload, old one-shot capsules remain readable, and tests cover wrong phrases and interrupted delivery.
-- [ ] **P3.5 — Measure before batching.** Durable per-user staging is now in place: plaintext stages use a protected directory and manifest, are published only after restic/catalog success, and recover on the next library ensure after an interruption. A reproducible measurement harness now compares many small files with one equal-sized large file and reports elapsed time, restic commit count, repository growth, and Go allocation data; the node lacks `/usr/bin/time`, so peak RSS still needs a host run. Still open: choose and implement batching only if the measurements justify it. Pass: an acknowledged upload survives restart; interrupted work is recoverable; any batching demonstrably reduces small-file overhead. Report measurements rather than promising a speed multiplier.
+- [x] **P3.5 — Measure before batching.** Durable per-user staging is protected by a manifest and recovers after interruption. The measurement harness compares many small files with one equal-sized large file, reports elapsed time, restic commit count, repository growth, Go allocation data, and process high-water memory, and the existing upload queue now groups nearby unique stages into batch restic commits. Pass conditions are covered by recovery and batch restore tests. Report measurements rather than promising a speed multiplier.
 
-Phase exit remains open until P3.5 measures and implements durable restart recovery. The browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes.
+Phase exit: complete for the transfer foundation. The browser must remain open until local file bytes have reached the server; a background tray alone cannot upload after the tab closes. Browser-level queue testing and host-volume measurements remain operational follow-ups.
 
 ## Phase 4 — Make previews quick and accurate
 
@@ -159,7 +159,7 @@ Next task: P2.1, grab input handling.
 
 Date: September 21, 2026
 Task ID: P2.1–P2.4, P2.6
-Commit: pending
+Commit: 036fc00, d7cf3c9
 Changed: Strict grab token validation and DOM rendering; server session expiry and secure-cookie mode; password-change session invalidation; bounded local authentication limits; hostname validation and synchronized persistence; per-user Places reads; durable grab-use accounting and retry UX.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/share ./internal/users ./internal/desk ./internal/drive ./internal/ratelimit` passed.
 Known limitations / decisions needed: Stored node-key unlock means host control remains a decryption trust boundary. Browser automation and production deployment remain open.
@@ -167,24 +167,24 @@ Next task: begin P3.1.
 
 Date: September 21, 2026
 Task ID: P3.1–P3.4
-Commit: pending
+Commit: a174f5c, 76ddf71
 Changed: Replaced batch-local uploads with one three-rail background queue; added stable upload state, retry/cancel/collapse controls, saving/failure reporting, and incremental refresh; streamed normal library/WebDAV reads with byte ranges; added chunk-authenticated streaming capsule creation and delivery for large files and folders while retaining legacy capsule reads.
 Checks run and results: Focused library, desk, drive, capsule, and share tests passed; streaming capsule tests cover multi-megabyte data, wrong passphrases, interrupted writes, and legacy grabs; JavaScript syntax checks passed.
-Known limitations / decisions needed: P3.5 still needs transfer/process/memory/temp-disk measurements and durable staging/restart recovery. Browser-level queue testing remains open.
+Known limitations / decisions needed: Browser-level queue testing remains open.
 Next task: P3.5 measurement and staging design.
 
 Date: September 21, 2026
-Task ID: P3.5 staging recovery
-Commit: pending
-Changed: Replaced transient upload spools with protected per-user staging data and durable manifests. A later library ensure resumes restic/catalog publication after an interrupted process; successful stages are removed, and stale stages lose to a later overwrite. Added a recovery regression test using an ISO-shaped payload.
-Checks run and results: `go test ./...` passed; `go vet ./...` passed; focused `go test -race ./internal/library ./internal/desk ./internal/drive` passed.
-Known limitations / decisions needed: Transfer measurements and restic batching are not yet implemented. The line-count policy still reports the existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
-Next task: measure small-file versus large-file transfer cost before choosing a batch format.
+Task ID: P3.5
+Commit: f2f4c09, fe3ad90, pending
+Changed: Replaced transient upload spools with protected per-user staging data and durable manifests; added restart recovery and stale-stage cleanup; added concurrent transfer measurements; added a short-window batch coordinator that links staged files into one restic snapshot and records each file's snapshot object path for later restore.
+Checks run and results: `go test ./...` passed; `go vet ./...` passed; focused `go test -race ./internal/library ./internal/desk ./internal/drive ./internal/catalog` passed; `scripts/measure-transfers.sh` passed with 24 files grouped into two batch commits.
+Known limitations / decisions needed: Browser-level queue testing, production-volume measurement, and the existing line-count policy remain operational follow-ups.
+Next task: Phase 4 preview baseline.
 
 Measurement run, September 21, 2026:
 
-- 24 unique 256 KiB files: 6,291,456 logical bytes, 24 restic commits, 20.176 seconds, 6,319,412 repository bytes.
-- One generated 6 MiB disk-image-shaped file: 1 restic commit, 0.775 seconds, 2,072 additional repository bytes because restic deduplicated the generated pattern against existing chunks.
-- Go total-allocation delta: 4,378,168 bytes; staging bytes after completion: 0. Peak RSS was not available because this system has no `/usr/bin/time`.
+- 24 concurrent unique 256 KiB files: 6,291,456 logical bytes, 2 batched restic commits, 4.513 seconds, 6,302,007 repository bytes.
+- One generated 6 MiB disk-image-shaped file: 1 restic commit, 0.777 seconds, 2,068 additional repository bytes because restic deduplicated the generated pattern against existing chunks.
+- Go total-allocation delta: 2,139,096 bytes; process high-water memory: 87,512 KiB; staging bytes after completion: 0. Host-volume runs should be repeated on the production data mount.
 
-The result is enough to justify investigating a batch format, but it is not a claimed speed multiplier for production hardware. The measurement harness is `scripts/measure-transfers.sh` and can use `WEAZLCLOUD_MEASURE_ROOT` to place its temporary repository on the configured data volume.
+The result justifies the batch format, but it is not a claimed speed multiplier for production hardware. The measurement harness is `scripts/measure-transfers.sh` and can use `WEAZLCLOUD_MEASURE_ROOT` to place its temporary repository on the configured data volume.

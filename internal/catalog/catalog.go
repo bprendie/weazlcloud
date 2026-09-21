@@ -25,6 +25,7 @@ type File struct {
 	Mtime   time.Time `json:"mtime"`
 	Hash    string    `json:"hash"`
 	Snap    string    `json:"snap"`
+	Object  string    `json:"object,omitempty"`
 	Present bool      `json:"present"`
 }
 

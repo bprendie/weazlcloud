@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/restic"
@@ -13,13 +14,19 @@ import (
 )
 
 type Library struct {
-	mu           sync.Mutex
-	stageMu      sync.Mutex
-	activeStages map[string]struct{}
-	repo         string
-	vault        *vault.Vault
-	catalog      *catalog.Catalog
-	restic       restic.Runner
+	mu            sync.Mutex
+	stageMu       sync.Mutex
+	activeStages  map[string]struct{}
+	resticCommits atomic.Uint64
+	batchCommits  atomic.Uint64
+	batchMu       sync.Mutex
+	batchPending  []batchRequest
+	batchWake     chan struct{}
+	batchRunning  bool
+	repo          string
+	vault         *vault.Vault
+	catalog       *catalog.Catalog
+	restic        restic.Runner
 }
 
 func New(repo, catalogPath string, v *vault.Vault) *Library {
@@ -29,6 +36,7 @@ func New(repo, catalogPath string, v *vault.Vault) *Library {
 		catalog:      catalog.New(catalogPath, v),
 		restic:       restic.New(),
 		activeStages: make(map[string]struct{}),
+		batchWake:    make(chan struct{}, 1),
 	}
 }
 
@@ -158,13 +166,7 @@ func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, ex
 	if err != nil {
 		return catalog.File{}, err
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	defer l.setStageActive(stage.ID, false)
-	if err := l.ensure(ctx); err != nil {
-		return catalog.File{}, err
-	}
-	return l.commitStaged(ctx, stage)
+	return l.commitStagedQueued(ctx, stage)
 }
 
 func (l *Library) Get(ctx context.Context, name string) ([]byte, error) {
@@ -186,7 +188,11 @@ func (l *Library) Get(ctx context.Context, name string) ([]byte, error) {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	if err := l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, f.Hash, &buf); err != nil {
+	object := f.Object
+	if object == "" {
+		object = f.Hash
+	}
+	if err := l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, object, &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -232,5 +238,13 @@ func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error 
 	if err != nil {
 		return err
 	}
-	return l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, f.Hash, w)
+	object := f.Object
+	if object == "" {
+		object = f.Hash
+	}
+	return l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, object, w)
+}
+
+func (l *Library) ResticCommitCounts() (single, batch uint64) {
+	return l.resticCommits.Load(), l.batchCommits.Load()
 }

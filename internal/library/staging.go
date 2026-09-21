@@ -19,14 +19,16 @@ import (
 )
 
 type stagedUpload struct {
-	ID       string    `json:"id"`
-	Path     string    `json:"path"`
-	Data     string    `json:"data"`
-	Size     int64     `json:"size"`
-	Expected int64     `json:"expected"`
-	Hash     string    `json:"hash"`
-	Snap     string    `json:"snap,omitempty"`
-	Mtime    time.Time `json:"mtime"`
+	ID        string    `json:"id"`
+	Path      string    `json:"path"`
+	Data      string    `json:"data"`
+	Size      int64     `json:"size"`
+	Expected  int64     `json:"expected"`
+	Hash      string    `json:"hash"`
+	Snap      string    `json:"snap,omitempty"`
+	Object    string    `json:"object,omitempty"`
+	BatchRoot string    `json:"batch_root,omitempty"`
+	Mtime     time.Time `json:"mtime"`
 }
 
 func (l *Library) stageReader(name string, body io.Reader, expected int64) (stagedUpload, error) {
@@ -73,32 +75,37 @@ func (l *Library) stageReader(name string, body io.Reader, expected int64) (stag
 }
 
 func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog.File, error) {
-	dataPath := filepath.Join(l.stageDir(), stage.Data)
-	tmp, err := os.Open(dataPath)
-	if err != nil {
-		return catalog.File{}, err
-	}
-	defer tmp.Close()
-	pass, _, err := l.vault.Secrets()
-	if err != nil {
-		return catalog.File{}, err
-	}
 	if stage.Snap == "" {
-		stage.Snap, err = l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, stage.Hash, tmp)
+		dataPath := filepath.Join(l.stageDir(), stage.Data)
+		tmp, err := os.Open(dataPath)
 		if err != nil {
 			return catalog.File{}, err
 		}
+		pass, _, err := l.vault.Secrets()
+		if err == nil {
+			stage.Snap, err = l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, stage.Hash, tmp)
+		}
+		_ = tmp.Close()
+		if err != nil {
+			return catalog.File{}, err
+		}
+		l.resticCommits.Add(1)
+		stage.Object = stage.Hash
 		if err := l.writeStage(stage); err != nil {
 			return catalog.File{}, err
 		}
 	}
-	f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Present: true}
+	if stage.Object == "" {
+		stage.Object = stage.Hash
+	}
+	f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Present: true}
 	if err := l.catalog.Put(f); err != nil {
 		return catalog.File{}, err
 	}
 	if err := l.removeStage(stage); err != nil {
 		return catalog.File{}, err
 	}
+	l.cleanupBatchRoot(stage.BatchRoot)
 	return f, nil
 }
 
@@ -136,7 +143,36 @@ func (l *Library) recoverStaged(ctx context.Context) error {
 			return fmt.Errorf("recover staged upload %s: %w", stage.Path, err)
 		}
 	}
+	for _, root := range l.batchRoots() {
+		l.cleanupBatchRoot(root)
+	}
+	l.cleanupOrphanStageData(entries)
 	return nil
+}
+
+func (l *Library) batchRoots() []string {
+	roots, err := filepath.Glob(filepath.Join(filepath.Dir(l.repo), ".weazl-batch-*"))
+	if err != nil {
+		return nil
+	}
+	return roots
+}
+
+func (l *Library) cleanupOrphanStageData(entries []os.DirEntry) {
+	referenced := make(map[string]bool)
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			if stage, err := l.readStage(entry.Name()); err == nil {
+				referenced[stage.Data] = true
+			}
+		}
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".data") || referenced[entry.Name()] || l.stageActive(strings.TrimSuffix(entry.Name(), ".data")) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(l.stageDir(), entry.Name()))
+	}
 }
 
 func (l *Library) stageDir() string { return filepath.Join(l.repo, ".staging") }
@@ -169,6 +205,26 @@ func (l *Library) removeStage(stage stagedUpload) error {
 		return err
 	}
 	return nil
+}
+
+func (l *Library) cleanupBatchRoot(root string) {
+	if root == "" {
+		return
+	}
+	entries, err := os.ReadDir(l.stageDir())
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		stage, err := l.readStage(entry.Name())
+		if err == nil && stage.BatchRoot == root {
+			return
+		}
+	}
+	_ = os.RemoveAll(root)
 }
 
 func (l *Library) setStageActive(id string, active bool) {

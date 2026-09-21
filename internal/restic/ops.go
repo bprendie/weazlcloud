@@ -30,6 +30,15 @@ func (r Runner) Put(ctx context.Context, repo Repo, name string, body io.Reader)
 	return snapshotID(stdout.Bytes())
 }
 
+func (r Runner) PutBatch(ctx context.Context, repo Repo, root string) (string, error) {
+	var stdout bytes.Buffer
+	err := r.Run(ctx, repo, nil, &stdout, "backup", "--no-scan", "--tag", "weazlcloud", "--json", root)
+	if err != nil {
+		return "", err
+	}
+	return snapshotID(stdout.Bytes())
+}
+
 func (r Runner) Dump(ctx context.Context, repo Repo, snap, name string, w io.Writer) error {
 	return r.Run(ctx, repo, nil, w, "dump", snap, name)
 }

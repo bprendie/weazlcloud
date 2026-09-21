@@ -135,6 +135,52 @@ func TestStagedUploadRecoversOnNextEnsure(t *testing.T) {
 	}
 }
 
+func TestBatchCommitRestoresEachPath(t *testing.T) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	first := []byte("first batch payload")
+	second := []byte("second batch payload")
+	one, err := lib.stageReader("folder/one.txt", bytes.NewReader(first), int64(len(first)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := lib.stageReader("folder/two.txt", bytes.NewReader(second), int64(len(second)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib.setStageActive(one.ID, false)
+	lib.setStageActive(two.ID, false)
+	lib.mu.Lock()
+	if err := lib.ensure(context.Background()); err != nil {
+		lib.mu.Unlock()
+		t.Fatal(err)
+	}
+	err = lib.commitStagedBatch(context.Background(), []batchRequest{{stage: one}, {stage: two}})
+	lib.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotOne, err := lib.Get(context.Background(), one.Path)
+	if err != nil || !bytes.Equal(gotOne, first) {
+		t.Fatalf("first batch file err=%v body=%q", err, gotOne)
+	}
+	gotTwo, err := lib.Get(context.Background(), two.Path)
+	if err != nil || !bytes.Equal(gotTwo, second) {
+		t.Fatalf("second batch file err=%v body=%q", err, gotTwo)
+	}
+	_, batches := lib.ResticCommitCounts()
+	if batches != 1 {
+		t.Fatalf("batch commits=%d", batches)
+	}
+}
+
 func TestLockedPut(t *testing.T) {
 	dir := t.TempDir()
 	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
