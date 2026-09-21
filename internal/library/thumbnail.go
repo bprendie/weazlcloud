@@ -26,7 +26,10 @@ const (
 	thumbnailMaxInput = 64 << 20
 	thumbnailMaxBytes = 256 << 20
 	thumbnailMaxFiles = 4096
+	thumbnailWorkers  = 4
 )
+
+var thumbnailSlots = make(chan struct{}, thumbnailWorkers)
 
 var (
 	ErrThumbnailUnavailable = errors.New("thumbnail unavailable for this file")
@@ -42,6 +45,13 @@ type cacheFile struct {
 	name string
 	size int64
 	when time.Time
+}
+
+type thumbnailJob struct {
+	done        chan struct{}
+	body        []byte
+	contentType string
+	err         error
 }
 
 // Thumbnail restores and scales common raster images without putting the
@@ -68,22 +78,51 @@ func (l *Library) Thumbnail(ctx context.Context, name string, size int) ([]byte,
 	}
 
 	key := thumbnailKey(name, f, size)
-	l.thumbMu.Lock()
-	defer l.thumbMu.Unlock()
 	if body, contentType, ok := l.readThumbnailCache(key); ok {
 		return body, contentType, nil
 	}
 
+	l.thumbMu.Lock()
+	if job := l.thumbJobs[key]; job != nil {
+		l.thumbMu.Unlock()
+		select {
+		case <-job.done:
+			return job.body, job.contentType, job.err
+		case <-ctx.Done():
+			return nil, "", ctx.Err()
+		}
+	}
+	job := &thumbnailJob{done: make(chan struct{})}
+	l.thumbJobs[key] = job
+	l.thumbMu.Unlock()
+
+	select {
+	case thumbnailSlots <- struct{}{}:
+		defer func() { <-thumbnailSlots }()
+	case <-ctx.Done():
+		job.err = ctx.Err()
+		l.finishThumbnailJob(key, job)
+		return nil, "", job.err
+	}
 	data, err := l.Get(ctx, name)
-	if err != nil {
-		return nil, "", err
+	if err == nil {
+		job.body, job.contentType, err = makeThumbnail(data, size)
+		if err != nil {
+			err = ErrThumbnailUnavailable
+		} else {
+			_ = l.writeThumbnailCache(key, thumbnailEnvelope{ContentType: job.contentType, Body: job.body})
+		}
 	}
-	body, contentType, err := makeThumbnail(data, size)
-	if err != nil {
-		return nil, "", ErrThumbnailUnavailable
-	}
-	_ = l.writeThumbnailCache(key, thumbnailEnvelope{ContentType: contentType, Body: body})
-	return body, contentType, nil
+	job.err = err
+	l.finishThumbnailJob(key, job)
+	return job.body, job.contentType, job.err
+}
+
+func (l *Library) finishThumbnailJob(key string, job *thumbnailJob) {
+	l.thumbMu.Lock()
+	delete(l.thumbJobs, key)
+	close(job.done)
+	l.thumbMu.Unlock()
 }
 
 func rasterPath(name string) bool {

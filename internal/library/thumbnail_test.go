@@ -5,7 +5,17 @@ import (
 	"image"
 	"image/png"
 	"testing"
+
+	"github.com/bprendie/weazlcloud/internal/catalog"
 )
+
+func TestThumbnailKeyChangesWithCatalogVersion(t *testing.T) {
+	first := thumbnailKey("photos/a.png", catalog.File{Hash: "one", Snap: "snap", Object: "a"}, 320)
+	second := thumbnailKey("photos/a.png", catalog.File{Hash: "two", Snap: "snap", Object: "a"}, 320)
+	if first == second {
+		t.Fatal("thumbnail cache key did not change with the file version")
+	}
+}
 
 func TestMakeThumbnailBoundsRasterWithoutSourceGrowth(t *testing.T) {
 	data := make([]byte, 0)

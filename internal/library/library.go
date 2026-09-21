@@ -24,6 +24,7 @@ type Library struct {
 	batchWake     chan struct{}
 	batchRunning  bool
 	thumbMu       sync.Mutex
+	thumbJobs     map[string]*thumbnailJob
 	repo          string
 	vault         *vault.Vault
 	catalog       *catalog.Catalog
@@ -37,6 +38,7 @@ func New(repo, catalogPath string, v *vault.Vault) *Library {
 		catalog:      catalog.New(catalogPath, v),
 		restic:       restic.New(),
 		activeStages: make(map[string]struct{}),
+		thumbJobs:    make(map[string]*thumbnailJob),
 		batchWake:    make(chan struct{}, 1),
 	}
 }
