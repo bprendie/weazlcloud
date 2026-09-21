@@ -34,9 +34,9 @@ func renderedPreview(path string, data []byte) ([]byte, string, bool) {
 	case ".docx":
 		return zipText(data, []string{"word/document.xml"}, "DOCX"), "text/plain; charset=utf-8", true
 	case ".xlsx":
-		return zipText(data, []string{"xl/sharedStrings.xml", "xl/worksheets/"}, "XLSX"), "text/plain; charset=utf-8", true
+		return xlsxText(data), "text/plain; charset=utf-8", true
 	case ".pptx":
-		return zipText(data, []string{"ppt/slides/"}, "PPTX"), "text/plain; charset=utf-8", true
+		return pptxText(data), "text/plain; charset=utf-8", true
 	case ".odt", ".ods", ".odp":
 		return zipText(data, []string{"content.xml"}, strings.ToUpper(strings.TrimPrefix(filepath.Ext(path), "."))), "text/plain; charset=utf-8", true
 	}
@@ -117,10 +117,21 @@ func parseSTL(data []byte) (previewMesh, bool) {
 			for i := 0; i < n && len(mesh.triangles) < 20000; i++ {
 				base := 84 + i*50
 				tri := [3]int{}
+				points := [3][3]float64{}
+				valid := true
 				for j := 0; j < 3; j++ {
 					off := base + 12 + j*12
+					points[j] = [3]float64{float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off:]))), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off+4:]))), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off+8:])))}
+					if !finitePoint(points[j]) {
+						valid = false
+					}
+				}
+				if !valid {
+					continue
+				}
+				for j, point := range points {
 					tri[j] = len(mesh.vertices)
-					mesh.vertices = append(mesh.vertices, [3]float64{float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off:]))), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off+4:]))), float64(math.Float32frombits(binary.LittleEndian.Uint32(data[off+8:])))})
+					mesh.vertices = append(mesh.vertices, point)
 				}
 				mesh.triangles = append(mesh.triangles, tri)
 			}
@@ -138,7 +149,7 @@ func parseSTL(data []byte) (previewMesh, bool) {
 		x, e1 := strconv.ParseFloat(f[1], 64)
 		y, e2 := strconv.ParseFloat(f[2], 64)
 		z, e3 := strconv.ParseFloat(f[3], 64)
-		if e1 != nil || e2 != nil || e3 != nil {
+		if e1 != nil || e2 != nil || e3 != nil || !finitePoint([3]float64{x, y, z}) {
 			continue
 		}
 		tri[count%3] = len(mesh.vertices)
@@ -154,53 +165,8 @@ func parseSTL(data []byte) (previewMesh, bool) {
 	return mesh, len(mesh.triangles) > 0
 }
 
-type modelXML struct {
-	Vertices []struct {
-		X float64 `xml:"x,attr"`
-		Y float64 `xml:"y,attr"`
-		Z float64 `xml:"z,attr"`
-	} `xml:"resources>object>mesh>vertices>vertex"`
-	Triangles []struct {
-		A int `xml:"v1,attr"`
-		B int `xml:"v2,attr"`
-		C int `xml:"v3,attr"`
-	} `xml:"resources>object>mesh>triangles>triangle"`
-}
-
-func parse3MF(data []byte) (previewMesh, bool) {
-	z, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return previewMesh{}, false
-	}
-	for _, f := range z.File {
-		if !strings.HasSuffix(f.Name, ".model") {
-			continue
-		}
-		r, e := f.Open()
-		if e != nil {
-			continue
-		}
-		b, e := io.ReadAll(io.LimitReader(r, 64<<20))
-		_ = r.Close()
-		if e != nil {
-			continue
-		}
-		var x modelXML
-		if xml.Unmarshal(b, &x) != nil {
-			continue
-		}
-		var m previewMesh
-		for _, v := range x.Vertices {
-			m.vertices = append(m.vertices, [3]float64{v.X, v.Y, v.Z})
-		}
-		for _, t := range x.Triangles {
-			if t.A >= 0 && t.B >= 0 && t.C >= 0 && t.A < len(m.vertices) && t.B < len(m.vertices) && t.C < len(m.vertices) && len(m.triangles) < 20000 {
-				m.triangles = append(m.triangles, [3]int{t.A, t.B, t.C})
-			}
-		}
-		return m, len(m.triangles) > 0
-	}
-	return previewMesh{}, false
+func finitePoint(point [3]float64) bool {
+	return !math.IsNaN(point[0]) && !math.IsNaN(point[1]) && !math.IsNaN(point[2]) && !math.IsInf(point[0], 0) && !math.IsInf(point[1], 0) && !math.IsInf(point[2], 0)
 }
 
 func meshSVG(m previewMesh) []byte {
@@ -209,6 +175,9 @@ func meshSVG(m previewMesh) []byte {
 	}
 	minX, maxX, minY, maxY, minZ, maxZ := math.Inf(1), math.Inf(-1), math.Inf(1), math.Inf(-1), math.Inf(1), math.Inf(-1)
 	for _, v := range m.vertices {
+		if !finitePoint(v) {
+			return []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480"><rect width="100%" height="100%" fill="#101114"/><text x="24" y="40" fill="#a7a9b8" font-family="monospace">Preview unavailable</text></svg>`)
+		}
 		minX = math.Min(minX, v[0])
 		maxX = math.Max(maxX, v[0])
 		minY = math.Min(minY, v[1])
