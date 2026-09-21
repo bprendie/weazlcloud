@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phases 2–3 complete; Phases 4–6 planned.
+Status: Phases 2–3 complete; Phase 4 in progress; Phases 5–6 planned.
 
 ## What we are doing
 
@@ -85,7 +85,7 @@ Goal: make Library feel like a Drive-style file browser. Show useful content pre
 
 Read: `internal/desk/preview.go`, `internal/desk/library.go`, `mockup-ui/views.js`, `mockup-ui/app.js`, `internal/desk/preview_test.go`.
 
-- [ ] **P4.1 — Add a private thumbnail endpoint.** Generate small raster thumbnails instead of returning full-size photos to grid cards. Key cached previews by owner, file version, renderer version, and requested size. Enforce authorization and vault state on cache hits too. Define encryption and eviction for cached data. Pass: replacing a file changes its preview; another user and a locked session cannot read a cached thumbnail.
+- [x] **P4.1 — Add a private thumbnail endpoint.** Generate small raster thumbnails instead of returning full-size photos to grid cards. Key cached previews by owner, file version, renderer version, and requested size. Enforce authorization and vault state on cache hits too. Define encryption and eviction for cached data. Pass: replacing a file changes its preview; another user and a locked session cannot read a cached thumbnail. Implemented for JPEG, PNG, and GIF with encrypted per-user cache files, a 256 MiB/4096-file eviction bound, versioned keys, and an authenticated `/api/library/thumbnail` endpoint. The localhost smoke path uploaded a PNG after bootstrap/unlock and received a `200 image/png` thumbnail.
 - [ ] **P4.2 — Bound preview work.** Limit simultaneous render jobs and total cache size; prioritize visible cards and cancel obsolete requests. Limit parser memory, archive expansion, and execution time without restricting upload size. Pass: a large folder or malformed preview file does not monopolize uploads or exhaust the node.
 - [ ] **P4.3 — Improve document previews.** Resolve XLSX shared strings into their cells, preserve row/column structure, and put slides in numeric order. Clearly label text-only previews. If exact page layouts require a local converter, prepare its image-size and maintenance tradeoffs for Bob. Pass: reference documents show meaningful content in the correct order.
 - [ ] **P4.4 — Improve model previews.** Honor 3MF object indexes, components, and transforms. Use a useful 3D viewing angle; handle invalid numeric coordinates and large STL meshes explicitly. Pass: multi-object 3MF fixtures and ASCII/binary STL fixtures produce recognizable previews without silently showing an arbitrary fragment.
@@ -175,11 +175,19 @@ Next task: P3.5 measurement and staging design.
 
 Date: September 21, 2026
 Task ID: P3.5
-Commit: f2f4c09, fe3ad90, pending
+Commit: f2f4c09, fe3ad90, ed4848d
 Changed: Replaced transient upload spools with protected per-user staging data and durable manifests; added restart recovery and stale-stage cleanup; added concurrent transfer measurements; added a short-window batch coordinator that links staged files into one restic snapshot and records each file's snapshot object path for later restore.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; focused `go test -race ./internal/library ./internal/desk ./internal/drive ./internal/catalog` passed; `scripts/measure-transfers.sh` passed with 24 files grouped into two batch commits.
 Known limitations / decisions needed: Browser-level queue testing, production-volume measurement, and the existing line-count policy remain operational follow-ups.
 Next task: Phase 4 preview baseline.
+
+Date: September 21, 2026
+Task ID: P4.1 foundation
+Commit: 8f50855
+Changed: Added encrypted private raster thumbnail caching with file-version/renderer/size keys and bounded eviction; added an authenticated multiuser and single-user thumbnail route; made native image, audio, video, and PDF previews stream from restic instead of buffering them in Go; added grid thumbnail rails with intersection-based look-ahead, bounded document-preview work, and inline range-backed audio/video cards. Synced both frontend source copies.
+Checks run and results: `go test ./...` passed; `go vet ./...` passed; `node --check mockup-ui/app.js` and `node --check mockup-ui/views.js` passed; `git diff --check` passed; localhost bootstrap/unlock/upload/thumbnail smoke passed.
+Known limitations / decisions needed: Format capability detection, XLSX/3MF renderer improvements, single-player lifecycle, server-side shared preview jobs, and the 100/500-file cold/warm benchmark remain open. The existing repository line-count check still reports the pre-existing oversized `internal/desk/multi.go`, `internal/drive/drive.go`, and `internal/users/store.go` files.
+Next task: P4.2 bounded server preview jobs and the large-folder baseline.
 
 Measurement run, September 21, 2026:
 
