@@ -275,6 +275,7 @@ function fileMenu(id) {
 function folderMenu(path) {
   return [
     {act: `send-folder:${path}`, label: 'Share this'},
+    {act: `download-folder:${path}`, label: 'Download'},
     {act: `upload-here:${path}`, label: 'Upload into'},
     {act: `rename-folder:${path}`, label: 'Rename'},
     {sep: true},
@@ -334,6 +335,7 @@ async function runBatchAction(action) {
   if (!rows.length) return;
   if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
   if (!live) { toast('Batch actions are available on the connected node.'); return; }
+  if (action === 'download' && rows.length > 1) { await createArchiveJob(rows.map(file => filePath(file.id))); return; }
   if (action === 'delete' && !confirm(`Delete ${rows.length} selected file${rows.length === 1 ? '' : 's'}? Present or not. No recycle bin.`)) return;
   let destination = '';
   if (action === 'move') {
@@ -357,6 +359,31 @@ async function runBatchAction(action) {
   renderDeck();
   if (failed.length) toast(`${completed.length} completed; ${failed.length} failed. ${failed[0]}`);
   else toast(`${completed.length} file${completed.length === 1 ? '' : 's'} ${action === 'delete' ? 'deleted' : action === 'move' ? 'moved' : 'sent to download'}.`);
+}
+
+async function createArchiveJob(paths) {
+  try {
+    const job = await engine.createArchive(paths);
+    state.archiveJobs.unshift(job);
+    renderUploadTray();
+    for (let attempt = 0; attempt < 120; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const current = await engine.archiveStatus(job.id);
+      const index = state.archiveJobs.findIndex(item => item.id === job.id);
+      if (index >= 0) state.archiveJobs[index] = current;
+      renderUploadTray();
+      if (current.status === 'ready') {
+        engine.downloadArchive(current.id);
+        toast(`ZIP ready: ${current.files} files.`);
+        return;
+      }
+      if (current.status === 'failed' || current.status === 'cancelled') {
+        toast(current.error || 'ZIP preparation failed.');
+        return;
+      }
+    }
+    toast('ZIP preparation is still running in the background.');
+  } catch (err) { toast(err.message); }
 }
 
 async function previewFile(id) {
@@ -897,6 +924,10 @@ async function runMenu(act) {
   if (kind === 'send-file') sendFile(key);
   if (kind === 'send-folder') sendFolder(key);
   if (kind === 'preview-file') previewFile(key);
+  if (kind === 'download-folder') {
+    if (live) await createArchiveJob([key]);
+    else toast('Download is the engine. This preview has no bytes.');
+  }
   if (kind === 'download') {
     const f = files.find(x => x.id === key);
     const path = filePath(key);
@@ -966,6 +997,8 @@ document.addEventListener('click', e => {
   if (b.dataset.uploadCollapse !== undefined) { state.upload.collapsed = !state.upload.collapsed; renderUploadTray(); return; }
   if (b.dataset.uploadRetry !== undefined) { retryFailedUploads(); return; }
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
+  if (b.dataset.archiveDownload) { engine.downloadArchive(b.dataset.archiveDownload); return; }
+  if (b.dataset.archiveCancel) { engine.cancelArchive(b.dataset.archiveCancel).then(() => renderUploadTray()).catch(err => toast(err.message)); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { stopMediaPlayback(); clearFileSelection(); state.currentPath = b.dataset.openFolder; renderMain(); renderDeck(); }

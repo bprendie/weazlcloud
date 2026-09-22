@@ -110,6 +110,38 @@ export async function deleteLibrary(path) {
   if (!r.ok) throw new Error(j.error || 'delete failed');
 }
 
+export async function createArchive(paths) {
+  const r = await fetch('/api/library/archive', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({paths})
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'archive failed');
+  return j;
+}
+
+export async function archiveStatus(id) {
+  const r = await fetch('/api/library/archive?id=' + encodeURIComponent(id));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'archive status failed');
+  return j;
+}
+
+export async function cancelArchive(id) {
+  const r = await fetch('/api/library/archive?id=' + encodeURIComponent(id), {method: 'DELETE', headers: jsonHeaders});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'archive cancel failed');
+}
+
+export function downloadArchive(id) {
+  const a = document.createElement('a');
+  a.href = '/api/library/archive?id=' + encodeURIComponent(id) + '&download=1';
+  a.download = `weazlcloud-${id}.zip`;
+  a.rel = 'noopener';
+  a.click();
+}
+
 export async function downloadLibrary(path, name) {
   const a = document.createElement('a');
   a.href = '/api/library?path=' + encodeURIComponent(path);

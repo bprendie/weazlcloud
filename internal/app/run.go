@@ -162,7 +162,7 @@ func (n *Node) bind() error {
 	}
 	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
-	registry := filesvc.NewRegistry(us)
+	registry := filesvc.NewRegistry(us, q)
 	n.svcs = []*http.Server{
 		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)),
 		server(n.share, share.New(n.caps)),

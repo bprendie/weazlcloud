@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -279,4 +280,8 @@ func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error 
 
 func (l *Library) ResticCommitCounts() (single, batch uint64) {
 	return l.resticCommits.Load(), l.batchCommits.Load()
+}
+
+func (l *Library) ArchiveDir() string {
+	return filepath.Join(filepath.Dir(l.repo), ".weazl-archives")
 }

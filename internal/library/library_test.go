@@ -1,10 +1,12 @@
 package library
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,6 +104,89 @@ func TestPutGetPNG(t *testing.T) {
 	}
 	if !bytes.Equal(got, png) {
 		t.Fatal("png round trip mismatch")
+	}
+}
+
+func TestWriteArchiveExpandsFoldersAndStreamsFiles(t *testing.T) {
+	if _, err := exec.LookPath("restic"); err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("nug"), []byte("nug")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	ctx := context.Background()
+	if err := lib.Mkdir(ctx, "Photos"); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Mkdir(ctx, "Photos/Empty"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.PutReader(ctx, "Photos/large.bin", bytes.NewReader(bytes.Repeat([]byte("z"), 256*1024)), 256*1024); err != nil {
+		t.Fatal(err)
+	}
+	unicode := []byte("unicode content")
+	if _, err := lib.Put(ctx, "Photos/é.txt", unicode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Put(ctx, "root.txt", []byte("root")); err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	manifest, err := lib.PrepareArchive(ctx, []string{"Photos", "Photos/large.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lib.Put(ctx, "Photos/large.bin", []byte("replacement")); err != nil {
+		t.Fatal(err)
+	}
+	files, logical, err := lib.WriteArchive(ctx, manifest, &archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files != 2 || logical != 256*1024+int64(len(unicode)) {
+		t.Fatalf("archive accounting files=%d bytes=%d", files, logical)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archive.Bytes()), int64(archive.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reader.File) != 4 {
+		t.Fatalf("archive entries=%d, want folders and files", len(reader.File))
+	}
+	seen := map[string]bool{}
+	for _, entry := range reader.File {
+		seen[entry.Name] = true
+		if entry.Name == "Photos/large.bin" {
+			opened, err := entry.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(opened)
+			_ = opened.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(body) != 256*1024 || body[0] != 'z' {
+				t.Fatalf("archived body size=%d", len(body))
+			}
+		}
+		if entry.Name == "Photos/é.txt" {
+			opened, err := entry.Open()
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(opened)
+			_ = opened.Close()
+			if err != nil || !bytes.Equal(body, unicode) {
+				t.Fatalf("unicode body err=%v body=%q", err, body)
+			}
+		}
+	}
+	if !seen["Photos/"] || !seen["Photos/Empty/"] || !seen["Photos/large.bin"] || !seen["Photos/é.txt"] {
+		t.Fatalf("archive entries=%v", seen)
 	}
 }
 

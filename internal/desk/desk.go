@@ -64,7 +64,7 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 	if len(registries) > 0 && registries[0] != nil {
 		h.registry = registries[0]
 	} else {
-		h.registry = filesvc.NewRegistry(us)
+		h.registry = filesvc.NewRegistry(us, q)
 	}
 	return h
 }

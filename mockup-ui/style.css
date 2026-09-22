@@ -189,6 +189,9 @@ progress{width:100%;height:12px;accent-color:var(--yellow);margin:16px 0}
 .upload-rail-name{font:11px monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
 .upload-rail progress{display:block;width:100%;max-width:100%;margin:8px 0 3px;height:7px}
 .upload-rail small{display:block;text-align:right;font:10px monospace;color:var(--muted)}
+.archive-job{border:1px solid var(--line);padding:10px;margin:10px 0;background:#141518;font:10px monospace}
+.archive-job>div{display:flex;justify-content:space-between;color:var(--purple)}
+.archive-job p{margin:7px 0 0;color:var(--muted)}
 .file-preview-image{display:block;max-width:100%;max-height:60vh;object-fit:contain;background:#101114;margin:18px 0}
 .file-preview-frame{display:block;width:100%;height:60vh;border:1px solid var(--line);background:#101114;margin:18px 0}
 .file-preview-media{display:block;width:100%;max-height:60vh;background:#101114;margin:18px 0}

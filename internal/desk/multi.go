@@ -74,6 +74,12 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiRename)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodDelete:
 		h.multiGuard(w, r, true, h.multiDeleteLibrary)
+	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiCreateArchive)
+	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiArchive)
+	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodDelete:
+		h.multiGuard(w, r, true, h.multiCancelArchive)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiListCapsules)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodPost:
@@ -487,6 +493,7 @@ func (h *Handler) multiLock(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
+	res.Archives.Lock()
 	res.Vault.Lock()
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "locked"})
 }
