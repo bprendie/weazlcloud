@@ -193,6 +193,7 @@ func (l *Library) commitStagedBatch(ctx context.Context, requests []batchRequest
 		if err := l.catalog.Put(f); err != nil {
 			return err
 		}
+		l.publishChange(Change{Kind: "put", Paths: []string{f.Path}})
 		if err := l.removeStage(stage); err != nil {
 			return err
 		}

@@ -25,10 +25,27 @@ type Library struct {
 	batchRunning  bool
 	thumbMu       sync.Mutex
 	thumbJobs     map[string]*thumbnailJob
+	changeMu      sync.RWMutex
+	changeSink    ChangeSink
 	repo          string
 	vault         *vault.Vault
 	catalog       *catalog.Catalog
 	restic        restic.Runner
+}
+
+func (l *Library) SetChangeSink(sink ChangeSink) {
+	l.changeMu.Lock()
+	l.changeSink = sink
+	l.changeMu.Unlock()
+}
+
+func (l *Library) publishChange(change Change) {
+	l.changeMu.RLock()
+	sink := l.changeSink
+	l.changeMu.RUnlock()
+	if sink != nil {
+		sink.Publish(change)
+	}
 }
 
 func New(repo, catalogPath string, v *vault.Vault) *Library {
@@ -136,7 +153,11 @@ func (l *Library) Mkdir(ctx context.Context, name string) error {
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}
-	return l.catalog.Mkdir(name)
+	if err := l.catalog.Mkdir(name); err != nil {
+		return err
+	}
+	l.publishChange(Change{Kind: "mkdir", Paths: []string{name}})
+	return nil
 }
 
 func (l *Library) Rename(ctx context.Context, oldName, newName string) error {
@@ -153,7 +174,11 @@ func (l *Library) Rename(ctx context.Context, oldName, newName string) error {
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}
-	return l.catalog.Rename(oldName, newName)
+	if err := l.catalog.Rename(oldName, newName); err != nil {
+		return err
+	}
+	l.publishChange(Change{Kind: "rename", Paths: []string{oldName, newName}})
+	return nil
 }
 
 func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.File, error) {
@@ -214,7 +239,11 @@ func (l *Library) Delete(name string) error {
 	if err := l.catalog.Load(); err != nil {
 		return err
 	}
-	return l.catalog.Delete(name)
+	if err := l.catalog.Delete(name); err != nil {
+		return err
+	}
+	l.publishChange(Change{Kind: "delete", Paths: []string{name}})
+	return nil
 }
 
 func (l *Library) WriteTo(ctx context.Context, name string, w io.Writer) error {

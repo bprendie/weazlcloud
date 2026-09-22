@@ -12,8 +12,9 @@ import (
 // Keeping the vault, catalog, and library together prevents desk and WebDAV
 // from loading and saving competing snapshots of the same catalog.
 type Resource struct {
-	Vault *vault.Vault
-	Lib   *library.Library
+	Vault   *vault.Vault
+	Lib     *library.Library
+	Changes *Hub
 }
 
 type Registry struct {
@@ -34,7 +35,9 @@ func (r *Registry) For(u users.User) *Resource {
 	}
 	v := vault.New(r.users.VaultPath(u), r.users.NodeKeyPath(u))
 	l := library.New(r.users.LibraryPath(u), r.users.CatalogPath(u), v)
-	item := &Resource{Vault: v, Lib: l}
+	changes := NewHub()
+	l.SetChangeSink(changes)
+	item := &Resource{Vault: v, Lib: l, Changes: changes}
 	r.items[u.ID] = item
 	return item
 }

@@ -36,6 +36,7 @@ type Handler struct {
 	quota      *quota.Manager
 	registry   *filesvc.Registry
 	authLimit  *ratelimit.Limiter
+	changes    *filesvc.Hub
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -44,10 +45,14 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 		panic(err)
 	}
 	grab, drive := loadPlaces(placesPath, publicBase, driveBase)
+	changes := filesvc.NewHub()
+	if lib != nil {
+		lib.SetChangeSink(changes)
+	}
 	return &Handler{
 		files: http.FileServer(http.FS(sub)), vault: v, lib: lib, caps: caps,
 		publicBase: grab, driveBase: drive, placesPath: placesPath,
-		authLimit: ratelimit.New(time.Minute, 8, 4096),
+		authLimit: ratelimit.New(time.Minute, 8, 4096), changes: changes,
 	}
 }
 
@@ -93,6 +98,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.thumbnailLibrary(w, r)
 	case r.URL.Path == "/api/library/capability" && r.Method == http.MethodGet:
 		h.capabilityLibrary(w, r)
+	case r.URL.Path == "/api/library/events" && r.Method == http.MethodGet:
+		h.libraryEvents(w, r)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet:
 		h.getLibrary(w, r)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodPut:

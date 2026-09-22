@@ -102,6 +102,7 @@ func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog
 	if err := l.catalog.Put(f); err != nil {
 		return catalog.File{}, err
 	}
+	l.publishChange(Change{Kind: "put", Paths: []string{f.Path}})
 	if err := l.removeStage(stage); err != nil {
 		return catalog.File{}, err
 	}

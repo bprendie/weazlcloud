@@ -41,6 +41,14 @@ export async function listLibrary() {
   return j.files || [];
 }
 
+export function libraryEvents(onChange) {
+  const source = new EventSource('/api/library/events');
+  source.addEventListener('library', event => {
+    try { onChange?.(JSON.parse(event.data)); } catch {}
+  });
+  return source;
+}
+
 export async function putLibrary(path, body) {
   const r = await fetch('/api/library?path=' + encodeURIComponent(path), {
     method: 'PUT',

@@ -62,6 +62,8 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiThumbnailLibrary)
 	case r.URL.Path == "/api/library/capability" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiCapabilityLibrary)
+	case r.URL.Path == "/api/library/events" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiLibraryEvents)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiGetLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodPut:

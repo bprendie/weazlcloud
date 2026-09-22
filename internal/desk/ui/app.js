@@ -4,6 +4,9 @@ import * as engine from './engine.js';
 
 const $ = s => document.querySelector(s);
 let noticeTimer, frame, live = false, uploadPrefix = '';
+let libraryEventSource;
+let librarySyncRunning = false;
+let librarySyncAgain = false;
 const UPLOAD_RAILS = 3;
 const uploadRequests = new Map();
 let uploadWorkersRunning = false;
@@ -686,6 +689,8 @@ async function lockVault() {
   stopWork();
   stopMediaPlayback();
   stopPreviewWarming();
+  libraryEventSource?.close();
+  libraryEventSource = null;
   if (live) {
     try { await engine.lock(); } catch (err) { toast(err.message); return; }
   }
@@ -707,6 +712,38 @@ async function loadLibrary() {
   await loadQuota();
 }
 
+async function syncLibraryFromChange() {
+  if (!live || !state.unlocked) return;
+  if (librarySyncRunning) {
+    librarySyncAgain = true;
+    return;
+  }
+  librarySyncRunning = true;
+  const scroll = window.scrollY;
+  try {
+    await loadLibrary();
+    if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = null;
+    if (state.view === 'library') {
+      renderMain();
+      renderDeck();
+      requestAnimationFrame(() => window.scrollTo({top: scroll, behavior: 'auto'}));
+    }
+  } catch {}
+  finally {
+    librarySyncRunning = false;
+    if (librarySyncAgain) {
+      librarySyncAgain = false;
+      syncLibraryFromChange();
+    }
+  }
+}
+
+function startLibraryEvents() {
+  libraryEventSource?.close();
+  if (!live || !state.unlocked) return;
+  libraryEventSource = engine.libraryEvents(() => syncLibraryFromChange());
+}
+
 async function loadQuota() {
   if (!live) return;
   try { state.quota = await engine.quota(); } catch (err) { toast(err.message); }
@@ -720,6 +757,7 @@ function openDesk() {
   if (state.username) $('#username').innerHTML = `${esc(state.fullName || state.username)}<small>Open · this session owns the key</small>`;
   renderMain();
   renderDeck();
+  startLibraryEvents();
 }
 
 async function loadAccessRequests() {
