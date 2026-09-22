@@ -242,7 +242,7 @@ async function previewFile(id) {
     const url = URL.createObjectURL(result.blob);
     const type = result.type.split(';')[0];
     let body;
-    if (type === 'image/svg+xml' || path.toLowerCase().endsWith('.svg')) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
+    if (path.toLowerCase().endsWith('.svg')) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
     else if (type.startsWith('image/')) body = `<img class="file-preview-image" src="${url}" alt="${esc(f.title)}">`;
     else if (type.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript', 'application/x-yaml'].includes(type)) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
     else if (type === 'application/pdf') body = `<iframe class="file-preview-frame" src="${url}" title="${esc(f.title)}"></iframe>`;
