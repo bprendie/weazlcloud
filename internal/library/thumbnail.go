@@ -73,7 +73,7 @@ func (l *Library) Thumbnail(ctx context.Context, name string, size int) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
-	if f.Folder || !rasterPath(name) || f.Size <= 0 || f.Size > thumbnailMaxInput {
+	if f.Folder || f.Size <= 0 || f.Size > thumbnailMaxInput {
 		return nil, "", ErrThumbnailUnavailable
 	}
 
@@ -123,15 +123,6 @@ func (l *Library) finishThumbnailJob(key string, job *thumbnailJob) {
 	delete(l.thumbJobs, key)
 	close(job.done)
 	l.thumbMu.Unlock()
-}
-
-func rasterPath(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".jpg", ".jpeg", ".png", ".gif":
-		return true
-	default:
-		return false
-	}
 }
 
 func thumbnailKey(name string, f catalog.File, size int) string {

@@ -91,6 +91,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listLibrary(w, r)
 	case r.URL.Path == "/api/library/thumbnail" && r.Method == http.MethodGet:
 		h.thumbnailLibrary(w, r)
+	case r.URL.Path == "/api/library/capability" && r.Method == http.MethodGet:
+		h.capabilityLibrary(w, r)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet:
 		h.getLibrary(w, r)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodPut:

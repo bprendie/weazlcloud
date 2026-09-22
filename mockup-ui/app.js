@@ -30,16 +30,20 @@ function hideMenu() {
 const GRID_PREVIEW_RAILS = 4;
 const gridTextQueue = [];
 const gridThumbQueue = [];
+const gridCapabilityQueue = [];
 let gridTextActive = 0;
 let gridThumbActive = 0;
+let gridCapabilityActive = 0;
 const gridPreviewObserver = 'IntersectionObserver' in window
   ? new IntersectionObserver(entries => entries.forEach(entry => {
     if (!entry.isIntersecting) return;
     const el = entry.target;
     gridPreviewObserver.unobserve(el);
     el.dataset.previewQueued = '1';
-    if (el.dataset.gridTextPreview !== undefined) gridTextQueue.push(el);
+    if (el.dataset.gridCapability !== undefined) gridCapabilityQueue.push(el);
+    else if (el.dataset.gridTextPreview !== undefined) gridTextQueue.push(el);
     else gridThumbQueue.push(el);
+    pumpGridCapabilities();
     pumpGridTextPreviews();
     pumpGridThumbnails();
   }), {rootMargin: '500px 0px'})
@@ -75,6 +79,71 @@ function pumpGridThumbnails() {
   }
 }
 
+function capabilityFallback(el) {
+  el.removeAttribute('data-grid-capability');
+  el.classList.add('preview-unavailable');
+}
+
+function applyGridCapability(el, capability) {
+  const path = capability.path || el.dataset.gridCapability || '';
+  const encoded = encodeURIComponent(path);
+  let replacement;
+  if (capability.kind === 'thumbnail') {
+    replacement = document.createElement('img');
+    replacement.className = 'grid-preview';
+    replacement.dataset.gridThumbnail = path;
+    replacement.alt = '';
+    replacement.loading = 'lazy';
+  } else if (capability.kind === 'text') {
+    replacement = document.createElement('div');
+    replacement.className = 'grid-text-preview';
+    replacement.dataset.gridTextPreview = path;
+    replacement.textContent = 'Loading preview…';
+  } else if (capability.kind === 'model') {
+    replacement = document.createElement('img');
+    replacement.className = 'grid-preview';
+    replacement.src = `/api/library?path=${encoded}&preview=1`;
+    replacement.alt = '';
+    replacement.loading = 'lazy';
+  } else if (capability.kind === 'pdf') {
+    replacement = document.createElement('div');
+    replacement.className = 'grid-kind';
+    const label = document.createElement('span');
+    label.className = 'kind';
+    label.textContent = capability.label || 'PDF';
+    replacement.append(label);
+  } else if (capability.kind === 'media') {
+    const isVideo = String(capability.content_type || '').startsWith('video/');
+    replacement = document.createElement(isVideo ? 'video' : 'audio');
+    replacement.className = 'grid-media-player';
+    replacement.src = `/api/library?path=${encoded}&inline=1`;
+    replacement.controls = true;
+    replacement.preload = 'metadata';
+  } else {
+    replacement = document.createElement('div');
+    replacement.className = 'grid-kind';
+    const label = document.createElement('span');
+    label.className = 'kind';
+    label.textContent = capability.label || 'FILE';
+    replacement.append(label);
+  }
+  el.replaceWith(replacement);
+}
+
+function pumpGridCapabilities() {
+  while (gridCapabilityActive < 2 && gridCapabilityQueue.length) {
+    const el = gridCapabilityQueue.shift();
+    if (!el?.isConnected) continue;
+    gridCapabilityActive++;
+    const path = el.dataset.gridCapability || '';
+    fetch(`/api/library/capability?path=${encodeURIComponent(path)}`)
+      .then(response => { if (!response.ok) throw new Error('capability unavailable'); return response.json(); })
+      .then(capability => applyGridCapability(el, capability))
+      .catch(() => capabilityFallback(el))
+      .finally(() => { gridCapabilityActive--; hydrateGridTextPreviews(); pumpGridCapabilities(); });
+  }
+}
+
 function hydrateGridTextPreviews() {
   const observe = (el, queue) => {
     if (el.dataset.previewQueued !== undefined || el.dataset.previewObserved !== undefined) return;
@@ -86,8 +155,10 @@ function hydrateGridTextPreviews() {
     el.dataset.previewQueued = '1';
     queue.push(el);
   };
+  document.querySelectorAll('[data-grid-capability]').forEach(el => observe(el, gridCapabilityQueue));
   document.querySelectorAll('[data-grid-text-preview]').forEach(el => observe(el, gridTextQueue));
   document.querySelectorAll('[data-grid-thumbnail]').forEach(el => observe(el, gridThumbQueue));
+  pumpGridCapabilities();
   pumpGridTextPreviews();
   pumpGridThumbnails();
 }
