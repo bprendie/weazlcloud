@@ -131,7 +131,7 @@ func (c *Catalog) Put(f File) error {
 	next := append([]File(nil), c.files...)
 	found := false
 	for i, x := range next {
-		if x.Path == f.Path {
+		if x.Path == f.Path && x.Present {
 			next[i] = f
 			found = true
 			break

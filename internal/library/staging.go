@@ -75,6 +75,9 @@ func (l *Library) stageReader(name string, body io.Reader, expected int64) (stag
 }
 
 func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog.File, error) {
+	if stage.Size == 0 && stage.Snap == "" {
+		return l.commitEmptyStage(ctx, stage)
+	}
 	if stage.Snap == "" {
 		dataPath := filepath.Join(l.stageDir(), stage.Data)
 		tmp, err := os.Open(dataPath)

@@ -84,10 +84,10 @@ func (c *Catalog) Restore(path string) error {
 	}
 	for _, candidate := range restoring {
 		for _, existing := range c.files {
-			if !existing.Present || existing.Path == candidate.Path {
+			if !existing.Present {
 				continue
 			}
-			if existing.Path == candidate.Path || (!existing.Folder && strings.HasPrefix(candidate.Path, existing.Path+"/")) || (candidate.Folder && strings.HasPrefix(existing.Path, candidate.Path+"/")) {
+			if existing.Path == candidate.Path || (!existing.Folder && strings.HasPrefix(candidate.Path, existing.Path+"/")) || (!candidate.Folder && strings.HasPrefix(existing.Path, candidate.Path+"/")) {
 				return ErrConflict
 			}
 		}

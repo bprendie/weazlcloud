@@ -71,6 +71,32 @@ func TestCatalogRejectsFileFolderCollisions(t *testing.T) {
 	}
 }
 
+func TestReplacementAtTrashedPathPreservesTrashAndRestoreConflicts(t *testing.T) {
+	c := testCatalog(t)
+	if err := c.Put(File{Path: "archive/item.bin", Size: 3, Hash: "old", Snap: "old-snap", Present: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Delete("archive/item.bin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Put(File{Path: "archive/item.bin", Size: 4, Hash: "new", Snap: "new-snap", Present: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Trash()) != 1 || c.Trash()[0].Hash != "old" {
+		t.Fatalf("replacement discarded trashed entry: %+v", c.Trash())
+	}
+	live, ok := c.Get("archive/item.bin")
+	if !ok || live.Hash != "new" {
+		t.Fatalf("replacement is not the live version: %+v, %v", live, ok)
+	}
+	if err := c.Restore("archive/item.bin"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("restore over replacement should conflict, got %v", err)
+	}
+	if len(c.List()) != 1 || c.List()[0].Hash != "new" {
+		t.Fatalf("failed restore introduced duplicate live paths: %+v", c.List())
+	}
+}
+
 func TestCatalogRejectsUnsafeRenameWithoutMutating(t *testing.T) {
 	c := testCatalog(t)
 	if err := c.Mkdir("photos"); err != nil {

@@ -1,7 +1,7 @@
 # WeazlCloud implementation workbook — September 22, 2026
 
 Owner: Bob. Implementation: Luna.
-Status: G1.1–G1.4 complete; later workstreams remain. D1 and D2 are resolved.
+Status: G1.1–G1.4 and G3.1 complete; G3.2 waits on G5.1. D1 and D2 are resolved.
 Continues `phase_plan_2026-09-21.md`. No task in this workbook is complete merely because it appears here.
 
 ## Confirmed product decisions
@@ -79,12 +79,14 @@ Read: `internal/drive/drive.go`, `internal/drive/filesystem.go`, `internal/files
 
 ## G3 — Thirty-day Trash with automatic emptying
 
-Read: `internal/catalog/mutations.go`, `internal/library/maintenance.go`, `internal/desk/trash.go`, `internal/restic/ops.go`. Depends on G5.1.
+Read: `internal/catalog/mutations.go`, `internal/library/maintenance.go`, `internal/desk/trash.go`, `internal/restic/ops.go`. G3.1 is independent; G3.2 depends on G5.1.
 
-- [ ] **G3.1 — Audit safe reclamation.** Check expiry boundaries, empty folders, zero-byte files, replacement at a trashed path, and mixed live/trashed entries sharing a restic snapshot. Inventory references held by active streams, captured ZIP manifests, and pending upload commits. Do not prune any snapshot still needed by these operations. Pass: tests cover each case, restore never creates duplicate live paths, and cleanup does not rely on positive byte counts to remove expired folders.
+- [x] **G3.1 — Audit safe reclamation.** Check expiry boundaries, empty folders, zero-byte files, replacement at a trashed path, and mixed live/trashed entries sharing a restic snapshot. Inventory references held by active streams, captured ZIP manifests, and pending upload commits. Do not prune any snapshot still needed by these operations. Pass: tests cover each case, restore never creates duplicate live paths, and cleanup does not rely on positive byte counts to remove expired folders.
 - [ ] **G3.2 — Connect idle cleanup.** Process expired Trash after 30 days even without a user visiting Trash. Use a narrowly scoped background resource with existing stored-key capability; do not leave a Desk vault marked unlocked merely for maintenance. Record resumable cleanup intent so a failure between catalog purge and restic forget/prune is recoverable. Pass: expired entries are gone after an eligible idle pass, newer Trash restores, physical reclaim is measured for unreferenced content, and injected failure retries safely.
 
 No overwrite history, restoration service, or new backup UI. Existing release backups remain operational procedure.
+
+G3.1 findings: active streams and ZIP writing hold the per-user Library lock for their restic reads; pending staged commits are reconciled before snapshot planning. A queued ZIP can hold a captured snapshot manifest without holding the Library lock, so G5.1 must count the whole archive job as active before G3.2 is enabled. Snapshot planning only forgets snapshots referenced by expired file entries and protects snapshots referenced by live or newer-Trash entries. Zero-byte uploads now use a restic file snapshot rather than the stdin path, which rejects empty input. Cleanup currently purges catalog tombstones before restic forget; a durable retry intent is still required in G3.2 to cover a forget/prune failure. Its existing `reclaimed_bytes` value is a logical file-size total, not a measured physical-space delta.
 
 ## G4 — Disable and delete accounts completely
 
@@ -165,3 +167,4 @@ September 22: Bob confirmed restart-resumable uploads, folder-browsing priority,
 September 22: Completed G8.1 verification hardening and the first G8.2/G8.3 failure and replacement checks. `make check`, authenticated browser smoke, recovery smoke, and updated disposable-container smoke passed. G8.2/G8.3/G8.4 remain partial as recorded above; no production data was touched.
 September 22: Bob decided incomplete uploads expire after 24 hours and browser resume may ask for the original files to be reselected; no local helper.
 September 22: Completed G1.3/G1.4 in commit `8badb96`. Incomplete sessions now expire after 24 hours; reservations restore/release, sessions are listed per owner, and browser resume verifies chunk hashes with retry/backoff. `make check`, browser/recovery/container smoke passed; the local test container was rebuilt on `weazlcloud:local-test-g1` while preserving `weazlcloud-local-test-data-20260922`. No production host was touched. A large-payload memory measurement remains open under D10.
+September 22: Completed G3.1 safe-reclamation audit and fixes. Tests cover cutoff boundaries, empty folders, zero-byte files, replacement at a trashed path, and live/newer snapshot references. `make check` passed. G3.2 remains queued behind G5.1's idle coordinator and needs durable cleanup intent plus measured physical reclamation reporting.
