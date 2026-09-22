@@ -108,7 +108,7 @@ Goal: file actions feel predictable and the displayed storage numbers mean somet
 
 Read: `mockup-ui/app.js`, `mockup-ui/views.js`, `mockup-ui/data.js`, `internal/catalog/catalog.go`, `internal/library/library.go`, `internal/quota/quota.go`.
 
-- [ ] **P5.1 — Add shared change notifications.** Emit per-user changes after successful storage commits. Deliver updates to the browser, including WebDAV changes, with reconnect/resync behavior. Pass: two open views converge without a reload and without losing the current folder, selection, or scroll position.
+- [x] **P5.1 — Add shared change notifications.** Emit per-user changes after successful storage commits. Deliver updates to the browser, including WebDAV changes, with reconnect/resync behavior. Pass: two open views converge without a reload and without losing the current folder, selection, or scroll position.
 - [ ] **P5.2 — Add multi-select and batch actions.** Implement Ctrl/Shift selection and bulk move, download, and delete with clear partial-failure reporting. Keep keyboard and context-menu actions consistent. Pass: a failed item does not hide successful items or clear an unrelated selection.
 - [ ] **P5.2a — Prepare bulk downloads as server-side ZIP jobs.** After P3.3 and P5.2, make Download on multiple selected files or any folder create one ZIP on the backend. A single selected file still downloads directly. Include nested folders and empty directories, preserve relative paths and modified times, and use ZIP64 for large archives. Resolve overlapping selections without duplicate entries; use safe relative archive paths and deterministic names for collisions. Capture an authorized manifest of file versions when the job starts so later moves/replacements cannot silently change its contents. Pass: a mixed selection of files and nested folders extracts to the expected structure with matching file hashes, including Unicode names and a large-file fixture.
 - [ ] **P5.2b — Keep ZIP preparation in the background.** Show queued/preparing/ready/failed/cancelled states in the transfer tray, with processed files and bytes where known. Keep Library usable and offer Download ZIP when ready; attempt automatic download only where the browser permits it. Stream source files into the archive with bounded memory, bounded workers, and cancellation. Stage jobs on the configured data volume, never the container's small `/tmp`; reserve and enforce temporary disk use through P1.3 without adding per-user quotas or fixed file-size caps. Pass: a large archive does not grow RAM with its size or block browsing/uploads, cancellation releases reservations, and insufficient space produces an actionable error. Never silently omit unreadable files or label an incomplete archive successful.
@@ -238,6 +238,14 @@ Changed: Added active cleanup for detached text, capability, and thumbnail reque
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/desk ./internal/library` passed; JavaScript checks passed; `scripts/measure-previews.sh` passed for 100 and 500 synthetic thumbnails; Chromium/CDP smoke passed on the localhost node.
 Known limitations / decisions needed: Native browser controls provide the media poster/control surface; server-side video poster extraction and embedded audio artwork are deferred until a local renderer is selected. The full 500-file production browser paint run is deferred because a standalone REST upload would measure per-file restic commit overhead rather than preview scheduling. No Phase 4 privacy or upload-size policy changed.
 Next task: Phase 5 file-management work.
+
+Date: September 21, 2026
+Task ID: P5.1
+Commit: 75954c6
+Changed: Added a shared per-user change hub to each filesvc resource. Catalog puts, folders, renames, and deletes publish after successful commits, so Desk and WebDAV use the same notification path. Added authenticated SSE with an immediate resync event, bounded subscriber buffers, keepalives, reconnect-safe behavior, and browser-side refresh that preserves the current folder, selection, and scroll position.
+Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/filesvc ./internal/library ./internal/desk ./internal/drive` passed; JavaScript syntax checks passed; localhost SSE smoke received a `put` event from Desk and a second `put` event from WebDAV without reloading.
+Known limitations / decisions needed: Browser two-window visual verification remains part of the broader Phase 5 browser pass; the server and authenticated client resync path is covered.
+Next task: P5.2 multi-select and batch actions.
 
 Measurement run, September 21, 2026:
 
