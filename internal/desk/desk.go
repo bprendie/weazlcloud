@@ -76,6 +76,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == "/live" && r.Method == http.MethodGet:
+		ready.Live(w, r)
 	case r.URL.Path == "/ready" && r.Method == http.MethodGet:
 		ready.Serve(w, r)
 	case r.URL.Path == "/api/status" && r.Method == http.MethodGet:

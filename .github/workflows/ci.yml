@@ -1,0 +1,41 @@
+name: WeazlCloud CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: make check
+      - run: make build VERSION=ci-${GITHUB_SHA::12}
+
+  browser:
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: make desk-assets
+      - run: bash scripts/smoke-browser.sh
+
+  container:
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --file deploy/Dockerfile --tag weazlcloud:ci-${GITHUB_SHA::12} .
+      - run: WEAZLCLOUD_IMAGE=weazlcloud:ci-${GITHUB_SHA::12} make smoke-container

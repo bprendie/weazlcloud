@@ -27,6 +27,10 @@ func New(store *capsule.Store) *Handler {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	headers.Secure(w)
+	if r.URL.Path == "/live" && r.Method == http.MethodGet {
+		ready.Live(w, r)
+		return
+	}
 	if r.URL.Path == "/ready" && r.Method == http.MethodGet {
 		ready.Serve(w, r)
 		return

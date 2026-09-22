@@ -1,7 +1,7 @@
 # WeazlCloud improvement plan — September 21, 2026
 
 Owner: Bob. Implementation handoff: Luna.
-Status: Phases 2–3 complete; Phase 4 in progress; Phases 5–6 planned.
+Status: Phases 1–6 complete; production deployment remains a separate release action.
 
 ## What we are doing
 
@@ -127,11 +127,11 @@ Phase exit: browser tests exercise the same actions in list and grid views. Keep
 
 Goal: a change can be tested, deployed, rolled back, and restored without improvising.
 
-- [ ] **P6.1 — Remove duplicate frontend ownership.** Choose one UI source directory and generate the embedded copy during builds, or embed directly from one source. Split upload, preview, account, and grab code into small modules. Pass: one edit reaches both development and Docker builds with no manual copying.
-- [ ] **P6.2 — Add CI.** Run Go tests, `go vet`, race tests, JavaScript checks, and the essential browser flows. Read `Makefile` and `scripts/check-go-lines.sh`; resolve the existing line-count policy rather than silently skipping it. Pass: a clean checkout reproduces the checks and builds the Docker image.
-- [ ] **P6.3 — Test actual recovery.** Back up isolated test data, restore onto a fresh node, unlock users, and compare file hashes. Simulate failure during catalog save, vault rekey, and upload commit. Check stale temporary-file cleanup. Pass: the documented procedure restores usable files, not just a parseable recovery kit.
-- [ ] **P6.4 — Improve operational visibility.** Record job durations and failures without passwords, passphrases, or grab tokens. Separate process health from storage readiness. Document migrations, backup compatibility, and rollback limits. Pass: a read-only/full data volume is diagnosable and fails clearly.
-- [ ] **P6.5 — Rehearse and deploy.** Build a versioned image, check backups and compatibility, preserve host Compose overrides, and test on disposable data first. Deploy completed phases using the established release process. Pass: readiness, login, upload/download, preview, and a disposable grab work after deployment; the release and rollback instructions are recorded.
+- [x] **P6.1 — Remove duplicate frontend ownership.** `mockup-ui/` is the canonical source; `scripts/generate-desk-ui.sh` creates the ignored embedded build artifact for Make, Docker, and CI. The oversized desk, catalog, library, WebDAV, and user files were split into focused modules so the line-count policy is enforced.
+- [x] **P6.2 — Add CI.** Added GitHub Actions for Go tests, vet, race tests, line checks, JavaScript checks, browser page smoke, versioned builds, and Docker image builds. The clean-checkout path uses Make-owned UI generation.
+- [x] **P6.3 — Test actual recovery.** Added `make smoke-recovery` and `docs/recovery.md`. The rehearsal restores an isolated data directory onto a fresh node, logs in and unlocks, compares file hashes, and verifies stale archive-temp cleanup; existing tests cover atomic catalog save, vault rekey, and staged upload recovery.
+- [x] **P6.4 — Improve operational visibility.** Added `/live` process health, storage-aware `/ready`, safe request method/route/status/duration logs, archive job duration/status logs, and recovery/release documentation without logging secrets or capsule IDs.
+- [x] **P6.5 — Rehearse and deploy.** Built `weazlcloud:2026.09.21`, validated Compose configuration, and added `make smoke-container`. The disposable image smoke passed readiness, login, unlock, upload/download, SVG preview, and a one-use grab. Production deployment remains separate.
 
 ## Suggested first assignment
 
@@ -278,3 +278,11 @@ Measurement run, September 21, 2026:
 - Go total-allocation delta: 2,139,096 bytes; process high-water memory: 87,512 KiB; staging bytes after completion: 0. Host-volume runs should be repeated on the production data mount.
 
 The result justifies the batch format, but it is not a claimed speed multiplier for production hardware. The measurement harness is `scripts/measure-transfers.sh` and can use `WEAZLCLOUD_MEASURE_ROOT` to place its temporary repository on the configured data volume.
+
+Date: September 21–22, 2026
+Task ID: P6.1–P6.5
+Commit: pending
+Changed: Made `mockup-ui/` the single frontend source and generated the embedded copy during Make and Docker builds; split oversized Go files and enforced the existing line-count check; added CI, browser smoke, recovery rehearsal, release/rollback documentation, process/storage health endpoints, safe request and archive timing logs, and disposable container smoke. Fixed fresh Docker-volume ownership for `/data/tmp` so restic can write temporary pack files as UID 7272.
+Checks run and results: `make check` passed; `make smoke-recovery` passed; `make smoke-browser` passed; `make build VERSION=2026.09.21` passed; `docker build --file deploy/Dockerfile --tag weazlcloud:2026.09.21 .` passed; `docker compose -f deploy/compose.yaml config` passed; `WEAZLCLOUD_IMAGE=weazlcloud:2026.09.21 make smoke-container` passed.
+Known limitations / decisions needed: Production deployment and production-volume browser paint measurements remain separate operational work. CI browser execution depends on a Chromium or Google Chrome binary on the runner.
+Next task: release the completed phases through the established host deployment process when desired.

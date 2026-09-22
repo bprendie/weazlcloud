@@ -4,3 +4,4 @@
 .gomodcache/
 *.exe
 *.test
+/internal/desk/ui/

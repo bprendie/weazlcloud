@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/buildinfo"
@@ -19,6 +21,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
+	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/share"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -164,20 +167,85 @@ func (n *Node) bind() error {
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
 	n.svcs = []*http.Server{
-		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)),
-		server(n.share, share.New(n.caps)),
-		server(n.drive, drive.NewMultiWith(us, q, registry)),
+		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry), n.cfg.DataDir),
+		server(n.share, share.New(n.caps), n.cfg.DataDir),
+		server(n.drive, drive.NewMultiWith(us, q, registry), n.cfg.DataDir),
 	}
 	return nil
 }
 
-func server(ln net.Listener, h http.Handler) *http.Server {
+func server(ln net.Listener, h http.Handler, dataDir string) *http.Server {
 	return &http.Server{
 		Addr:              ln.Addr().String(),
-		Handler:           h,
+		Handler:           observed(health(h, dataDir)),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+}
+
+func health(next http.Handler, dataDir string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/live" && r.Method == http.MethodGet {
+			ready.Live(w, r)
+			return
+		}
+		if r.URL.Path == "/ready" && r.Method == http.MethodGet {
+			ready.Storage(w, r, func() error {
+				_, err := os.Stat(dataDir)
+				return err
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type observedWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *observedWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *observedWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (w *observedWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *observedWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func observed(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		ow := &observedWriter{ResponseWriter: w}
+		next.ServeHTTP(ow, r)
+		status := ow.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		log.Printf("http method=%s path=%s status=%d duration_ms=%d", r.Method, safePath(r.URL.Path), status, time.Since(started).Milliseconds())
+	})
+}
+
+func safePath(path string) string {
+	if strings.HasPrefix(path, "/g/") {
+		return "/g/:capsule"
+	}
+	return path
 }
 
 func (n *Node) shutdown() error {

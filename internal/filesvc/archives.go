@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +111,7 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 		m.mu.Lock()
 		job.Status = "cancelled"
 		job.Error = "archive cancelled"
+		logArchive(job)
 		if job.release != nil {
 			job.release()
 			job.release = nil
@@ -143,6 +145,7 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 	if errors.Is(ctx.Err(), context.Canceled) {
 		job.Status = "cancelled"
 		job.Error = "archive cancelled"
+		logArchive(job)
 		_ = os.Remove(job.path)
 		if job.release != nil {
 			job.release()
@@ -153,6 +156,7 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 	if err != nil {
 		job.Status = "failed"
 		job.Error = err.Error()
+		logArchive(job)
 		if job.release != nil {
 			job.release()
 			job.release = nil
@@ -160,6 +164,11 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 		return
 	}
 	job.Status = "ready"
+	logArchive(job)
+}
+
+func logArchive(job *archiveJob) {
+	log.Printf("archive status=%s files=%d bytes=%d duration_ms=%d", job.Status, job.Files, job.Bytes, time.Since(job.CreatedAt).Milliseconds())
 }
 
 func (m *ArchiveManager) Get(id string) (ArchiveJobView, string, bool) {
