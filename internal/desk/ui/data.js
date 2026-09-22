@@ -132,6 +132,8 @@ export const state = {
   libraryView: 'list',
   quota: null,
   selected: null,
+  selectedFiles: [],
+  selectionAnchor: '',
   gate: 'open',
   passphrase: '',
   expiry: '24h',

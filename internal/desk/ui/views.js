@@ -35,7 +35,9 @@ function countNode(node) {
 
 function isSelected(type, key) {
   if (!state.selected) return false;
-  return type === 'file' ? state.selected.type === 'file' && state.selected.id === key : state.selected.type === 'folder' && state.selected.path === key;
+  return type === 'file'
+    ? state.selectedFiles?.includes(key) || (state.selected.type === 'file' && state.selected.id === key)
+    : state.selected.type === 'folder' && state.selected.path === key;
 }
 
 function treeRows(node, depth) {
@@ -197,6 +199,7 @@ function home() {
 
 function library() {
   const sel = selectedName();
+  const selectedCount = state.selectedFiles?.length || 0;
   const node = folderNode(buildTree(files), state.currentPath);
   const parent = state.currentPath.split('/').slice(0, -1).join('/');
   const searching = state.librarySearch.trim().length > 0;
@@ -204,8 +207,9 @@ function library() {
   return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
     `<div class="library-workspace" data-ctx-tree="1">${libraryBreadcrumb()}
     <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button></div>
+    ${selectedCount ? `<div class="selection-toolbar" role="toolbar" aria-label="Selected files"><strong>${selectedCount} selected</strong><button class="secondary" data-batch="move">Move to…</button><button class="secondary" data-batch="download">Download</button><button class="secondary" data-batch="delete">Delete</button><button class="text-button" data-batch="clear">Clear</button></div>` : ''}
     <div class="hero-actions">
-      <button class="primary" data-view="send" ${sel ? '' : 'disabled'}>Send ${sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
+      <button class="primary" data-view="send" ${sel && selectedCount === 1 ? '' : 'disabled'}>Send ${selectedCount > 1 ? `${selectedCount} files` : sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
       ${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}
       <button class="secondary" data-action="upload">Upload…</button>
       <button class="secondary" data-action="upload-folder">Upload folder…</button>

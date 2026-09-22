@@ -25,6 +25,17 @@ function filePath(id) {
   return f ? f.folders.concat(f.title).filter(Boolean).join('/') : id;
 }
 
+function selectedFileRows() {
+  const ids = state.selectedFiles?.length ? state.selectedFiles : state.selected?.type === 'file' ? [state.selected.id] : [];
+  return ids.map(id => files.find(file => file.id === id)).filter(Boolean);
+}
+
+function clearFileSelection() {
+  state.selectedFiles = [];
+  state.selectionAnchor = '';
+  if (state.selected?.type === 'file') state.selected = null;
+}
+
 function hideMenu() {
   const el = $('#ctx');
   if (el) el.hidden = true;
@@ -271,12 +282,14 @@ function folderMenu(path) {
   ];
 }
 
-function rootMenu() {
-  return [
+function rootMenu(withSelection = false) {
+  const items = [
     {act: 'upload', label: 'Upload files…'},
     {act: 'upload-folder-root', label: 'Upload folder…'},
     {act: 'new-folder-root', label: 'New folder'}
   ];
+  if (withSelection) items.push({sep: true}, {act: 'batch-move', label: 'Move selected…'}, {act: 'batch-download', label: 'Download selected'}, {act: 'batch-delete', label: 'Delete selected'});
+  return items;
 }
 
 async function moveFile(id, folder) {
@@ -291,6 +304,59 @@ async function moveFile(id, folder) {
     renderMain();
     toast(`Moved ${name} to ${folder || 'the library root'}.`);
   } catch (err) { toast(err.message); }
+}
+
+function chooseRange(id) {
+  const ids = [...document.querySelectorAll('[data-select-file]')].map(button => button.dataset.selectFile);
+  const start = ids.indexOf(state.selectionAnchor || id);
+  const end = ids.indexOf(id);
+  if (start < 0 || end < 0) return selectFile(id);
+  const low = Math.min(start, end), high = Math.max(start, end);
+  state.selectedFiles = ids.slice(low, high + 1);
+  state.selected = {type: 'file', id};
+  renderMain();
+  renderDeck();
+}
+
+function toggleFileSelection(id) {
+  const selected = new Set(state.selectedFiles || []);
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+  state.selectedFiles = [...selected];
+  state.selected = selected.size ? {type: 'file', id} : null;
+  state.selectionAnchor = id;
+  renderMain();
+  renderDeck();
+}
+
+async function runBatchAction(action) {
+  const rows = selectedFileRows();
+  if (!rows.length) return;
+  if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
+  if (!live) { toast('Batch actions are available on the connected node.'); return; }
+  if (action === 'delete' && !confirm(`Delete ${rows.length} selected file${rows.length === 1 ? '' : 's'}? Present or not. No recycle bin.`)) return;
+  let destination = '';
+  if (action === 'move') {
+    destination = prompt('Move selected files into folder (leave blank for library root)', state.currentPath) ?? '';
+    if (destination.startsWith('/') || destination.includes('/.')) { toast('Folder path is not valid.'); return; }
+  }
+  const failed = [], completed = [];
+  for (const file of rows) {
+    const from = filePath(file.id);
+    try {
+      if (action === 'delete') await engine.deleteLibrary(from);
+      if (action === 'move') await engine.renameLibrary(from, [destination, file.title].filter(Boolean).join('/'));
+      if (action === 'download') await engine.downloadLibrary(from, file.title);
+      completed.push(file.id);
+    } catch (err) { failed.push(`${file.title}: ${err.message}`); }
+  }
+  state.selectedFiles = (state.selectedFiles || []).filter(id => !completed.includes(id));
+  state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
+  await loadLibrary();
+  renderMain();
+  renderDeck();
+  if (failed.length) toast(`${completed.length} completed; ${failed.length} failed. ${failed[0]}`);
+  else toast(`${completed.length} file${completed.length === 1 ? '' : 's'} ${action === 'delete' ? 'deleted' : action === 'move' ? 'moved' : 'sent to download'}.`);
 }
 
 async function previewFile(id) {
@@ -555,6 +621,8 @@ document.addEventListener('error', event => {
 
 function selectFile(id) {
   state.selected = {type: 'file', id};
+  state.selectedFiles = [id];
+  state.selectionAnchor = id;
   state.minted = null;
   renderMain();
   renderDeck();
@@ -562,6 +630,8 @@ function selectFile(id) {
 
 function selectFolder(path) {
   state.selected = {type: 'folder', path};
+  state.selectedFiles = [];
+  state.selectionAnchor = '';
   state.minted = null;
   renderMain();
   renderDeck();
@@ -722,7 +792,8 @@ async function syncLibraryFromChange() {
   const scroll = window.scrollY;
   try {
     await loadLibrary();
-    if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = null;
+    state.selectedFiles = (state.selectedFiles || []).filter(id => files.some(file => file.id === id));
+    if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
     if (state.view === 'library') {
       renderMain();
       renderDeck();
@@ -822,6 +893,7 @@ async function runMenu(act) {
   hideMenu();
   const [kind, ...rest] = act.split(':');
   const key = rest.join(':');
+  if (kind === 'batch-move' || kind === 'batch-download' || kind === 'batch-delete') { await runBatchAction(kind.slice('batch-'.length)); return; }
   if (kind === 'send-file') sendFile(key);
   if (kind === 'send-folder') sendFolder(key);
   if (kind === 'preview-file') previewFile(key);
@@ -896,11 +968,16 @@ document.addEventListener('click', e => {
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
-  if (b.dataset.openFolder) { stopMediaPlayback(); state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
-  if (b.dataset.libraryPath !== undefined) { stopMediaPlayback(); state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
+  if (b.dataset.openFolder) { stopMediaPlayback(); clearFileSelection(); state.currentPath = b.dataset.openFolder; renderMain(); renderDeck(); }
+  if (b.dataset.libraryPath !== undefined) { stopMediaPlayback(); clearFileSelection(); state.currentPath = b.dataset.libraryPath; renderMain(); renderDeck(); }
   if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
-  if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
+  if (b.dataset.batch) { runBatchAction(b.dataset.batch); return; }
+  if (b.dataset.selectFile) {
+    if (e.shiftKey) chooseRange(b.dataset.selectFile);
+    else if (e.ctrlKey || e.metaKey) toggleFileSelection(b.dataset.selectFile);
+    else { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
+  }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
   if (b.dataset.sendFile) sendFile(b.dataset.sendFile);
   if (b.dataset.sendFolder) sendFolder(b.dataset.sendFolder);
@@ -1207,7 +1284,7 @@ document.addEventListener('contextmenu', e => {
   if (file) { e.preventDefault(); showMenu(e.clientX, e.clientY, fileMenu(file.dataset.ctxFile)); return; }
   if (folder) { e.preventDefault(); showMenu(e.clientX, e.clientY, folderMenu(folder.dataset.ctxFolder)); return; }
   if (cap) { e.preventDefault(); showMenu(e.clientX, e.clientY, capsuleMenu(cap.dataset.ctxCapsule)); return; }
-  if (tree || libraryContent) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu()); }
+  if (tree || libraryContent) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu((state.selectedFiles || []).length > 0)); }
 });
 
 document.addEventListener('dragstart', e => {
