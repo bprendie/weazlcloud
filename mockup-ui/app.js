@@ -522,6 +522,7 @@ async function lockVault() {
   $('.app').hidden = true;
   $('#unlock-screen').hidden = false;
   $('#unlock-form').reset();
+  if (live && state.authenticated) setVaultOnly(true);
   renderDeck();
   toast(live ? 'Vault locked. Key zeroed.' : 'Vault locked. Key zeroed in this preview.');
 }
@@ -814,6 +815,8 @@ function setVaultOnly(on) {
   if (row) row.hidden = on;
   if (username) username.disabled = on;
   if (forge) forge.hidden = on;
+  const label = $('#passphrase-label');
+  if (label) label.textContent = on ? 'Vault passphrase' : 'Account / vault passphrase';
   $('#unlock-description').textContent = on
     ? 'Account signed in. Unlock this user vault. The vault passphrase never leaves this machine.'
     : 'Unlock the vault. The passphrase never leaves this machine.';
@@ -847,8 +850,9 @@ $('#unlock-form').onsubmit = async e => {
   const username = String(form.get('username') || '').trim();
   const pass = String(form.get('passphrase') || '');
   const confirm = String(form.get('confirm') || '');
+  const vaultOnly = live && state.authenticated && !state.forging;
   $('#unlock-error').textContent = '';
-  if (!username) { $('#unlock-error').textContent = 'Username must not be empty.'; return; }
+  if (!vaultOnly && !username) { $('#unlock-error').textContent = 'Username must not be empty.'; return; }
   if (!pass) { $('#unlock-error').textContent = 'Passphrase must not be empty.'; return; }
   if (state.forging && !confirm) { $('#unlock-error').textContent = 'Confirm the passphrase.'; return; }
   if (state.forging && pass !== confirm) { $('#unlock-error').textContent = 'Passphrases do not match.'; return; }
@@ -864,11 +868,13 @@ $('#unlock-form').onsubmit = async e => {
         state.admin = !!account.admin;
         state.username = account.username || username;
         state.authenticated = true;
+        setVaultOnly(true);
         try {
           await engine.unlock(pass);
         } catch {
           setVaultOnly(true);
           e.target.querySelector('[name=passphrase]').value = '';
+          $('#unlock-error').textContent = 'Account signed in. Unlock this user vault with its vault passphrase.';
           return;
         }
       } else {
@@ -1062,8 +1068,16 @@ engine.probe().then(async s => {
   $('#admin-nav').hidden = !state.admin;
   setForgeMode(!s.setup);
   await refreshNodeSettings();
+  if (s.authenticated) {
+    const account = await engine.me().catch(() => null);
+    if (account) {
+      state.username = account.username || s.username || state.username;
+      state.fullName = account.full_name || '';
+      state.admin = !!account.admin;
+    }
+    if (!s.unlocked) setVaultOnly(true);
+  }
   if (s.authenticated && s.unlocked) {
-    const account = await engine.me().catch(() => null); if (account) { state.username = account.username || state.username; state.fullName = account.full_name || ''; state.admin = !!account.admin; }
     await loadLibrary();
     await loadCapsules();
     await refreshPlaces();

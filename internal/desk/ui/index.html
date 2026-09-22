@@ -68,7 +68,7 @@
 <p id="unlock-description">Unlock the vault. The passphrase never leaves this machine.</p>
 <form id="unlock-form" class="auth-form" novalidate>
 <label id="username-row">Local username<input name="username" type="text" autocomplete="username" maxlength="32" autofocus></label>
-<label>Account / vault passphrase<input name="passphrase" type="password" autocomplete="current-password" maxlength="1024"></label>
+<label><span id="passphrase-label">Account / vault passphrase</span><input name="passphrase" type="password" autocomplete="current-password" maxlength="1024"></label>
 <label id="confirm-row" hidden>Confirm passphrase<input name="confirm" type="password" autocomplete="off" maxlength="1024"></label>
 <p class="warn">No forgotten-passphrase recovery. Lose the phrase and the library is gone. Cut a kit while you remember. A stolen kit is still a brick.</p>
 <button type="submit" class="primary">Unlock →</button>
