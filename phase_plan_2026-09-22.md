@@ -1,7 +1,7 @@
 # WeazlCloud implementation workbook — September 22, 2026
 
 Owner: Bob. Implementation: Luna.
-Status: G1 implementation underway; D1 and D2 are resolved below.
+Status: G1.1–G1.4 complete; later workstreams remain. D1 and D2 are resolved.
 Continues `phase_plan_2026-09-21.md`. No task in this workbook is complete merely because it appears here.
 
 ## Confirmed product decisions
@@ -164,4 +164,4 @@ September 22: Recorded 30-day Trash, destructive user deletion, grab revocation,
 September 22: Bob confirmed restart-resumable uploads, folder-browsing priority, RAW/HEIC priority, and Google Takeout first. Expanded this workbook into ordered implementation tasks, acceptance conditions, and explicit remaining decisions. No runtime changes or production deployment performed by this planning update.
 September 22: Completed G8.1 verification hardening and the first G8.2/G8.3 failure and replacement checks. `make check`, authenticated browser smoke, recovery smoke, and updated disposable-container smoke passed. G8.2/G8.3/G8.4 remain partial as recorded above; no production data was touched.
 September 22: Bob decided incomplete uploads expire after 24 hours and browser resume may ask for the original files to be reselected; no local helper.
-September 22: Completed G1.3/G1.4 implementation and checks. Incomplete sessions now expire after 24 hours; reservations restore/release, sessions are listed per owner, and browser resume verifies chunk hashes with retry/backoff. `make check`, browser/recovery/container smoke passed; the local test container was rebuilt on `weazlcloud:local-test-g1` while preserving `weazlcloud-local-test-data-20260922`. No production host was touched. A large-payload memory measurement remains open under D10.
+September 22: Completed G1.3/G1.4 in commit `8badb96`. Incomplete sessions now expire after 24 hours; reservations restore/release, sessions are listed per owner, and browser resume verifies chunk hashes with retry/backoff. `make check`, browser/recovery/container smoke passed; the local test container was rebuilt on `weazlcloud:local-test-g1` while preserving `weazlcloud-local-test-data-20260922`. No production host was touched. A large-payload memory measurement remains open under D10.
