@@ -215,6 +215,14 @@ Checks run and results: `node --check mockup-ui/app.js` passed; Chromium/CDP smo
 Known limitations / decisions needed: The browser gate uses a local Chromium smoke flow; full browser automation remains part of P6.2.
 Next task: P4.5 shared preview capabilities and generic MIME detection.
 
+Date: September 21, 2026
+Task ID: P4.5 foundation
+Commit: pending
+Changed: Added an authenticated per-file capability endpoint that combines filename, declared MIME, and a bounded content prefix. The grid now requests capabilities for visible cards before choosing thumbnail, text, model, PDF, media, or download rendering. Generic and extensionless content gets a deliberate fallback; a PNG stored as `mislabeled.txt` is classified as a thumbnail and successfully renders through the thumbnail endpoint. SVGs are shown as text in the grid while safe modal rendering remains open work.
+Checks run and results: `go test ./...` passed; targeted `go test -race ./internal/desk ./internal/library` passed; `go vet ./...` passed; JavaScript syntax checks passed; localhost capability and thumbnail smoke passed for a mislabeled PNG and extensionless text.
+Known limitations / decisions needed: SVG modal isolation/sanitization, broader media capability fixtures, and single-player lifecycle remain open. The 2 MiB content-inspection threshold intentionally avoids restoring large generic binaries merely to identify them; those fall back to download unless the filename identifies a supported format.
+Next task: P4.6 media lifecycle and safe SVG handling.
+
 Measurement run, September 21, 2026:
 
 - 24 concurrent unique 256 KiB files: 6,291,456 logical bytes, 2 batched restic commits, 4.513 seconds, 6,302,007 repository bytes.
