@@ -175,10 +175,16 @@ func (l *Library) thumbnailDir() string {
 }
 
 func (l *Library) readThumbnailCache(key string) ([]byte, string, bool) {
-	raw, err := os.ReadFile(filepath.Join(l.thumbnailDir(), key+".enc"))
+	path := filepath.Join(l.thumbnailDir(), key+".enc")
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", false
 	}
+	// Use the modification time as a bounded LRU surrogate. Cache reads are
+	// authenticated by the vault unwrap below, so a stale or foreign file is
+	// still rejected before it can be refreshed.
+	now := time.Now()
+	_ = os.Chtimes(path, now, now)
 	plain, err := l.vault.Unwrap(raw)
 	if err != nil {
 		return nil, "", false

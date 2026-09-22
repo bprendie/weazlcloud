@@ -31,9 +31,14 @@ const GRID_PREVIEW_RAILS = 4;
 const gridTextQueue = [];
 const gridThumbQueue = [];
 const gridCapabilityQueue = [];
+const gridPreviewRequests = new Map();
 let gridTextActive = 0;
 let gridThumbActive = 0;
 let gridCapabilityActive = 0;
+const previewWarmQueue = [];
+let previewWarmActive = 0;
+let previewWarmTimer = 0;
+let previewWarmController = null;
 const gridPreviewObserver = 'IntersectionObserver' in window
   ? new IntersectionObserver(entries => entries.forEach(entry => {
     if (!entry.isIntersecting) return;
@@ -55,11 +60,13 @@ function pumpGridTextPreviews() {
     if (!el?.isConnected) continue;
     gridTextActive++;
     const path = el.dataset.gridTextPreview || '';
+    const controller = new AbortController();
+    gridPreviewRequests.set(el, controller);
     fetch(`/api/library?path=${encodeURIComponent(path)}&preview=1`)
       .then(response => { if (!response.ok) throw new Error('preview unavailable'); return response.text(); })
       .then(text => { el.textContent = text.slice(0, 1200) || '(empty file)'; })
-      .catch(() => { el.textContent = 'Preview unavailable'; el.classList.add('preview-unavailable'); })
-      .finally(() => { gridTextActive--; pumpGridTextPreviews(); });
+      .catch(err => { if (err.name !== 'AbortError' && el.isConnected) { el.textContent = 'Preview unavailable'; el.classList.add('preview-unavailable'); } })
+      .finally(() => { gridPreviewRequests.delete(el); gridTextActive--; pumpGridTextPreviews(); });
   }
 }
 
@@ -69,11 +76,13 @@ function pumpGridThumbnails() {
     if (!el?.isConnected) continue;
     gridThumbActive++;
     const path = el.dataset.gridThumbnail || '';
+    const controller = new AbortController();
+    gridPreviewRequests.set(el, controller);
     el.src = `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
-    const done = () => { gridThumbActive--; pumpGridThumbnails(); };
+    const done = () => { gridPreviewRequests.delete(el); gridThumbActive--; pumpGridThumbnails(); };
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
-      el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
+      if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
       done();
     }, {once: true});
   }
@@ -137,11 +146,22 @@ function pumpGridCapabilities() {
     if (!el?.isConnected) continue;
     gridCapabilityActive++;
     const path = el.dataset.gridCapability || '';
-    fetch(`/api/library/capability?path=${encodeURIComponent(path)}`)
+    const controller = new AbortController();
+    gridPreviewRequests.set(el, controller);
+    fetch(`/api/library/capability?path=${encodeURIComponent(path)}`, {signal: controller.signal})
       .then(response => { if (!response.ok) throw new Error('capability unavailable'); return response.json(); })
       .then(capability => applyGridCapability(el, capability))
-      .catch(() => capabilityFallback(el))
-      .finally(() => { gridCapabilityActive--; hydrateGridTextPreviews(); pumpGridCapabilities(); });
+      .catch(err => { if (err.name !== 'AbortError' && el.isConnected) capabilityFallback(el); })
+      .finally(() => { gridPreviewRequests.delete(el); gridCapabilityActive--; hydrateGridTextPreviews(); pumpGridCapabilities(); });
+  }
+}
+
+function cancelDetachedGridRequests() {
+  for (const [el, controller] of gridPreviewRequests) {
+    if (!el.isConnected) {
+      controller.abort();
+      if (el instanceof HTMLImageElement) el.src = '';
+    }
   }
 }
 
@@ -164,8 +184,48 @@ function hydrateGridTextPreviews() {
   pumpGridThumbnails();
 }
 
-const contentObserver = new MutationObserver(() => { hydrateGridTextPreviews(); });
+const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); });
 contentObserver.observe($('#content'), {childList: true});
+
+function isWarmableRaster(path) {
+  return /\.(?:jpe?g|png|gif)$/i.test(path);
+}
+
+function stopPreviewWarming() {
+  previewWarmQueue.length = 0;
+  clearTimeout(previewWarmTimer);
+  previewWarmTimer = 0;
+  previewWarmController?.abort();
+  previewWarmController = null;
+}
+
+function pumpPreviewWarm() {
+  previewWarmTimer = 0;
+  if (!live || !state.unlocked || state.upload.active) {
+    if (previewWarmQueue.length) previewWarmTimer = setTimeout(pumpPreviewWarm, 1500);
+    return;
+  }
+  while (previewWarmActive < 1 && previewWarmQueue.length) {
+    const path = previewWarmQueue.shift();
+    previewWarmActive++;
+    previewWarmController = new AbortController();
+    fetch(`/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`, {signal: previewWarmController.signal})
+      .catch(() => {})
+      .finally(() => {
+        previewWarmActive--;
+        previewWarmController = null;
+        if (previewWarmQueue.length) previewWarmTimer = setTimeout(pumpPreviewWarm, 150);
+      });
+  }
+}
+
+function schedulePreviewWarm(paths) {
+  if (!live || !state.unlocked) return;
+  for (const path of paths) {
+    if (isWarmableRaster(path) && !previewWarmQueue.includes(path)) previewWarmQueue.push(path);
+  }
+  if (previewWarmQueue.length && !previewWarmTimer) previewWarmTimer = setTimeout(pumpPreviewWarm, 1200);
+}
 
 function showMenu(x, y, items) {
   const el = $('#ctx');
@@ -318,6 +378,7 @@ async function uploadWorker(slot) {
       item.status = 'done';
       item.error = '';
       state.upload.rails[slot] = {name: `✓ ${item.target}`, pct: 100, status: 'done'};
+      schedulePreviewWarm([item.target]);
       scheduleUploadRefresh();
     } catch (err) {
       if (item.status === 'cancelled') {
@@ -472,6 +533,16 @@ document.addEventListener('play', event => {
   activeMedia = media;
 }, true);
 
+document.addEventListener('error', event => {
+  const media = event.target;
+  if (!(media instanceof HTMLMediaElement) || !media.classList.contains('grid-media-player')) return;
+  const path = media.dataset.mediaPath || '';
+  const fallback = document.createElement('div');
+  fallback.className = 'grid-media-fallback';
+  fallback.innerHTML = `<strong>Playback unavailable</strong><span>Try the original file.</span><a href="/api/library?path=${encodeURIComponent(path)}" download>Download</a>`;
+  media.replaceWith(fallback);
+}, true);
+
 function selectFile(id) {
   state.selected = {type: 'file', id};
   state.minted = null;
@@ -607,6 +678,7 @@ function ingest() {
 async function lockVault() {
   stopWork();
   stopMediaPlayback();
+  stopPreviewWarming();
   if (live) {
     try { await engine.lock(); } catch (err) { toast(err.message); return; }
   }

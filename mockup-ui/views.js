@@ -111,7 +111,7 @@ function gridFileCard(f, fullPath = false) {
   const pdf = kind === 'PDF' || ext === 'pdf';
   const capability = (!media && !raster && !model && !pdf) ? `data-grid-capability="${esc(path)}"` : '';
   const preview = media
-    ? `<${audio ? 'audio' : 'video'} class="grid-media-player" data-media-path="${esc(path)}" src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
+    ? `<${audio ? 'audio' : 'video'} class="grid-media-player" data-media-path="${esc(path)}" data-media-kind="${audio ? 'audio' : 'video'}" aria-label="Play ${esc(f.title)}" src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
     : raster
     ? `<img class="grid-preview" ${capability} data-grid-thumbnail="${esc(path)}" alt="" loading="lazy">`
     : ['WEB', 'WEBP'].includes(kind)
