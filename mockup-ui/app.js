@@ -1104,6 +1104,7 @@ function openDesk() {
 async function loadAccessRequests() {
   if (!live || !state.admin) return;
   try { state.requests = await engine.listAccessRequests(); } catch (err) { toast(err.message); }
+  try { state.adminUsers = await engine.listAdminUsers(); } catch (err) { toast(err.message); }
 }
 
 async function revoke(id) {
@@ -1325,6 +1326,16 @@ document.addEventListener('click', e => {
     }).catch(err => toast(err.message));
   }
   if (b.dataset.adminReject) engine.rejectAccess(b.dataset.adminReject).then(() => loadAccessRequests().then(renderMain)).catch(err => toast(err.message));
+  if (b.dataset.userToggle) engine.setUserDisabled(b.dataset.userToggle, b.dataset.disabled === 'true').then(() => loadAccessRequests().then(renderMain)).catch(err => toast(err.message));
+  if (b.dataset.userDelete) {
+    const username = b.dataset.username || '';
+    if (prompt(`Permanently delete ${username} and all of their data? Type the username to confirm.`) === username) {
+      engine.deleteUser(b.dataset.userDelete, username).then(result => {
+        toast(result.status === 'deleted' ? `${username} deleted.` : `${username} deletion is pending; cleanup will resume automatically.`);
+        return loadAccessRequests().then(renderMain);
+      }).catch(err => toast(err.message));
+    }
+  }
   if (b.dataset.copyToken) { navigator.clipboard?.writeText(b.dataset.copyToken).catch(() => {}); toast('Setup token copied.'); }
   if (b.dataset.action === 'rotate-token') {
     state.driveToken = `wzcv-${Math.random().toString(36).slice(2, 6)}-mock-token`;

@@ -90,6 +90,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.limit.Reset(key)
+	ctx, release, ok := h.registry.Enter(r.Context(), u.ID)
+	if !ok {
+		challenge(w, "weazlcloud: authentication required")
+		return
+	}
+	defer release()
+	current, exists := h.users.User(u.ID)
+	if !exists || current.Disabled || current.Deleting {
+		challenge(w, "weazlcloud: authentication required")
+		return
+	}
+	r = r.WithContext(ctx)
 	service := h.registry.For(u)
 	if err := service.Vault.UnlockNode(); err != nil {
 		http.Error(w, "weazlcloud: vault unavailable", http.StatusServiceUnavailable)

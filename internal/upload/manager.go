@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +34,46 @@ type SessionView struct {
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// DeleteOwner waits for all in-flight session operations before removing the
+// owner's upload manifests, payloads, chunks, and quota reservations.
+func (m *Manager) DeleteOwner(owner string) error {
+	if !validComponent(owner) {
+		return ErrNotFound
+	}
+	entries, err := os.ReadDir(m.ownerDir(owner))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			id := strings.TrimSuffix(e.Name(), ".json")
+			if validComponent(id) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Strings(ids)
+	unlock := make([]func(), 0, len(ids))
+	for _, id := range ids {
+		unlock = append(unlock, m.lockSession(id))
+	}
+	defer func() {
+		for i := len(unlock) - 1; i >= 0; i-- {
+			unlock[i]()
+		}
+	}()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, id := range ids {
+		m.releaseReservationLocked(id)
+	}
+	return os.RemoveAll(filepath.Clean(m.ownerDir(owner)))
 }
 
 type ResourceFor func(users.User) *filesvc.Resource

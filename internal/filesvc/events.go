@@ -69,3 +69,12 @@ func (h *Hub) Publish(change library.Change) {
 	}
 	h.mu.Unlock()
 }
+
+func (h *Hub) Close() {
+	h.mu.Lock()
+	for id, ch := range h.subs {
+		delete(h.subs, id)
+		close(ch)
+	}
+	h.mu.Unlock()
+}

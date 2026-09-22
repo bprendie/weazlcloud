@@ -27,6 +27,9 @@ export const requestAccess = (username, note) => post('/api/access-requests', {u
 export const listAccessRequests = async () => { const r = await fetch('/api/access-requests'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'requests'); return j.requests || []; };
 export const approveAccess = id => post('/api/access-requests/approve', {id});
 export const rejectAccess = id => post('/api/access-requests/reject', {id});
+export const listAdminUsers = async () => { const r = await fetch('/api/admin/users'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'users'); return j.users || []; };
+export const setUserDisabled = (id, disabled) => post('/api/admin/users/disable', {id, disabled});
+export const deleteUser = (id, confirm_username) => post('/api/admin/users/delete', {id, confirm_username});
 export const completeAccess = body => post('/api/account-setup', body);
 export const me = async () => { const r = await fetch('/api/me'); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'account'); return j; };
 export const saveSettings = body => post('/api/settings', body);

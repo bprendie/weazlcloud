@@ -21,6 +21,7 @@ var (
 	ErrDisabled       = errors.New("user is disabled")
 	ErrNoSession      = errors.New("authentication required")
 	ErrBadUsername    = errors.New("username must be 3-32 letters, numbers, dots, dashes, or underscores")
+	ErrBadUserID      = errors.New("invalid user identifier")
 )
 
 const cookieName = "weazl_session"
@@ -29,14 +30,18 @@ const sessionTTL = 24 * time.Hour
 var usernameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{2,31}$`)
 
 type User struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	FullName  string    `json:"full_name,omitempty"`
-	Admin     bool      `json:"admin"`
-	Disabled  bool      `json:"disabled"`
-	Salt      string    `json:"salt"`
-	Verifier  string    `json:"verifier"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Username       string    `json:"username"`
+	FullName       string    `json:"full_name,omitempty"`
+	Admin          bool      `json:"admin"`
+	Disabled       bool      `json:"disabled"`
+	DisablePending bool      `json:"disable_pending,omitempty"`
+	Deleting       bool      `json:"deleting,omitempty"`
+	DeleteError    string    `json:"delete_error,omitempty"`
+	DisableError   string    `json:"disable_error,omitempty"`
+	Salt           string    `json:"salt"`
+	Verifier       string    `json:"verifier"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type session struct {
@@ -56,6 +61,7 @@ type AccessRequest struct {
 }
 
 type file struct {
+	StateVersion   int             `json:"state_version,omitempty"`
 	Users          []User          `json:"users"`
 	AccessRequests []AccessRequest `json:"access_requests,omitempty"`
 }
@@ -94,6 +100,18 @@ func (s *Store) load() error {
 	}
 	s.users = f.Users
 	s.requests = f.AccessRequests
+	changed := false
+	if f.StateVersion < 1 {
+		for i := range s.users {
+			if s.users[i].Disabled && !s.users[i].Deleting {
+				s.users[i].DisablePending = true
+			}
+		}
+		changed = true
+	}
+	if changed {
+		return s.saveLocked()
+	}
 	return nil
 }
 
@@ -170,7 +188,7 @@ func (s *Store) Authenticate(username, password string) (User, error) {
 		if !strings.EqualFold(u.Username, strings.TrimSpace(username)) {
 			continue
 		}
-		if u.Disabled {
+		if u.Disabled || u.Deleting {
 			s.mu.Unlock()
 			return User{}, ErrDisabled
 		}
@@ -204,6 +222,11 @@ func (s *Store) Login(u User) (string, error) {
 	}
 	token := hexToken(b)
 	s.mu.Lock()
+	idx := s.indexLocked(u.ID)
+	if idx < 0 || s.users[idx].Disabled || s.users[idx].Deleting {
+		s.mu.Unlock()
+		return "", ErrDisabled
+	}
 	s.sessions[token] = session{userID: u.ID, expires: time.Now().Add(sessionTTL)}
 	s.mu.Unlock()
 	return token, nil
@@ -226,7 +249,7 @@ func (s *Store) Current(r *http.Request) (User, error) {
 		return User{}, ErrNoSession
 	}
 	u, ok := s.User(sess.userID)
-	if !ok || u.Disabled {
+	if !ok || u.Disabled || u.Deleting {
 		return User{}, ErrNoSession
 	}
 	return u, nil
@@ -266,18 +289,9 @@ func (s *Store) invalidateSessionsLocked(userID string) {
 }
 
 func (s *Store) saveLocked() error {
-	b, err := json.MarshalIndent(file{Users: s.users, AccessRequests: s.requests}, "", "  ")
+	b, err := json.MarshalIndent(file{StateVersion: 1, Users: s.users, AccessRequests: s.requests}, "", "  ")
 	if err != nil {
 		return err
 	}
 	return cryptox.AtomicWrite(s.path, append(b, '\n'), 0o600)
-}
-
-func hexToken(b []byte) string {
-	const hex = "0123456789abcdef"
-	out := make([]byte, len(b)*2)
-	for i, v := range b {
-		out[i*2], out[i*2+1] = hex[v>>4], hex[v&0xf]
-	}
-	return string(out)
 }

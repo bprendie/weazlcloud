@@ -2,13 +2,10 @@ package filesvc
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +34,7 @@ type archiveJob struct {
 	release         func()
 	activityRelease func()
 	path            string
+	done            chan struct{}
 }
 
 type ArchiveManager struct {
@@ -47,6 +45,8 @@ type ArchiveManager struct {
 	slots    chan struct{}
 	mu       sync.Mutex
 	jobs     map[string]*archiveJob
+	closing  bool
+	workers  sync.WaitGroup
 }
 
 func (m *ArchiveManager) SetActivityTracker(track func() func()) {
@@ -119,10 +119,17 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	}
 	created := time.Now().UTC()
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip")}
 	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		cancel()
+		release()
+		return ArchiveJobView{}, errors.New("archive manager is closing")
+	}
+	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip"), done: make(chan struct{})}
 	m.cleanupLocked(created)
 	m.jobs[id] = job
+	m.workers.Add(1)
 	m.mu.Unlock()
 	handedOff = true
 	go m.run(ctx, job)
@@ -131,6 +138,8 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 
 func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 	defer job.activityRelease()
+	defer close(job.done)
+	defer m.workers.Done()
 	select {
 	case m.slots <- struct{}{}:
 		defer func() { <-m.slots }()
@@ -194,6 +203,25 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 	logArchive(job)
 }
 
+func (m *ArchiveManager) Drain(ctx context.Context) error {
+	m.mu.Lock()
+	m.closing = true
+	for _, job := range m.jobs {
+		job.cancel()
+	}
+	m.mu.Unlock()
+	wait := make(chan struct{})
+	go func() { m.workers.Wait(); close(wait) }()
+	select {
+	case <-wait:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	m.Lock()
+	_ = os.RemoveAll(m.root)
+	return nil
+}
+
 func logArchive(job *archiveJob) {
 	log.Printf("archive status=%s files=%d bytes=%d duration_ms=%d", job.Status, job.Files, job.Bytes, time.Since(job.CreatedAt).Milliseconds())
 }
@@ -235,57 +263,4 @@ func (m *ArchiveManager) Lock() {
 		}
 		delete(m.jobs, id)
 	}
-}
-
-func (m *ArchiveManager) cleanupLocked(now time.Time) {
-	for id, job := range m.jobs {
-		if now.Before(job.ExpiresAt) {
-			continue
-		}
-		job.cancel()
-		_ = os.Remove(job.path)
-		if job.release != nil {
-			job.release()
-			job.release = nil
-		}
-		delete(m.jobs, id)
-	}
-	entries, err := os.ReadDir(m.root)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		if strings.HasPrefix(entry.Name(), ".archive-") {
-			continue
-		}
-		if filepath.Ext(entry.Name()) != ".zip" {
-			continue
-		}
-		if _, ok := m.jobs[entry.Name()[:len(entry.Name())-len(filepath.Ext(entry.Name()))]]; !ok {
-			_ = os.Remove(filepath.Join(m.root, entry.Name()))
-		}
-	}
-}
-
-func (m *ArchiveManager) cleanupStaleTemps() {
-	entries, err := os.ReadDir(m.root)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), ".archive-") {
-			_ = os.Remove(filepath.Join(m.root, entry.Name()))
-		}
-	}
-}
-
-func archiveID() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(raw[:]), nil
 }

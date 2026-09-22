@@ -36,6 +36,7 @@ func (l *Library) commitStagedQueued(ctx context.Context, stage stagedUpload) (c
 	l.batchPending = append(l.batchPending, request)
 	if !l.batchRunning {
 		l.batchRunning = true
+		l.batchDone = make(chan struct{})
 		go l.runBatchCommits()
 	}
 	l.batchMu.Unlock()
@@ -59,6 +60,7 @@ func (l *Library) runBatchCommits() {
 		l.batchMu.Lock()
 		if len(l.batchPending) == 0 {
 			l.batchRunning = false
+			close(l.batchDone)
 			l.batchMu.Unlock()
 			return
 		}

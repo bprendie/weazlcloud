@@ -155,7 +155,7 @@ export const state = {
   destroyId: '',
   capsules: []
   ,upload: {active: false, dismissed: false, collapsed: false, current: '', done: 0, total: 0, loaded: 0, totalBytes: 0, percent: 0, failed: [], items: [], rails: Array.from({length: 3}, () => ({name: 'Waiting…', pct: 0, status: 'waiting'}))}
-  ,admin: false, requests: [], accessMode: '', username: '', fullName: '', archiveJobs: [], trash: [], trashRetention: 30, favorites: []
+  ,admin: false, requests: [], adminUsers: [], accessMode: '', username: '', fullName: '', archiveJobs: [], trash: [], trashRetention: 30, favorites: []
 };
 
 export function seedPreview() {

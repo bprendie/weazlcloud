@@ -90,4 +90,17 @@ func TestMultiDriveAuthenticatesAndServesWebDAV(t *testing.T) {
 	if unauth.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated %d", unauth.StatusCode)
 	}
+	if err := store.SetDisabled(u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	disabled, _ := http.NewRequest(http.MethodGet, s.URL+"/", nil)
+	disabled.SetBasicAuth("alice", "alice-password")
+	disabledRes, err := http.DefaultClient.Do(disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledRes.Body.Close()
+	if disabledRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("disabled WebDAV account status=%d", disabledRes.StatusCode)
+	}
 }

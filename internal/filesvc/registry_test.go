@@ -39,6 +39,41 @@ func TestRegistrySharesEachUserResourceAcrossProtocols(t *testing.T) {
 	}
 }
 
+func TestBlockCancelsAndDrainsUserRequests(t *testing.T) {
+	store, err := users.New(filepath.Join(t.TempDir(), "users.json"), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := store.Create("alice", "alice-password", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewRegistry(store)
+	ctx, release, ok := r.Enter(context.Background(), u.ID)
+	if !ok {
+		t.Fatal("request was not admitted")
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.Block(context.Background(), u.ID) }()
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("active request was not cancelled")
+	}
+	select {
+	case <-done:
+		t.Fatal("block returned before the request released its lease")
+	default:
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := r.Enter(context.Background(), u.ID); ok {
+		t.Fatal("blocked account accepted a new request")
+	}
+}
+
 func TestMaintenanceUsesStoredNodeKeyAndRelocksVault(t *testing.T) {
 	if _, err := exec.LookPath("restic"); err != nil {
 		t.Skip("restic not installed")

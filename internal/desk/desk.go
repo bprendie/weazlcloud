@@ -1,6 +1,7 @@
 package desk
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bprendie/weazlcloud/internal/accountlifecycle"
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/headers"
@@ -39,6 +41,7 @@ type Handler struct {
 	authLimit  *ratelimit.Limiter
 	changes    *filesvc.Hub
 	uploads    *upload.Manager
+	accounts   *accountlifecycle.Manager
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -71,6 +74,7 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 	h.uploads = upload.New(filepath.Join(dataDir, "uploads"), func(u users.User) *filesvc.Resource {
 		return h.registry.For(u)
 	}, q, us.Count)
+	h.accounts = accountlifecycle.New(us, h.registry, caps, h.uploads)
 	return h
 }
 
@@ -130,6 +134,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.files.ServeHTTP(w, r)
 	}
+}
+
+func (h *Handler) ResumeDeletes(ctx context.Context) error {
+	if h.accounts == nil {
+		return nil
+	}
+	return h.accounts.ResumePending(ctx)
 }
 
 func (h *Handler) guard(w http.ResponseWriter, r *http.Request, fn func(http.ResponseWriter, *http.Request)) {

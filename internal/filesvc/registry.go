@@ -26,6 +26,7 @@ type Registry struct {
 	activity func() func()
 	mu       sync.Mutex
 	items    map[string]*Resource
+	gates    map[string]*userGate
 }
 
 func NewRegistry(us *users.Store, q ...*quota.Manager) *Registry {
@@ -33,7 +34,7 @@ func NewRegistry(us *users.Store, q ...*quota.Manager) *Registry {
 	if len(q) > 0 {
 		manager = q[0]
 	}
-	return &Registry{users: us, quota: manager, items: make(map[string]*Resource)}
+	return &Registry{users: us, quota: manager, items: make(map[string]*Resource), gates: make(map[string]*userGate)}
 }
 
 func (r *Registry) SetActivityTracker(track func() func()) {

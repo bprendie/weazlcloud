@@ -7,6 +7,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
@@ -75,5 +76,66 @@ func TestMultiuserBootstrapLoginUnlockAndIsolation(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status: %d", res.StatusCode)
+	}
+}
+
+func TestAdminCanManageAccountsWithoutVaultDataAndCannotRemoveLastAdmin(t *testing.T) {
+	dir := t.TempDir()
+	us, err := users.New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := us.Create("admin", "admin-password", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, err := us.Create("alice", "alice-password", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminToken, _ := us.Login(admin)
+	aliceToken, _ := us.Login(alice)
+	h := NewMulti(us, capsule.New(filepath.Join(dir, "capsules")), quota.New(dir), "", "", dir)
+	get := func(token string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+		r.AddCookie(&http.Cookie{Name: "weazl_session", Value: token})
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if got := get(aliceToken); got.Code != http.StatusForbidden {
+		t.Fatalf("non-admin listed accounts: %d", got.Code)
+	}
+	listing := get(adminToken)
+	if listing.Code != http.StatusOK || bytes.Contains(bytes.ToLower(listing.Body.Bytes()), []byte("vault")) {
+		t.Fatalf("admin list exposed vault information: %d %s", listing.Code, listing.Body.String())
+	}
+	post := func(path string, token string, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.AddCookie(&http.Cookie{Name: "weazl_session", Value: token})
+		r.Header.Set("X-Weazl-Desk", "1")
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if got := post("/api/admin/users/disable", adminToken, `{"id":"`+admin.ID+`","disabled":true}`); got.Code != http.StatusConflict {
+		t.Fatalf("last admin disable status=%d body=%s", got.Code, got.Body.String())
+	}
+	if got := post("/api/admin/users/disable", adminToken, `{"id":"`+alice.ID+`","disabled":true}`); got.Code != http.StatusOK {
+		t.Fatalf("disable status=%d body=%s", got.Code, got.Body.String())
+	}
+	deniedReq := httptest.NewRequest(http.MethodGet, "/api/uploads", nil)
+	deniedReq.AddCookie(&http.Cookie{Name: "weazl_session", Value: aliceToken})
+	denied := httptest.NewRecorder()
+	h.ServeHTTP(denied, deniedReq)
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled upload session status=%d", denied.Code)
+	}
+	if got := post("/api/admin/users/delete", adminToken, `{"id":"`+alice.ID+`","confirm_username":"alice"}`); got.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", got.Code, got.Body.String())
+	}
+	if _, exists := us.User(alice.ID); exists {
+		t.Fatal("account was not deleted")
 	}
 }

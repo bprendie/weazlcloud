@@ -84,3 +84,68 @@ func TestAccessRequestRequiresApprovalBeforeAccountCreation(t *testing.T) {
 		t.Fatal("setup token reused")
 	}
 }
+
+func TestDisableRevokesSessionsAndProtectsLastAdmin(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := s.Create("admin", "admin-password", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := s.Login(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+	if err := s.SetDisabled(admin.ID, true); err == nil {
+		t.Fatal("disabled the last active administrator")
+	}
+	user, err := s.Create("alice", "alice-password", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err = s.Login(user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+	if err := s.SetDisabled(user.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Login(user); err == nil {
+		t.Fatal("created a new session from a stale enabled account")
+	}
+	if err := s.SetDisableError(user.ID, "grab links"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDisabled(user.ID, false); err == nil {
+		t.Fatal("reenabled an account before disable cleanup completed")
+	}
+	if err := s.SetDisabled(user.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDisableError(user.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDisabled(user.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetDisabled(user.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Current(req); err == nil {
+		t.Fatal("session remained valid after disabling the account")
+	}
+	loaded, err := New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := loaded.User(user.ID); !ok || !got.Disabled {
+		t.Fatal("disabled state did not survive restart")
+	}
+}

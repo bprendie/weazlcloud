@@ -176,6 +176,8 @@ func (n *Node) bind() error {
 	registry.SetActivityTracker(n.activity.Track)
 	n.activity.Register(registry.CleanupExpiredTrash)
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
+	_ = deskHandler.ResumeDeletes(context.Background())
+	n.activity.Register(deskHandler.ResumeDeletes)
 	n.uploads = deskHandler.RunUploads
 	n.svcs = []*http.Server{
 		server(n.desk, deskHandler, n.cfg.DataDir, n.activity),

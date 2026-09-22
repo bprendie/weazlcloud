@@ -87,6 +87,47 @@ func (s *Store) RevokeOwner(id, owner string) error {
 	return s.revokeDir(dir, rec)
 }
 
+func (s *Store) RevokeAll(owner string) error   { return s.ownerCapsules(owner, false) }
+func (s *Store) DeleteOwner(owner string) error { return s.ownerCapsules(owner, true) }
+
+func (s *Store) ownerCapsules(owner string, remove bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ents, err := os.ReadDir(s.root)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(s.root, e.Name())
+		rec, readErr := readMeta(dir)
+		if os.IsNotExist(readErr) {
+			continue
+		}
+		if readErr != nil {
+			return readErr
+		}
+		if rec.Owner != owner {
+			continue
+		}
+		if remove {
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
+		} else if !rec.Revoked {
+			if err := s.revokeDir(dir, rec); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Store) AssignOwner(owner string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

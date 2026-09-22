@@ -34,8 +34,14 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.logout)
 	case r.URL.Path == "/api/users" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.createUser)
+	case r.URL.Path == "/api/admin/users" && r.Method == http.MethodGet:
+		h.adminGuard(w, r, h.adminUsers)
+	case r.URL.Path == "/api/admin/users/disable" && r.Method == http.MethodPost:
+		h.adminGuard(w, r, h.adminDisableUser)
+	case r.URL.Path == "/api/admin/users/delete" && r.Method == http.MethodPost:
+		h.adminGuard(w, r, h.adminDeleteUser)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
-		h.me(w, r)
+		h.multiGuard(w, r, true, h.me)
 	case r.URL.Path == "/api/settings" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.saveSettings)
 	case r.URL.Path == "/api/vault/rekey" && r.Method == http.MethodPost:
@@ -47,7 +53,7 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/kit" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiKit)
 	case r.URL.Path == "/api/quota" && r.Method == http.MethodGet:
-		h.multiQuota(w, r)
+		h.multiGuard(w, r, true, h.multiQuota)
 	case r.URL.Path == "/api/qr" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.qr)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet && r.URL.Query().Get("path") == "":
@@ -115,8 +121,21 @@ func (h *Handler) multiGuard(w http.ResponseWriter, r *http.Request, auth bool, 
 		return
 	}
 	if auth {
-		if _, _, err := h.currentResource(r); err != nil {
+		u, err := h.users.Current(r)
+		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return
+		}
+		ctx, release, ok := h.registry.Enter(r.Context(), u.ID)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "account unavailable"})
+			return
+		}
+		defer release()
+		r = r.WithContext(ctx)
+		current, ok := h.users.User(u.ID)
+		if !ok || current.Disabled || current.Deleting {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "account unavailable"})
 			return
 		}
 	}

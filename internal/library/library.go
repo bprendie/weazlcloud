@@ -25,6 +25,7 @@ type Library struct {
 	batchPending  []batchRequest
 	batchWake     chan struct{}
 	batchRunning  bool
+	batchDone     chan struct{}
 	thumbMu       sync.Mutex
 	thumbJobs     map[string]*thumbnailJob
 	changeMu      sync.RWMutex
