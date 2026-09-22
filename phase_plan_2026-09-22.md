@@ -1,7 +1,7 @@
 # WeazlCloud implementation workbook — September 22, 2026
 
 Owner: Bob. Implementation: Luna.
-Status: G1.1–G1.4, G3.1–G3.2, and G5.1 complete. D1 and D2 are resolved.
+Status: G1.1–G1.4, G3.1–G3.2, G4.1–G4.3, and G5.1 complete. D1 and D2 are resolved.
 Continues `phase_plan_2026-09-21.md`. No task in this workbook is complete merely because it appears here.
 
 Follow-up: [September 23 multi-user dedupe integration and migration workbook](phase_plan_2026-09-23.md). Its D4.3 coordinates shared-storage ownership with this workbook's G4 account deletion; existing completed work remains the baseline.
@@ -94,11 +94,19 @@ G3.1 findings: active streams and ZIP writing hold the per-user Library lock for
 
 Read: `internal/users/store.go`, `internal/users/profile.go`, `internal/users/access.go`, `internal/filesvc/registry.go`, `internal/filesvc/archives.go`, `internal/desk/multi_account.go`, `internal/capsule/grab.go`, `internal/capsule/store.go`, `internal/drive/drive.go`.
 
-- [ ] **G4.1 — Disable atomically.** Persist disabled state, revoke sessions and all owned grabs, stop queued/new work, and invalidate mounted access. Define cancellation of already active transfers: bytes already delivered cannot be recalled. Pass: existing Desk session, WebDAV credentials, upload session, and grab URL cannot start new work; incomplete revocation resumes after restart.
-- [ ] **G4.2 — Implement durable deletion.** First mark the account deleting and block access. Cancel/drain uploads, renders, ZIPs, and other workers. Remove vaults, keys, catalog, repository, Trash, previews, staging, generated archives, recovery-kit copies, owned capsules, and per-user settings/runtime state. Use validated server-side owner paths. Keep only a minimal cleanup marker until deletion finishes; do not retain user data for a grace period. Pass: restart at every deletion stage converges to no owned runtime assets, workers cannot recreate them, and another user's assets remain hash-identical.
-- [ ] **G4.3 — Expose admin controls.** Add explicit Disable and Delete actions with an unambiguous destructive confirmation. Report pending/failed deletion accurately. Prevent deletion/disable of the last active administrator; defer administrator promotion/transfer to D4. Pass: non-admin calls fail and the admin UI never offers vault browsing.
+- [x] **G4.1 — Disable atomically.** Persist disabled state, revoke sessions and all owned grabs, stop queued/new work, and invalidate mounted access. Define cancellation of already active transfers: bytes already delivered cannot be recalled. Pass: existing Desk session, WebDAV credentials, upload session, and grab URL cannot start new work; incomplete revocation resumes after restart.
+- [x] **G4.2 — Implement durable deletion.** First mark the account deleting and block access. Cancel/drain uploads, renders, ZIPs, and other workers. Remove vaults, keys, catalog, repository, Trash, previews, staging, generated archives, recovery-kit copies, owned capsules, and per-user settings/runtime state. Use validated server-side owner paths. Keep only a minimal cleanup marker until deletion finishes; do not retain user data for a grace period. Pass: restart at every deletion stage converges to no owned runtime assets, workers cannot recreate them, and another user's assets remain hash-identical.
+- [x] **G4.3 — Expose admin controls.** Add explicit Disable and Delete actions with an unambiguous destructive confirmation. Report pending/failed deletion accurately. Prevent deletion/disable of the last active administrator; defer administrator promotion/transfer to D4. Pass: non-admin calls fail and the admin UI never offers vault browsing.
 
 Scope note: deletion applies to the live system and owned assets under its control. Separate historical backups are not silently rewritten. Do not claim secure erasure of physical media or external backup copies.
+
+G4 implementation notes, September 22, commit `c51d0ed`:
+
+- Disable writes a durable disabled/revocation-pending marker before closing the user's request gate. Desk sessions and WebDAV credentials stop authenticating; new upload requests are denied; active request contexts are canceled and drained; owned grab links are revoked. Startup and idle maintenance resume interrupted revocation. Re-enable is refused while revocation is pending. Bytes already delivered by an active transfer cannot be recalled.
+- Delete persists a disabled/deleting marker, drains user requests, upload sessions, archive workers, and queued Library commits, then removes owner uploads, capsules, and the validated per-user data directory. That directory contains the vault, node key, catalog, Restic repository, Trash, previews, staging, ZIPs, recovery kit, places, and runtime settings. Startup and idle maintenance replay incomplete deletion. No grace retention is added.
+- Admin controls list account identity/status only, support disable/enable and typed-username deletion confirmation, show cleanup status, reject non-admin calls, and preserve the last active administrator. They do not expose vault browsing. Multiple administrators remain possible; promotion/transfer stays deferred to D4.
+- Tests cover session invalidation, stale-login rejection, disabled WebDAV and upload access, revoked grab links, last-admin protection, non-admin API denial, worker drain, and restart replay from the account-marked, uploads-removed, capsules-removed, and user-directory-removed boundaries. A deliberately corrupt capsule record verifies a failed deletion stays disabled and pending; after repair and a simulated restart, deletion completes. Bob's settings hash, upload session, and grab payload remain unchanged in the isolation tests.
+- `make check` passed, including `go test -race ./...`, vet, Go line limits, and JavaScript syntax. A fresh `weazlcloud:g4-smoke` image built and the disposable-container smoke passed readiness, login, unlock, upload/download, preview, and grab. No production host or data was touched. The smoke exercises the common container path; account lifecycle behavior is covered by focused Go API and lifecycle tests.
 
 ## G5 — Maintenance when idle
 
