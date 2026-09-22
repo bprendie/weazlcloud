@@ -265,7 +265,7 @@ Next task: P5.3 deletion and retention.
 
 Date: September 21, 2026
 Task ID: P5.3–P5.9
-Commit: pending
+Commit: 2ddbb05
 Changed: Added 30-day Trash tombstones with restore, conflict checks, permanent cleanup, and restic pruning that protects every live or retained snapshot. Expired capsules now remove their payload on capsule listing. Storage reporting distinguishes physical volume use, logical bytes, unique catalog bytes, pending reservations, available shared space, and reclaimable Trash. Library navigation now survives reload/Back/Forward with hash routes and pinned folders. Added catalog-level copy, collision resolution, keyboard undo and clipboard operations, file details, wildcard search filters, and accessible Trash controls.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; targeted `go test -race ./internal/catalog ./internal/capsule ./internal/library ./internal/filesvc ./internal/desk ./internal/drive` passed; JavaScript syntax checks passed; `make desk-assets` and `git diff --check` passed; fresh localhost smoke passed copy, delete-to-Trash, restore, storage reporting, and cleanup invocation.
 Known limitations / decisions needed: Cross-user physical dedupe remains intentionally deferred for privacy review. The production browser paint benchmark remains an operational follow-up.
