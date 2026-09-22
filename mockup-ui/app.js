@@ -33,7 +33,7 @@ function selectedFileRows() {
 function clearFileSelection() {
   state.selectedFiles = [];
   state.selectionAnchor = '';
-  if (state.selected?.type === 'file') state.selected = null;
+  state.selected = null;
 }
 
 function hideMenu() {
@@ -936,6 +936,10 @@ async function loadLibrary() {
   const rows = await engine.listLibrary();
   files.splice(0, files.length, ...rows.map(engine.toFixture));
   const folders = [...new Set(files.map(f => f.folders.join('/')))];
+  if (state.currentPath && !folders.includes(state.currentPath)) {
+    state.currentPath = '';
+    history.replaceState({}, '', routeHash('library'));
+  }
   state.expanded = folders;
   await loadQuota();
 }
