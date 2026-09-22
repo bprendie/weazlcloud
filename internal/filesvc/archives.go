@@ -14,7 +14,10 @@ import (
 	"github.com/bprendie/weazlcloud/internal/library"
 )
 
-const archiveLifetime = 2 * time.Hour
+// On-demand ZIPs are retained long enough to resume a transfer without
+// leaving plaintext archives on the node for a full day. Grab capsules have
+// their own encrypted payload and burn lifecycle in internal/capsule.
+const archiveLifetime = 90 * time.Minute
 
 type ArchiveJobView struct {
 	ID        string    `json:"id"`
