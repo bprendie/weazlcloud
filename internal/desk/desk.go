@@ -15,6 +15,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ratelimit"
 	"github.com/bprendie/weazlcloud/internal/ready"
+	"github.com/bprendie/weazlcloud/internal/upload"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
@@ -37,6 +38,7 @@ type Handler struct {
 	registry   *filesvc.Registry
 	authLimit  *ratelimit.Limiter
 	changes    *filesvc.Hub
+	uploads    *upload.Manager
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {
@@ -66,6 +68,9 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 	} else {
 		h.registry = filesvc.NewRegistry(us, q)
 	}
+	h.uploads = upload.New(filepath.Join(dataDir, "uploads"), func(u users.User) *filesvc.Resource {
+		return h.registry.For(u)
+	}, q, us.Count)
 	return h
 }
 

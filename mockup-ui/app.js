@@ -8,9 +8,12 @@ let libraryEventSource;
 let librarySyncRunning = false;
 let librarySyncAgain = false;
 const UPLOAD_RAILS = 3;
+const UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
 const uploadRequests = new Map();
 let uploadWorkersRunning = false;
 let uploadRefreshTimer;
+let uploadPersistTimer;
+let uploadStorageKey = '';
 
 function libraryPath() {
   if (!state.selected) return '';
@@ -533,6 +536,26 @@ function uploadState() {
   return state.upload;
 }
 
+function setUploadStorageUser(username) {
+  uploadStorageKey = username ? `wzcl-upload-queue:${username}` : '';
+  if (!uploadStorageKey) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(uploadStorageKey) || '[]');
+    if (!Array.isArray(saved) || !saved.length) return;
+    state.upload.items = saved.map(item => ({...item, file: null, status: item.status === 'done' ? 'done' : 'needs-file', error: item.status === 'done' ? '' : 'Select this file again to resume.'}));
+    refreshUploadSummary();
+  } catch {}
+}
+
+function persistUploadQueue() {
+  if (!uploadStorageKey) return;
+  clearTimeout(uploadPersistTimer);
+  uploadPersistTimer = setTimeout(() => {
+    const safe = uploadState().items.map(({file, ...item}) => item);
+    try { localStorage.setItem(uploadStorageKey, JSON.stringify(safe)); } catch {}
+  }, 80);
+}
+
 function refreshUploadSummary() {
   const upload = uploadState();
   upload.total = upload.items.length;
@@ -544,6 +567,7 @@ function refreshUploadSummary() {
   upload.active = upload.items.some(item => item.status === 'queued' || item.status === 'uploading' || item.status === 'saving');
   upload.current = upload.items.find(item => item.status === 'uploading')?.target || '';
   renderUploadTray();
+  persistUploadQueue();
 }
 
 function scheduleUploadRefresh() {
@@ -570,22 +594,45 @@ async function uploadWorker(slot) {
     const item = uploadItemForSlot(slot);
     if (!item) return;
     try {
-      const request = engine.putLibraryProgress(item.target, item.file, (sent, _total, phase) => {
-        item.loaded = sent;
-        const pct = item.size ? (sent / item.size) * 100 : 100;
-        item.status = phase === 'saving' ? 'saving' : 'uploading';
-        state.upload.rails[slot] = {name: item.target, pct, status: phase || `${Math.round(pct)}%`};
+      let session = item.sessionId ? await engine.uploadStatus(item.sessionId).catch(() => null) : null;
+      if (session && (session.path !== item.target || session.size !== item.size)) session = null;
+      if (!session) session = await engine.createUpload(item.target, item.size);
+      item.sessionId = session.id;
+      item.loaded = session.offset || 0;
+      item.confirmed = item.loaded;
+      while (item.loaded < item.size) {
+        const offset = item.loaded;
+        const chunk = item.file.slice(offset, Math.min(item.size, offset + UPLOAD_CHUNK_SIZE));
+        const request = engine.appendUpload(session.id, offset, chunk, (sent, _total, phase) => {
+          item.loaded = sent;
+          const pct = item.size ? (sent / item.size) * 100 : 100;
+          item.status = 'uploading';
+          state.upload.rails[slot] = {name: item.target, pct, status: phase || `${Math.round(pct)}%`};
+          refreshUploadSummary();
+        });
+        uploadRequests.set(item.id, request);
+        const result = await request;
+        item.loaded = result.offset;
+        item.confirmed = result.offset;
+        session = result;
         refreshUploadSummary();
-      });
-      uploadRequests.set(item.id, request);
-      await request;
+      }
+      item.status = 'saving';
+      state.upload.rails[slot] = {name: item.target, pct: 100, status: 'saving'};
+      refreshUploadSummary();
+      await engine.finalizeUpload(session.id);
       item.loaded = item.size;
+      item.confirmed = item.size;
       item.status = 'done';
       item.error = '';
       state.upload.rails[slot] = {name: `✓ ${item.target}`, pct: 100, status: 'done'};
       schedulePreviewWarm([item.target]);
       scheduleUploadRefresh();
     } catch (err) {
+      if (Number.isFinite(err.offset)) {
+        item.loaded = err.offset;
+        item.confirmed = err.offset;
+      }
       if (item.status === 'cancelled') {
         state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: 'cancelled'};
       } else {
@@ -625,18 +672,26 @@ function beginUpload(list, prefix = '') {
   const upload = uploadState();
   upload.dismissed = false;
   upload.collapsed = false;
-  upload.items.push(...filesToUpload.map(item => {
+  filesToUpload.forEach(item => {
     const file = item.file;
     const relative = item.relative || file.name;
-    return {id: newUploadID(), file, relative, target: [prefix, relative].filter(Boolean).join('/'), size: file.size, loaded: 0, status: 'queued', attempts: 0, error: ''};
-  }));
+    const target = [prefix, relative].filter(Boolean).join('/');
+    const pending = upload.items.find(candidate => candidate.status === 'needs-file' && candidate.target === target && candidate.size === file.size);
+    if (pending) {
+      pending.file = file;
+      pending.status = 'queued';
+      pending.error = '';
+      return;
+    }
+    upload.items.push({id: newUploadID(), file, relative, target, size: file.size, loaded: 0, confirmed: 0, status: 'queued', attempts: 0, error: ''});
+  });
   refreshUploadSummary();
   runUploadQueue();
 }
 
 function retryFailedUploads() {
   const upload = uploadState();
-  upload.items.filter(item => item.status === 'failed').forEach(item => { item.status = 'queued'; item.loaded = 0; item.error = ''; item.attempts = (item.attempts || 0) + 1; });
+  upload.items.filter(item => item.status === 'failed').forEach(item => { item.status = 'queued'; item.loaded = item.confirmed || 0; item.error = ''; item.attempts = (item.attempts || 0) + 1; });
   upload.dismissed = false;
   refreshUploadSummary();
   runUploadQueue();
@@ -647,8 +702,9 @@ function cancelUploads() {
   upload.items.filter(item => item.status === 'queued').forEach(item => { item.status = 'cancelled'; });
   uploadRequests.forEach((request, id) => {
     const item = upload.items.find(candidate => candidate.id === id);
-    if (item) { item.status = 'cancelled'; request.abort?.(); }
+    if (item) { item.status = 'cancelled'; request.abort?.(); if (item.sessionId) engine.cancelUpload(item.sessionId).catch(() => {}); }
   });
+  upload.items.filter(item => item.status === 'queued' && item.sessionId).forEach(item => engine.cancelUpload(item.sessionId).catch(() => {}));
   refreshUploadSummary();
 }
 
@@ -1146,6 +1202,7 @@ document.addEventListener('click', e => {
   if (b.dataset.dismissUpload !== undefined) { state.upload.dismissed = true; renderUploadTray(); return; }
   if (b.dataset.uploadCollapse !== undefined) { state.upload.collapsed = !state.upload.collapsed; renderUploadTray(); return; }
   if (b.dataset.uploadRetry !== undefined) { retryFailedUploads(); return; }
+  if (b.dataset.uploadReselect !== undefined) { uploadPrefix = ''; $('#upload').click(); return; }
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
   if (b.dataset.archiveDownload) { engine.downloadArchive(b.dataset.archiveDownload); return; }
   if (b.dataset.archiveCancel) { engine.cancelArchive(b.dataset.archiveCancel).then(() => renderUploadTray()).catch(err => toast(err.message)); return; }
@@ -1589,6 +1646,7 @@ engine.probe().then(async s => {
       state.fullName = account.full_name || '';
       state.admin = !!account.admin;
     }
+    setUploadStorageUser(state.username || s.username || '');
     if (!s.unlocked) setVaultOnly(true);
   }
   if (s.authenticated && s.unlocked) {

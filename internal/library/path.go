@@ -8,6 +8,10 @@ import (
 
 var ErrBadPath = errors.New("path is not allowed")
 
+// CleanPath validates a user supplied library path for services that need to
+// persist work before handing it to the library.
+func CleanPath(p string) (string, error) { return cleanPath(p) }
+
 func cleanPath(p string) (string, error) {
 	p = strings.TrimSpace(p)
 	p = strings.ReplaceAll(p, "\\", "/")

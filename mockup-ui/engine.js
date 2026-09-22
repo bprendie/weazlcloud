@@ -82,6 +82,51 @@ export function putLibraryProgress(path, body, onProgress) {
   return request;
 }
 
+async function uploadJSON(url, options = {}) {
+  const r = await fetch(url, options);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const error = new Error(j.error || r.statusText || 'upload failed');
+    if (Number.isFinite(j.offset)) error.offset = j.offset;
+    throw error;
+  }
+  return j;
+}
+
+export const createUpload = (path, size, hash = '') => uploadJSON('/api/uploads', {
+  method: 'POST', headers: jsonHeaders, body: JSON.stringify({path, size, hash})
+});
+export const uploadStatus = id => uploadJSON('/api/uploads/' + encodeURIComponent(id));
+
+export function appendUpload(id, offset, body, onProgress) {
+  let xhr;
+  const request = new Promise((resolve, reject) => {
+    xhr = new XMLHttpRequest();
+    xhr.open('PATCH', '/api/uploads/' + encodeURIComponent(id));
+    xhr.setRequestHeader('X-Weazl-Desk', '1');
+    xhr.setRequestHeader('Upload-Offset', String(offset));
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(offset + e.loaded, offset + e.total, 'sending'); };
+    xhr.onerror = () => reject(new Error('upload chunk failed'));
+    xhr.onabort = () => reject(new Error('upload cancelled'));
+    xhr.onload = () => {
+      let j = {};
+      try { j = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const error = new Error(j.error || 'upload chunk failed');
+        if (Number.isFinite(j.offset)) error.offset = j.offset;
+        reject(error);
+      } else resolve(j);
+    };
+    xhr.send(body);
+  });
+  request.abort = () => xhr?.abort();
+  return request;
+}
+
+export const finalizeUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id) + '/finalize', {method: 'POST', headers: jsonHeaders});
+export const cancelUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id), {method: 'DELETE', headers: jsonHeaders});
+
 export const createFolder = path => post('/api/library/folder', {path});
 export const renameLibrary = (from, to) => post('/api/library/rename', {from, to});
 export const copyLibrary = (from, to) => post('/api/library/copy', {from, to});
