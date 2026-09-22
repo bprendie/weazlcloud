@@ -100,7 +100,7 @@ Read: `internal/users/store.go`, `internal/users/profile.go`, `internal/users/ac
 
 Scope note: deletion applies to the live system and owned assets under its control. Separate historical backups are not silently rewritten. Do not claim secure erasure of physical media or external backup copies.
 
-G4 implementation notes, September 22, commit `c51d0ed`:
+G4 implementation notes, September 22, commits `c51d0ed` and `ba6e27e`:
 
 - Disable writes a durable disabled/revocation-pending marker before closing the user's request gate. Desk sessions and WebDAV credentials stop authenticating; new upload requests are denied; active request contexts are canceled and drained; owned grab links are revoked. Startup and idle maintenance resume interrupted revocation. Re-enable is refused while revocation is pending. Bytes already delivered by an active transfer cannot be recalled.
 - Delete persists a disabled/deleting marker, drains user requests, upload sessions, archive workers, and queued Library commits, then removes owner uploads, capsules, and the validated per-user data directory. That directory contains the vault, node key, catalog, Restic repository, Trash, previews, staging, ZIPs, recovery kit, places, and runtime settings. Startup and idle maintenance replay incomplete deletion. No grace retention is added.
