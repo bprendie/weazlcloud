@@ -61,7 +61,7 @@ function pumpGridTextPreviews() {
     gridTextActive++;
     const path = el.dataset.gridTextPreview || '';
     const controller = new AbortController();
-    gridPreviewRequests.set(el, controller);
+    gridPreviewRequests.set(el, {controller});
     fetch(`/api/library?path=${encodeURIComponent(path)}&preview=1`)
       .then(response => { if (!response.ok) throw new Error('preview unavailable'); return response.text(); })
       .then(text => { el.textContent = text.slice(0, 1200) || '(empty file)'; })
@@ -77,9 +77,16 @@ function pumpGridThumbnails() {
     gridThumbActive++;
     const path = el.dataset.gridThumbnail || '';
     const controller = new AbortController();
-    gridPreviewRequests.set(el, controller);
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      gridPreviewRequests.delete(el);
+      gridThumbActive--;
+      pumpGridThumbnails();
+    };
+    gridPreviewRequests.set(el, {controller, cancel: () => { el.src = ''; done(); }});
     el.src = `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
-    const done = () => { gridPreviewRequests.delete(el); gridThumbActive--; pumpGridThumbnails(); };
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
       if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
@@ -147,7 +154,7 @@ function pumpGridCapabilities() {
     gridCapabilityActive++;
     const path = el.dataset.gridCapability || '';
     const controller = new AbortController();
-    gridPreviewRequests.set(el, controller);
+    gridPreviewRequests.set(el, {controller});
     fetch(`/api/library/capability?path=${encodeURIComponent(path)}`, {signal: controller.signal})
       .then(response => { if (!response.ok) throw new Error('capability unavailable'); return response.json(); })
       .then(capability => applyGridCapability(el, capability))
@@ -157,10 +164,10 @@ function pumpGridCapabilities() {
 }
 
 function cancelDetachedGridRequests() {
-  for (const [el, controller] of gridPreviewRequests) {
+  for (const [el, request] of gridPreviewRequests) {
     if (!el.isConnected) {
-      controller.abort();
-      if (el instanceof HTMLImageElement) el.src = '';
+      request.controller?.abort();
+      request.cancel?.();
     }
   }
 }
@@ -185,7 +192,7 @@ function hydrateGridTextPreviews() {
 }
 
 const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); });
-contentObserver.observe($('#content'), {childList: true});
+contentObserver.observe($('#content'), {childList: true, subtree: true});
 
 function isWarmableRaster(path) {
   return /\.(?:jpe?g|png|gif)$/i.test(path);
