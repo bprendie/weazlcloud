@@ -1,102 +1,150 @@
-# WeazlCloud gap workbook — September 22, 2026
+# WeazlCloud implementation workbook — September 22, 2026
 
-Status: initial decisions recorded; remaining questions pending. Continues `phase_plan_2026-09-21.md`.
+Owner: Bob. Implementation: Luna.
+Status: ready for independent implementation tasks; specific policy decisions remain open below.
+Continues `phase_plan_2026-09-21.md`. No task in this workbook is complete merely because it appears here.
 
-Purpose: define the next work after the existing workbook, with emphasis on dependable daily use. These are proposed tasks, not completed work. Explicit decisions below govern retention and behavior. Resolve the questions below before implementing dependent behavior.
+## Confirmed product decisions
 
-Keep identity and processing local, preserve existing vaults and host settings, retain shared available-disk storage with the silent system reserve, and keep upload size unrestricted except by available space. Cross-user deduplication still needs a separate privacy design. Stored node keys remain the current convenience choice: controlling the host permits decryption; UI administrator isolation does not prevent that.
+- Uploads must resume after browser and server restarts, including large ISOs. A background tray alone is insufficient.
+- Improve mounted-drive folder browsing first.
+- WeazlCloud is not a recovery service. Keep Trash for 30 days and automatically empty it; do not add overwrite version history or a backup service.
+- Disabling an account revokes its grab links. Deleting a user deletes all owned assets, with no retirement retention period.
+- Maintenance runs when the node is idle.
+- RAW/HEIC photos are the first enhanced-preview priority.
+- Google Takeout is the first import source. Keep both files when imported content differs at an existing path.
+- Normal simultaneous saves may replace each other: last successful committed write wins. Failed writes must not replace committed bytes. Import conflicts use the separate keep-both rule.
+- Keep local identity and local processing, shared available-disk storage, the silent system reserve, and no fixed maximum upload size.
+- Preserve per-user isolation. Admin controls must not expose other users' files. Stored node-key convenience remains; host control permits decryption.
 
-## G1 — Resumable uploads
+## Rules for Luna
 
-- [ ] Add durable upload sessions, bounded chunks, verified offsets, restart reconciliation, and clear resume/cancel controls.
-- [ ] Verify interrupted large uploads resume without retransmitting completed chunks. Browser restart may require reselecting the original file; explain that explicitly.
+1. Read the listed code before changing it. Verify behavior: older checked boxes and work logs are evidence to investigate, not proof of every acceptance condition.
+2. Work one task at a time in the order below. Keep each commit reviewable; prefix it with its task ID, such as `G1.2: persist resumable upload offsets`.
+3. Record changed files, checks, actual results, commit, remaining limitations, and next task in this workbook. Check a box only after its acceptance conditions pass.
+4. Use temporary users, disposable files, and separate data directories. Do not use real files, consume real grab links, delete existing users, or run disk-filling tests on production.
+5. Production currently runs commit `7a6a377`. Preserve its host Compose edits and `/exports/dockervolume/weazlcloud` mount. This workbook is implementation work, not an instruction for another deployment.
+6. Edit UI source in `mockup-ui/`. Run `make desk-assets` before direct Go commands; Make test/build targets generate the embedded copy. Never commit generated `internal/desk/ui/`, executables, runtime data, credentials, or screenshots.
+7. Keep Go files below 300 lines. Extract cohesive modules as needed. New UI behavior should use focused modules rather than expanding the existing monolith indefinitely.
+8. Run focused behavioral tests for changed storage/concurrency paths. Before each completed workstream, run `make check`; use the relevant browser/container smoke checks. Do not run the 500-file benchmark unless Bob requests it.
+9. Open decisions block only dependent behavior. Continue other tasks; do not silently choose retention, administrator succession, remote exposure, or transcoding policy.
+10. Do not log passwords, vault phrases, grab URLs/tokens, private filenames, or request bodies. Report failures with operation type and safe diagnostics.
 
-Questions:
-1. Should the first release resume after browser/server restarts, or cover network interruptions while the tab stays open first?
-2. How long should incomplete uploads be retained before their reserved disk is released: 24 hours, seven days, or another duration?
-3. After reopening the browser, is reselecting the original file/folder acceptable, or is persistent access through a supported browser or local helper essential?
+## Decisions still needed
 
-## G2 — Mounted-drive performance
+| ID | Decision needed | What may proceed meanwhile |
+|---|---|---|
+| D1 | How long to keep incomplete uploads: 24 hours, seven days, or another duration? | Durable sessions, cancellation, resume and tests with a configurable clock; do not ship an arbitrary expiry. |
+| D2 | Is file/folder reselection after reopening the browser acceptable? Is a local helper acceptable if persistent access is essential? | Server resume protocol and a prototype that explicitly requests reselection. Do not promise unattended resume. |
+| D3 | Must mounted access remain helper-free? Should internet access be added? | Optimize existing Thunar/WebDAV browsing; keep existing network exposure. |
+| D4 | Multiple local administrators, or a single administrator with transfer? | Disable/delete ordinary users; protect the last active admin and defer role changes. |
+| D5 | Where to show maintenance failures: admin dashboard, local email, or both? | Safe local logs and structured internal status; defer notification transport. |
+| D6 | May low-space cleanup evict completed ZIPs before their 90-minute expiry? | Existing bounded preview eviction and cleanup of expired data only. |
+| D7 | Bundle photo converters in the main image, or an optional local rendering container? | Compare local renderers and prototype behind a boundary; present measured tradeoffs before packaging. |
+| D8 | Transcode unsupported video, or download-only? | RAW/HEIC work; preserve current video behavior. |
+| D9 | Skip identical import files, or keep both? What should whole-library exports include? | Keep both differing files; export current files as a prototype, not a settled full-export policy. No version history. |
+| D10 | Target concurrent users, folder sizes, largest files, and permission for production-host load tests? | Small disposable workstation tests and existing fixtures. Record their limits. |
 
-- [ ] Measure Thunar browsing, opening, saving, and copying before selecting changes to authentication, staging, caching, or protocol support.
-- [ ] Check that mounted and browser clients see consistent changes without weakening vault boundaries.
+## Execution order and dependencies
 
-Questions:
-1. Which mounted-drive action matters most: browsing folders, opening large files, or saving/uploading files?
-2. Must mounting remain built into Thunar with no helper, or would you accept a small local client if measurements justify it?
-3. Should mounted access remain LAN/VPN-only, or should remote internet access become part of the design?
+Start G8.1 to establish reliable checks. Implement G1 server work, then browser work once D1/D2 are settled. Measure G2 before optimizing it. Build G5's idle coordinator before connecting G3 cleanup. Implement G4 with coordination for active jobs. Complete the G6 converter comparison and G7 importer design while other decisions are pending. G8 failure checks run throughout, then close the workbook with an integrated smoke pass.
 
-## G3 — Simple Trash retention
+First assignment: G8.1 and G1.1. Deliver the verification findings and a resumable-upload protocol/design note with tests for its invariants; then proceed to G1.2. Do not implement all eight streams in one rewrite.
 
-Decision: WeazlCloud is not a recovery service. Keep 30-day Trash with automatic emptying; do not add overwrite version history or a backup/recovery service to this gap's scope. Existing operational backup procedures remain separate.
+## G1 — Uploads that resume across restarts
 
-- [ ] Enforce automatic emptying of Trash after 30 days through idle maintenance.
-- [ ] Verify cleanup protects live files and reclaims unreferenced storage safely.
+Read: `internal/library/staging.go`, `internal/library/batch.go`, `internal/quota/quota.go`, `internal/filesvc/registry.go`, `internal/desk/multi_library.go`, `mockup-ui/engine.js`, upload queue functions in `mockup-ui/app.js`, and transfer tray in `mockup-ui/views.js`.
 
-The former version-history and recovery-service questions are superseded by this decision.
+- [ ] **G1.1 — Define the upload contract.** Document create/status/append/finalize/cancel operations, owner checks, destination, expected length, confirmed offset, content verification, session expiry, and retry semantics. Reuse existing durable staging where possible. Decide how state is encrypted/protected at rest; do not introduce a plaintext spool without documenting its vault-lock behavior. Preserve existing PUT clients. Pass: examples cover initial upload, duplicate chunk, wrong offset, interrupted chunk, repeated finalize, and restart.
+- [ ] **G1.2 — Implement durable server sessions.** Keep spool and manifests on the configured data volume. Bound per-request buffers and concurrent writers; serialize writes per session. Acknowledge only durable bytes and reconcile partial tails on restart. Verify content before publishing to the catalog. Finalization must be idempotent, including failure after restic success but before catalog save. Pass: restart midway and finish with an identical hash; repeated chunks/finalize do not duplicate bytes or catalog entries; another user cannot inspect or resume the session.
+- [ ] **G1.3 — Integrate space and lifecycle checks.** Reconstruct reservations after restart without counting already occupied bytes twice. Reserve remaining workspace, enforce actual disk headroom, release on cancel/expiry/commit, and reject writes for disabled/deleted owners. Do not clear usable sessions merely because the process restarted. Pass: unknown-length and nearly-full-volume tests fail cleanly, leave committed files intact, and release reservations correctly. Production expiry waits for D1.
+- [ ] **G1.4 — Resume from the browser.** Persist nonsecret queue metadata, reconcile it with owner-scoped server sessions after login, and preserve the three upload rails. Show server-confirmed progress separately from saving. Reconnect with backoff; cancel old requests before retrying. Match reselected files using content verification, not filename alone. Clear private client state on logout/account change. Pass: close/reopen the browser and restart the server midway; resumption sends only missing data and leaves Library usable. Final UX depends on D2.
 
-## G4 — Account lifecycle
+Required evidence: hashes, bytes retransmitted, restart boundary, quota reservations before/after, and observed peak memory with a large generated payload. Chunk limits must not become file-size limits.
 
-Decisions: disabling an account revokes its grab links. Deleting a user deletes all of that user's assets, with no retirement retention period. This defines future deletion behavior; it is not an instruction to delete any existing user now.
+## G2 — Faster Thunar folder browsing
 
-- [ ] On deletion, invalidate sessions and cancel/drain active jobs before removing the user's vault, keys, catalog, repository, Trash, previews, staging, generated ZIPs, capsules, and other owned runtime data. Prevent in-flight work from recreating deleted assets; retry interrupted cleanup.
+Read: `internal/drive/drive.go`, `internal/drive/filesystem.go`, `internal/filesvc/registry.go`, `internal/users/store.go`, `internal/library/library.go`, `internal/restic/run.go`.
 
-- [ ] Add account suspension, session revocation, administrator succession, and deliberate retirement handling.
-- [ ] Ensure these controls do not expose vault contents through the admin UI.
+- [ ] **G2.1 — Measure the current path.** Use existing/small disposable nested folders. Record cold/warm PROPFIND latency, time until Thunar displays entries, auth verification count, restic subprocess count, and listing/catalog work per request. Test while a browser upload runs. Pass: reproducible command/client steps and measurements identify the dominant cost.
+- [ ] **G2.2 — Fix the measured browsing bottleneck.** Prefer eliminating repeated full catalog scans, repeated initialization, or redundant per-entry metadata work. Preserve shared registry ownership and mutation visibility. Any authentication cache must be bounded and immediately invalidated by password change, disable, deletion, and relevant credential changes. Pass: before/after results on the same fixtures show the benefit; Desk/WebDAV changes appear without stale cross-user results.
+- [ ] **G2.3 — Verify daily use.** Browse down/up, refresh, open a small file, save a changed file, rename, and reconnect after restart. Pass: Thunar and Desk agree on paths/content; no new helper or network exposure is required for this baseline. Larger protocol changes wait for D3 and measurements.
 
-Questions:
-1. Resolved: revoke existing grab links when disabling an account.
-2. Resolved: user deletion removes all owned assets; no retirement retention period.
-3. Should another local account be promotable to administrator, or should there be one administrator with an explicit transfer procedure?
+## G3 — Thirty-day Trash with automatic emptying
 
-## G5 — Unattended maintenance
+Read: `internal/catalog/mutations.go`, `internal/library/maintenance.go`, `internal/desk/trash.go`, `internal/restic/ops.go`. Depends on G5.1.
 
-Decision: run maintenance when the node is idle. Define idle detection and pause/resume behavior around active transfers during implementation.
+- [ ] **G3.1 — Audit safe reclamation.** Check expiry boundaries, empty folders, zero-byte files, replacement at a trashed path, and mixed live/trashed entries sharing a restic snapshot. Inventory references held by active streams, captured ZIP manifests, and pending upload commits. Do not prune any snapshot still needed by these operations. Pass: tests cover each case, restore never creates duplicate live paths, and cleanup does not rely on positive byte counts to remove expired folders.
+- [ ] **G3.2 — Connect idle cleanup.** Process expired Trash after 30 days even without a user visiting Trash. Use a narrowly scoped background resource with existing stored-key capability; do not leave a Desk vault marked unlocked merely for maintenance. Record resumable cleanup intent so a failure between catalog purge and restic forget/prune is recoverable. Pass: expired entries are gone after an eligible idle pass, newer Trash restores, physical reclaim is measured for unreferenced content, and injected failure retries safely.
 
-- [ ] Schedule expiry and abandoned-file cleanup independently of user visits; recover from interrupted work and report failures.
-- [ ] Coordinate cleanup with active uploads, archives, retained snapshots, and available disk.
+No overwrite history, restoration service, or new backup UI. Existing release backups remain operational procedure.
 
-Questions:
-1. Resolved: run when idle.
-2. Where should failures appear: an admin dashboard, locally configured email, or both?
-3. Near full capacity, should cleanup remove only already-expired data, or may it also evict previews and completed on-demand ZIPs before their normal expiry?
+## G4 — Disable and delete accounts completely
 
-## G6 — Media and document previews
+Read: `internal/users/store.go`, `internal/users/profile.go`, `internal/users/access.go`, `internal/filesvc/registry.go`, `internal/filesvc/archives.go`, `internal/desk/multi_account.go`, `internal/capsule/grab.go`, `internal/capsule/store.go`, `internal/drive/drive.go`.
 
-- [ ] Prioritize formats using real workflows; evaluate local converters with bounded CPU, memory, time, and derived-data storage.
-- [ ] Preserve originals and provide a clear download fallback for unsupported content.
+- [ ] **G4.1 — Disable atomically.** Persist disabled state, revoke sessions and all owned grabs, stop queued/new work, and invalidate mounted access. Define cancellation of already active transfers: bytes already delivered cannot be recalled. Pass: existing Desk session, WebDAV credentials, upload session, and grab URL cannot start new work; incomplete revocation resumes after restart.
+- [ ] **G4.2 — Implement durable deletion.** First mark the account deleting and block access. Cancel/drain uploads, renders, ZIPs, and other workers. Remove vaults, keys, catalog, repository, Trash, previews, staging, generated archives, recovery-kit copies, owned capsules, and per-user settings/runtime state. Use validated server-side owner paths. Keep only a minimal cleanup marker until deletion finishes; do not retain user data for a grace period. Pass: restart at every deletion stage converges to no owned runtime assets, workers cannot recreate them, and another user's assets remain hash-identical.
+- [ ] **G4.3 — Expose admin controls.** Add explicit Disable and Delete actions with an unambiguous destructive confirmation. Report pending/failed deletion accurately. Prevent deletion/disable of the last active administrator; defer administrator promotion/transfer to D4. Pass: non-admin calls fail and the admin UI never offers vault browsing.
 
-Questions:
-1. Which comes first: RAW/HEIC photos, video posters/audio artwork, or faithful Office document previews?
-2. Is a larger Docker image containing local converters acceptable, or should enhanced rendering be an optional container?
-3. Should unsupported video codecs get a playable derived copy, or remain download-only with a clear explanation?
+Scope note: deletion applies to the live system and owned assets under its control. Separate historical backups are not silently rewritten. Do not claim secure erasure of physical media or external backup copies.
 
-## G7 — Migration and exit
+## G5 — Maintenance when idle
 
-- [ ] Build resumable imports with timestamps, conflict handling, verification, and useful progress.
-- [ ] Export ordinary files with manifests and hashes, using bounded-memory transfer paths.
+Read: `internal/app/run.go`, `internal/filesvc/registry.go`, `internal/filesvc/archives.go`, `internal/library/thumbnail.go`, `internal/capsule/grab.go`, `internal/desk/events.go`.
 
-Questions:
-1. What should import support first: Google Takeout, a server-mounted folder, or a browser-selected folder tree?
-2. Resolved: keep both files when imported content differs at an existing path. Identical-file handling remains to be specified.
-3. Should a complete export contain current files only, or also Trash and retained file versions in separate folders?
+- [ ] **G5.1 — Add a bounded idle coordinator.** Track active storage operations across Desk, WebDAV, uploads, previews, ZIPs, and grabs. Long-lived SSE connections and health probes must not permanently prevent idle. Make the quiet interval configurable and document its initial technical default. Run one maintenance job at a time; yield/cancel safely when foreground activity resumes. Pass: a fake-clock test covers idle eligibility, continuous probes/SSE, resumed activity, shutdown, and no overlapping jobs.
+- [ ] **G5.2 — Register cleanup jobs.** Include expired capsule payloads, expired/cancelled on-demand ZIPs, safe abandoned staging, bounded preview eviction, and G3 Trash cleanup. Keep the 90-minute ZIP policy. Grab payloads follow their burn/revoke/expiry lifecycle, not ZIP expiry. Use retry/backoff and restart reconciliation; never delete active temp packs just because their names resemble stale files. Pass: jobs run without visiting a listing, active work survives, and interruption does not leak reservations or falsely mark cleanup complete. Incomplete-upload expiry waits for D1; early ZIP eviction waits for D6.
+- [ ] **G5.3 — Report useful status.** Record last attempt/success, duration, reclaimed bytes where measured, and safe failure category. Avoid filenames and capability IDs. Pass: an induced disk/permission failure is distinguishable from an empty cleanup pass. Notification destination waits for D5.
 
-## G8 — Failure and concurrency testing
+## G6 — RAW/HEIC photo previews first
 
-- [ ] Exercise full/read-only/missing volumes, interrupted writes, simultaneous edits, and upgrades on populated disposable data.
-- [ ] Record resource limits and browsing responsiveness under mixed workloads; avoid a 500-file fixture unless separately requested.
+Read: `internal/desk/capability.go`, `internal/desk/thumbnail.go`, `internal/library/thumbnail.go`, `mockup-ui/app.js`, `mockup-ui/views.js`, `deploy/Dockerfile`.
 
-Questions:
-1. Resolved: allow replacement on simultaneous saves; the last successful committed write wins. Failed writes must not replace committed data. This is separate from the keep-both import policy.
-2. What everyday load should we target: concurrent users, typical folder sizes, and largest files?
-3. Can a disposable container on the production host be used for realistic disk/performance tests, or should all fault and load testing stay on this workstation?
+- [ ] **G6.1 — Compare local renderer options.** Identify supported RAW families and HEIC variants using documented, redistributable fixtures or Bob-provided samples. Compare output quality/orientation, peak memory, CPU/time, dependencies, image size, and maintenance requirements. Pass: record actual successful formats and failures plus a recommendation; do not claim every RAW format works. Packaging waits for D7.
+- [ ] **G6.2 — Integrate a bounded renderer.** Apply time, input, output, dimensions, process, and concurrency limits. Run without network and without broad host filesystem access. Use private temporary directories on the data volume and the existing encrypted, owner/version-scoped preview cache. Preserve originals and renderer-version invalidation. Pass: supported photos show correct orientation and useful thumbnails; malformed/huge input times out safely; locked/other-user access remains denied.
+- [ ] **G6.3 — Verify grid behavior.** Use current visible-card scheduling and warming; do not fetch full originals for every offscreen card. Pass: mixed supported/unsupported photos show thumbnails or stable fallback, scrolling stays usable during an upload, and a warm revisit reuses cache.
 
-## Proposed order
+Video posters, audio artwork, faithful Office layout, and video transcoding remain later tasks. D8 controls transcoding; do not bundle it into photo work.
 
-Resumable uploads, mounted-drive performance, automatic 30-day Trash emptying, and unattended maintenance are the first priorities. Use failure tests throughout implementation. Schedule account lifecycle, richer previews, and import/export according to the answers above.
+## G7 — Google Takeout import
 
-## Work log
+Read: `mockup-ui/app.js` ingest placeholder, `mockup-ui/views.js`, `internal/library/staging.go`, `internal/library/batch.go`, `internal/catalog/catalog.go`, `internal/catalog/mutations.go`, `internal/library/archive.go`.
 
-September 22, 2026: Recorded eight gaps and 24 outstanding questions. No new product decisions have been assumed. Implementation remains pending answers and task breakdown.
+- [ ] **G7.1 — Specify the first Takeout subset.** Inventory a representative disposable Google Drive Takeout archive, including exported Docs formats, directories, timestamps, metadata sidecars, and split exports. Document supported archive types and limitations before accepting uploads. Choose a browser/server ingestion path consistent with G1; do not silently build a general Photos migration product. Pass: a fixture manifest states the expected resulting paths/content and progress units.
+- [ ] **G7.2 — Build safe resumable ingestion.** Persist owner-scoped job and per-entry commit state. Stream extraction with quota-aware spool and bounded memory, entry counts, archive expansion, and concurrency; reject traversal, unsafe links, device entries, and malicious names. Preserve valid timestamps. Commit through the shared library service and resume without duplicating completed entries. Pass: restart midway, retry a failed item, and compare resulting paths/hashes with the fixture manifest. Parsing bounds must be distinguished from normal upload size policy.
+- [ ] **G7.3 — Keep both on differing-path conflicts.** Allocate deterministic names while holding the appropriate mutation lock, preserve extensions, and include folder/file conflicts. Persist the selected destination so retries do not generate extra copies. Pass: parallel imports and normal writes never silently overwrite differing imported content. Identical-file policy waits for D9.
+- [ ] **G7.4 — Replace mock progress with real UI.** Show committed/skipped/failed counts, bytes where known, resumable status, cancellation, and durable failure details in the background tray. Pass: navigation remains usable, partial failure is visible, and completed items are not imported twice.
+- [ ] **G7.5 — Specify an ordinary-file exit.** Reuse bounded archive/export infrastructure for current files with a manifest and hashes; document naming and large-export handling. Full-export contents beyond current files wait for D9; there is no retained-version feature in scope.
 
-September 22, 2026 — Bob's decisions: simple 30-day auto-empty Trash, no overwrite history/recovery service; revoke grabs on account disable; delete all owned assets on user deletion; maintenance when idle; keep both differing import files; allow replacement for simultaneous saves. References “1a”, “2a”, “6a”, and “7a” name questions but do not identify the selected options; clarification is pending. Other unanswered questions remain open. Documentation only; no runtime changes or user deletion performed.
+## G8 — Failure tests and evidence
+
+Read: `Makefile`, `.github/workflows/ci.yml`, `scripts/smoke-browser.sh`, `scripts/recovery-smoke.sh`, `scripts/container-smoke.sh`, `internal/app/run.go`, `internal/ready/ready.go`, and existing storage tests.
+
+- [ ] **G8.1 — Audit existing verification first.** Check whether `/ready` detects an unwritable/full data or temp volume rather than only path existence. Verify smoke scripts control the actual child process, use unique disposable names, clean only resources they created, fail on real errors, and assert their advertised behavior. The current browser page marker is not an authenticated workflow test. Pass: record concrete gaps, fix failing harness assumptions, and add deterministic checks where claims are unsupported.
+- [ ] **G8.2 — Inject failures locally.** Exercise interrupted catalog save, upload finalize, maintenance prune, user deletion, missing/read-only/full volume, and server restart. Use test seams or isolated bounded filesystems rather than filling host disks. Pass: committed content remains readable, incomplete operations reconcile, and readiness/errors explain storage failure without secrets.
+- [ ] **G8.3 — Check write ordering.** Race normal Desk and WebDAV replacements with distinct payload hashes, then verify final catalog and bytes agree with the final successful commit. A failed write must not win. Separately verify Takeout keep-both behavior. Pass: repeatable tests and race detector results; no mixed or truncated content.
+- [ ] **G8.4 — Rehearse upgrade and mixed use.** On this workstation, use populated disposable older-format data. Run browsing, upload, thumbnail, ZIP, maintenance, and mounted access together. Check actual login/unlock and user isolation through the browser/API. Pass: record latency, memory, queue limits, hashes, migration result, and rollback constraints. D10 governs broader load or production-host tests; use existing small fixtures meanwhile.
+
+## Acceptance and handoff
+
+A stream is complete only when its stated pass conditions hold and unresolved decisions affecting it are settled. Passing syntax or static-page checks does not prove authenticated actions, restart recovery, disk reclamation, or deletion safety. Report the precise scope tested.
+
+Use this entry for every delivered task:
+
+```text
+Date / task ID:
+Commit:
+Behavior changed:
+Files changed:
+Checks and fixtures:
+Observed results:
+Open decisions / limitations:
+Next task:
+```
+
+## Decision log
+
+September 22: Recorded eight gaps and 24 questions in `d22e4ee`.
+September 22: Recorded 30-day Trash, destructive user deletion, grab revocation, idle maintenance, keep-both import conflicts, and replacement semantics in `b9a2263`.
+September 22: Bob confirmed restart-resumable uploads, folder-browsing priority, RAW/HEIC priority, and Google Takeout first. Expanded this workbook into ordered implementation tasks, acceptance conditions, and explicit remaining decisions. No runtime changes or production deployment performed by this planning update.
