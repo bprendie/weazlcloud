@@ -64,6 +64,8 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiPutLibrary)
 	case r.URL.Path == "/api/uploads" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiCreateUpload)
+	case r.URL.Path == "/api/uploads" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiListUploads)
 	case strings.HasPrefix(r.URL.Path, "/api/uploads/"):
 		h.multiGuard(w, r, true, h.multiUploadRoute)
 	case r.URL.Path == "/api/library/folder" && r.Method == http.MethodPost:

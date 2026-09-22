@@ -11,6 +11,7 @@ var (
 	ErrChunkTooLarge = errors.New("upload chunk is too large")
 	ErrHashMismatch  = errors.New("upload content hash does not match")
 	ErrCorrupt       = errors.New("upload session storage is inconsistent")
+	ErrExpired       = errors.New("upload session expired")
 )
 
 type OffsetError struct{ Expected int64 }

@@ -28,6 +28,12 @@ type Manager struct {
 	statfs   func(string) (uint64, uint64, error)
 }
 
+type Reservation struct {
+	manager  *Manager
+	bytes    uint64
+	released bool
+}
+
 func New(root string) *Manager {
 	return &Manager{root: root, statfs: func(path string) (uint64, uint64, error) {
 		var fs syscall.Statfs_t
@@ -58,6 +64,14 @@ func (m *Manager) Check(users int, userUsed, current, incoming int64) error {
 }
 
 func (m *Manager) Reserve(userID string, users int, userUsed, current, incoming int64) (func(), error) {
+	r, err := m.ReserveTracked(userID, users, userUsed, current, incoming)
+	if err != nil {
+		return nil, err
+	}
+	return r.Release, nil
+}
+
+func (m *Manager) ReserveTracked(userID string, users int, userUsed, current, incoming int64) (*Reservation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if incoming < 0 || current < 0 || userUsed < 0 {
@@ -82,16 +96,43 @@ func (m *Manager) Reserve(userID string, users int, userUsed, current, incoming 
 		return nil, ErrExceeded
 	}
 	m.reserved += uint64(delta)
-	released := false
-	return func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if released {
-			return
-		}
-		released = true
-		m.reserved -= uint64(delta)
-	}, nil
+	return &Reservation{manager: m, bytes: uint64(delta)}, nil
+}
+
+func (r *Reservation) Resize(bytes int64) error {
+	if bytes < 0 {
+		return ErrExceeded
+	}
+	m := r.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r.released {
+		return ErrExceeded
+	}
+	s, err := m.status(1)
+	if err != nil {
+		return err
+	}
+	next := uint64(bytes)
+	without := m.reserved - r.bytes
+	if s.Used >= s.Limit || without > s.Limit-s.Used || next > s.Limit-s.Used-without {
+		return ErrExceeded
+	}
+	m.reserved = without + next
+	r.bytes = next
+	return nil
+}
+
+func (r *Reservation) Release() {
+	m := r.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r.released {
+		return
+	}
+	r.released = true
+	m.reserved -= r.bytes
+	r.bytes = 0
 }
 
 // GuardReader reserves known request bytes before they are spooled. For a

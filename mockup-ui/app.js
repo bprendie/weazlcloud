@@ -536,15 +536,31 @@ function uploadState() {
   return state.upload;
 }
 
-function setUploadStorageUser(username) {
-  uploadStorageKey = username ? `wzcl-upload-queue:${username}` : '';
-  if (!uploadStorageKey) return;
-  try {
-    const saved = JSON.parse(localStorage.getItem(uploadStorageKey) || '[]');
-    if (!Array.isArray(saved) || !saved.length) return;
-    state.upload.items = saved.map(item => ({...item, file: null, status: item.status === 'done' ? 'done' : 'needs-file', error: item.status === 'done' ? '' : 'Select this file again to resume.'}));
-    refreshUploadSummary();
-  } catch {}
+async function setUploadStorageUser(username) {
+	const nextKey = username ? `wzcl-upload-queue:${username}` : '';
+	if (nextKey !== uploadStorageKey) state.upload.items = [];
+	uploadStorageKey = nextKey;
+	if (!uploadStorageKey) return;
+	try {
+		const saved = JSON.parse(localStorage.getItem(uploadStorageKey) || '[]');
+		state.upload.items = Array.isArray(saved) ? saved.map(item => ({...item, file: null, status: item.status === 'done' ? 'done' : 'needs-file', error: item.status === 'done' ? '' : 'Select this file again to resume.'})) : [];
+		const serverSessions = await engine.listUploads();
+		for (const session of serverSessions) {
+			if (state.upload.items.some(item => item.sessionId === session.id)) continue;
+			state.upload.items.push({id: newUploadID(), sessionId: session.id, target: session.path, size: session.size, loaded: session.offset, confirmed: session.offset, status: session.status === 'complete' ? 'done' : 'needs-file', error: session.status === 'complete' ? '' : 'Select this file again to resume.', attempts: 0});
+		}
+		refreshUploadSummary();
+	} catch {}
+}
+
+async function validateReselectedUpload(file, session) {
+	if (file.size !== session.size) return false;
+	for (let i = 0; i < (session.chunk_hashes || []).length; i++) {
+		const start = i * UPLOAD_CHUNK_SIZE;
+		const end = Math.min(file.size, start + UPLOAD_CHUNK_SIZE);
+		if (end <= start || await engine.sha256Hex(file.slice(start, end)) !== session.chunk_hashes[i]) return false;
+	}
+	return true;
 }
 
 function persistUploadQueue() {
@@ -589,6 +605,35 @@ function uploadItemForSlot(slot) {
   return item;
 }
 
+const waitForUploadRetry = delay => new Promise(resolve => setTimeout(resolve, delay));
+
+async function appendChunkWithRetry(item, session, offset, chunk, slot) {
+	const hash = await engine.sha256Hex(chunk);
+	for (let attempt = 0; attempt < 5; attempt++) {
+		const request = engine.appendUpload(session.id, offset, chunk, hash, (sent, _total, phase) => {
+			item.loaded = sent;
+			const pct = item.size ? (sent / item.size) * 100 : 100;
+			item.status = 'uploading';
+			state.upload.rails[slot] = {name: item.target, pct, status: phase || `${Math.round(pct)}%`};
+			refreshUploadSummary();
+		});
+		uploadRequests.set(item.id, request);
+		try {
+			return await request;
+		} catch (err) {
+			uploadRequests.delete(item.id);
+			request.abort?.();
+			item.loaded = offset;
+			if (attempt === 4) throw err;
+			await waitForUploadRetry(400 * (2 ** attempt));
+			const current = await engine.uploadStatus(session.id);
+			if (current.path !== item.target || current.size !== item.size) throw new Error('Saved upload no longer matches this file.');
+			if (current.offset === offset + chunk.size) return current;
+			if (current.offset !== offset) throw new Error(`Upload resume position changed to ${current.offset}. Retry the upload.`);
+		}
+	}
+}
+
 async function uploadWorker(slot) {
   while (true) {
     const item = uploadItemForSlot(slot);
@@ -597,21 +642,18 @@ async function uploadWorker(slot) {
       let session = item.sessionId ? await engine.uploadStatus(item.sessionId).catch(() => null) : null;
       if (session && (session.path !== item.target || session.size !== item.size)) session = null;
       if (!session) session = await engine.createUpload(item.target, item.size);
+			if (session.offset && !await validateReselectedUpload(item.file, session)) {
+				const mismatch = new Error('The selected file does not match the saved upload. Select the original file to resume.');
+				mismatch.needsFile = true;
+				throw mismatch;
+			}
       item.sessionId = session.id;
       item.loaded = session.offset || 0;
       item.confirmed = item.loaded;
       while (item.loaded < item.size) {
         const offset = item.loaded;
         const chunk = item.file.slice(offset, Math.min(item.size, offset + UPLOAD_CHUNK_SIZE));
-        const request = engine.appendUpload(session.id, offset, chunk, (sent, _total, phase) => {
-          item.loaded = sent;
-          const pct = item.size ? (sent / item.size) * 100 : 100;
-          item.status = 'uploading';
-          state.upload.rails[slot] = {name: item.target, pct, status: phase || `${Math.round(pct)}%`};
-          refreshUploadSummary();
-        });
-        uploadRequests.set(item.id, request);
-        const result = await request;
+				const result = await appendChunkWithRetry(item, session, offset, chunk, slot);
         item.loaded = result.offset;
         item.confirmed = result.offset;
         session = result;
@@ -635,10 +677,10 @@ async function uploadWorker(slot) {
       }
       if (item.status === 'cancelled') {
         state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: 'cancelled'};
-      } else {
-        item.status = 'failed';
-        item.error = err.message;
-        state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: 'failed'};
+		} else {
+			item.status = err.needsFile ? 'needs-file' : 'failed';
+			item.error = err.message;
+			state.upload.rails[slot] = {name: `× ${item.target}`, pct: item.size ? (item.loaded / item.size) * 100 : 0, status: item.status};
       }
     } finally {
       uploadRequests.delete(item.id);
@@ -1448,6 +1490,7 @@ $('#unlock-form').onsubmit = async e => {
       await loadCapsules();
       await refreshPlaces();
       await loadAccessRequests();
+		await setUploadStorageUser(state.username);
     } catch (err) {
       toast(err.message);
     }
@@ -1646,7 +1689,7 @@ engine.probe().then(async s => {
       state.fullName = account.full_name || '';
       state.admin = !!account.admin;
     }
-    setUploadStorageUser(state.username || s.username || '');
+		await setUploadStorageUser(state.username || s.username || '');
     if (!s.unlocked) setVaultOnly(true);
   }
   if (s.authenticated && s.unlocked) {

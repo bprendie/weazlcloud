@@ -97,14 +97,21 @@ export const createUpload = (path, size, hash = '') => uploadJSON('/api/uploads'
   method: 'POST', headers: jsonHeaders, body: JSON.stringify({path, size, hash})
 });
 export const uploadStatus = id => uploadJSON('/api/uploads/' + encodeURIComponent(id));
+export const listUploads = () => uploadJSON('/api/uploads');
 
-export function appendUpload(id, offset, body, onProgress) {
+export async function sha256Hex(blob) {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function appendUpload(id, offset, body, hash, onProgress) {
   let xhr;
   const request = new Promise((resolve, reject) => {
     xhr = new XMLHttpRequest();
     xhr.open('PATCH', '/api/uploads/' + encodeURIComponent(id));
     xhr.setRequestHeader('X-Weazl-Desk', '1');
     xhr.setRequestHeader('Upload-Offset', String(offset));
+    xhr.setRequestHeader('Upload-Chunk-SHA256', hash);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(offset + e.loaded, offset + e.total, 'sending'); };
     xhr.onerror = () => reject(new Error('upload chunk failed'));

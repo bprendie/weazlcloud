@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -8,23 +9,24 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
 type session struct {
-	ID        string    `json:"id"`
-	OwnerID   string    `json:"owner_id"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	Offset    int64     `json:"offset"`
-	Expected  string    `json:"expected_hash,omitempty"`
-	Hash      string    `json:"hash,omitempty"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	OwnerID     string    `json:"owner_id"`
+	Path        string    `json:"path"`
+	Size        int64     `json:"size"`
+	Offset      int64     `json:"offset"`
+	Expected    string    `json:"expected_hash,omitempty"`
+	Hash        string    `json:"hash,omitempty"`
+	ChunkHashes []string  `json:"chunk_hashes,omitempty"`
+	PendingHash string    `json:"pending_hash,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 var componentRE = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -67,6 +69,13 @@ func (m *Manager) loadLocked(owner, id string) (session, error) {
 	}
 	if s.ID != id || s.OwnerID != owner || s.Size < 0 || s.Offset < 0 || s.Offset > s.Size {
 		return session{}, ErrCorrupt
+	}
+	if s.Status != "complete" && time.Since(s.UpdatedAt) >= SessionLifetime {
+		if err := m.removeLocked(s); err != nil {
+			return session{}, err
+		}
+		m.releaseReservationLocked(id)
+		return session{}, ErrExpired
 	}
 	changed, err := m.reconcileLocked(&s)
 	if err != nil {
@@ -121,20 +130,48 @@ func (m *Manager) reconcileLocked(s *session) (bool, error) {
 	changed := false
 	chunk, chunkErr := os.Open(m.chunkPath(s.OwnerID, s.ID))
 	if chunkErr == nil {
-		defer chunk.Close()
 		info, err := chunk.Stat()
 		if err != nil {
+			chunk.Close()
 			return false, err
 		}
-		if info.Size() == 0 || info.Size() > MaxChunkBytes || s.Offset+info.Size() > s.Size {
+		if info.Size() == 0 || info.Size() > MaxChunkBytes || info.Size() > s.Size {
+			chunk.Close()
 			return false, ErrCorrupt
 		}
-		if err := m.finishChunkLocked(*s, chunk, info.Size()); err != nil {
-			return false, err
+		chunkHash, hashErr := hashReader(chunk)
+		chunk.Close()
+		if hashErr != nil {
+			return false, hashErr
 		}
-		s.Offset += info.Size()
-		changed = true
-		if err := os.Remove(m.chunkPath(s.OwnerID, s.ID)); err != nil {
+		if s.PendingHash != "" && chunkHash == s.PendingHash {
+			if info.Size() > s.Size-s.Offset {
+				return false, ErrCorrupt
+			}
+			chunk, err = os.Open(m.chunkPath(s.OwnerID, s.ID))
+			if err != nil {
+				return false, err
+			}
+			if err := m.finishChunkLocked(*s, chunk, info.Size()); err != nil {
+				chunk.Close()
+				return false, err
+			}
+			chunk.Close()
+			s.Offset += info.Size()
+			s.ChunkHashes = append(s.ChunkHashes, chunkHash)
+			s.PendingHash = ""
+			changed = true
+		} else if s.PendingHash == "" && len(s.ChunkHashes) > 0 && chunkHash == s.ChunkHashes[len(s.ChunkHashes)-1] {
+			// The manifest was advanced and synced, but the process stopped
+			// before deleting the already committed chunk journal.
+		} else {
+			_ = os.Remove(m.chunkPath(s.OwnerID, s.ID))
+			if s.PendingHash != "" {
+				s.PendingHash = ""
+				changed = true
+			}
+		}
+		if err := os.Remove(m.chunkPath(s.OwnerID, s.ID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, err
 		}
 	} else if !errors.Is(chunkErr, os.ErrNotExist) {
@@ -153,12 +190,39 @@ func (m *Manager) reconcileLocked(s *session) (bool, error) {
 		part.Close()
 		return false, ErrCorrupt
 	}
+	if s.Offset > 0 && len(s.ChunkHashes) == 0 {
+		for start := int64(0); start < s.Offset; start += BrowserChunkBytes {
+			length := min(BrowserChunkBytes, s.Offset-start)
+			hash, hashErr := hashSegment(part, start, length)
+			if hashErr != nil {
+				part.Close()
+				return false, hashErr
+			}
+			s.ChunkHashes = append(s.ChunkHashes, hash)
+		}
+		changed = true
+	}
 	if info.Size() > s.Offset {
 		if info.Size() > s.Size {
 			part.Close()
 			return false, ErrCorrupt
 		}
-		s.Offset = info.Size()
+		if s.PendingHash == "" {
+			part.Close()
+			return false, ErrCorrupt
+		}
+		hash, hashErr := hashSegment(part, s.Offset, info.Size()-s.Offset)
+		if hashErr != nil || hash != s.PendingHash {
+			if err := part.Truncate(s.Offset); err != nil {
+				part.Close()
+				return false, err
+			}
+			s.PendingHash = ""
+		} else {
+			s.ChunkHashes = append(s.ChunkHashes, hash)
+			s.Offset = info.Size()
+			s.PendingHash = ""
+		}
 		changed = true
 	}
 	if err := part.Close(); err != nil {
@@ -173,6 +237,21 @@ func (m *Manager) reconcileLocked(s *session) (bool, error) {
 		changed = true
 	}
 	return changed, nil
+}
+
+func hashReader(r io.Reader) (string, error) {
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func hashSegment(file *os.File, offset, length int64) (string, error) {
+	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hashReader(io.LimitReader(file, length))
 }
 
 func (m *Manager) finishChunkLocked(s session, chunk *os.File, size int64) error {
@@ -191,30 +270,4 @@ func (m *Manager) finishChunkLocked(s session, chunk *os.File, size int64) error
 		return err
 	}
 	return part.Sync()
-}
-
-func (m *Manager) reconcileAll() {
-	entries, err := os.ReadDir(m.root)
-	if err != nil {
-		return
-	}
-	for _, owner := range entries {
-		if !owner.IsDir() || !validComponent(owner.Name()) {
-			continue
-		}
-		files, err := os.ReadDir(filepath.Join(m.root, owner.Name()))
-		if err != nil {
-			continue
-		}
-		for _, entry := range files {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
-				id := strings.TrimSuffix(entry.Name(), ".json")
-				m.mu.Lock()
-				if s, loadErr := m.loadLocked(owner.Name(), id); loadErr == nil && s.Status == "ready" {
-					_ = m.writeLocked(s)
-				}
-				m.mu.Unlock()
-			}
-		}
-	}
 }

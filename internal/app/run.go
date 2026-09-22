@@ -28,14 +28,16 @@ import (
 )
 
 type Node struct {
-	cfg   config.Config
-	desk  net.Listener
-	share net.Listener
-	drive net.Listener
-	svcs  []*http.Server
-	vault *vault.Vault
-	lib   *library.Library
-	caps  *capsule.Store
+	cfg          config.Config
+	desk         net.Listener
+	share        net.Listener
+	drive        net.Listener
+	svcs         []*http.Server
+	vault        *vault.Vault
+	lib          *library.Library
+	caps         *capsule.Store
+	uploads      func(context.Context)
+	uploadCancel context.CancelFunc
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -108,6 +110,7 @@ func Start(cfg config.Config) (*Node, error) {
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go n.svcs[i].Serve(ln)
 	}
+	n.startUploadExpiry(context.Background())
 	return n, nil
 }
 
@@ -136,6 +139,7 @@ func (n *Node) serve(ctx context.Context) error {
 	if err := n.bind(); err != nil {
 		return err
 	}
+	n.startUploadExpiry(ctx)
 	errc := make(chan error, 3)
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go func(srv *http.Server, ln net.Listener) {
@@ -166,8 +170,10 @@ func (n *Node) bind() error {
 	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
+	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
+	n.uploads = deskHandler.RunUploads
 	n.svcs = []*http.Server{
-		server(n.desk, desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry), n.cfg.DataDir),
+		server(n.desk, deskHandler, n.cfg.DataDir),
 		server(n.share, share.New(n.caps), n.cfg.DataDir),
 		server(n.drive, drive.NewMultiWith(us, q, registry), n.cfg.DataDir),
 	}
@@ -248,6 +254,9 @@ func safePath(path string) string {
 }
 
 func (n *Node) shutdown() error {
+	if n.uploadCancel != nil {
+		n.uploadCancel()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var first error
@@ -257,6 +266,15 @@ func (n *Node) shutdown() error {
 		}
 	}
 	return first
+}
+
+func (n *Node) startUploadExpiry(parent context.Context) {
+	if n.uploads == nil || n.uploadCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(parent)
+	n.uploadCancel = cancel
+	go n.uploads(ctx)
 }
 
 func probeReady(addr string) error {

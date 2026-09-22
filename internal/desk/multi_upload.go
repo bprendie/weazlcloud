@@ -20,6 +20,20 @@ type uploadCreateBody struct {
 	Hash string `json:"hash"`
 }
 
+func (h *Handler) multiListUploads(w http.ResponseWriter, r *http.Request) {
+	_, user, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	views, err := h.uploads.List(user)
+	if err != nil {
+		uploadError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
 func (h *Handler) multiCreateUpload(w http.ResponseWriter, r *http.Request) {
 	res, user, err := h.currentResource(r)
 	if err != nil {
@@ -75,7 +89,7 @@ func (h *Handler) multiUploadRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, view)
 	case http.MethodPatch:
-		h.multiAppendUpload(w, r, res, user, id)
+		h.multiAppendUpload(w, r, user, id)
 	case http.MethodDelete:
 		if err := h.uploads.Cancel(user, id); err != nil {
 			uploadError(w, err)
@@ -87,24 +101,15 @@ func (h *Handler) multiUploadRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) multiAppendUpload(w http.ResponseWriter, r *http.Request, res *filesvc.Resource, user users.User, id string) {
+func (h *Handler) RunUploads(ctx context.Context) { h.uploads.Run(ctx) }
+
+func (h *Handler) multiAppendUpload(w http.ResponseWriter, r *http.Request, user users.User, id string) {
 	offset, err := parseUploadOffset(r.Header.Get("Upload-Offset"))
 	if err != nil {
 		uploadError(w, err)
 		return
 	}
-	length := r.ContentLength
-	reserveBytes := length
-	if reserveBytes < 0 || reserveBytes > upload.MaxChunkBytes {
-		reserveBytes = upload.MaxChunkBytes
-	}
-	release, err := h.uploads.Reserve(user, reserveBytes, 0, res)
-	if err != nil {
-		uploadError(w, err)
-		return
-	}
-	defer release()
-	view, err := h.uploads.Append(r.Context(), user, id, offset, length, r.Body)
+	view, err := h.uploads.Append(r.Context(), user, id, offset, r.ContentLength, strings.ToLower(r.Header.Get("Upload-Chunk-SHA256")), r.Body)
 	if err != nil {
 		uploadError(w, err)
 		return
@@ -121,15 +126,6 @@ func (h *Handler) multiFinalizeUpload(w http.ResponseWriter, r *http.Request, re
 				return nil
 			}
 		}
-		current := int64(0)
-		if old, metadataErr := res.Lib.Metadata(ctx, session.Path); metadataErr == nil {
-			current = old.Size
-		}
-		release, reserveErr := h.uploads.Reserve(user, session.Size, current, res)
-		if reserveErr != nil {
-			return reserveErr
-		}
-		defer release()
 		stored, putErr := res.Lib.PutReader(ctx, session.Path, body, session.Size)
 		if putErr == nil {
 			file = fileView{Path: stored.Path, Size: stored.Size, Mtime: stored.Mtime}
@@ -168,6 +164,8 @@ func uploadError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, upload.ErrHashMismatch):
 		status = http.StatusUnprocessableEntity
+	case errors.Is(err, upload.ErrExpired):
+		status = http.StatusGone
 	case errors.Is(err, vault.ErrLocked):
 		status = http.StatusUnauthorized
 	}

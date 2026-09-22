@@ -2,6 +2,8 @@ package desk
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -68,12 +70,28 @@ func TestResumableUploadSurvivesNodeRestart(t *testing.T) {
 	if res.StatusCode != http.StatusCreated || session.ID == "" {
 		t.Fatalf("create upload status=%d session=%+v", res.StatusCode, session)
 	}
+	res, err = c.Get(s.URL + "/api/uploads")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sessions []struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&sessions); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(sessions) != 1 || sessions[0].ID != session.ID {
+		t.Fatalf("list uploads status=%d sessions=%+v", res.StatusCode, sessions)
+	}
 	first := len(payload) / 2
 	patch := func(offset int, body []byte) *http.Response {
 		req, _ := http.NewRequest(http.MethodPatch, s.URL+"/api/uploads/"+session.ID, bytes.NewReader(body))
 		req.Header.Set("X-Weazl-Desk", "1")
 		req.Header.Set("Upload-Offset", stringOffset(offset))
 		req.Header.Set("Content-Type", "application/octet-stream")
+		sum := sha256.Sum256(body)
+		req.Header.Set("Upload-Chunk-SHA256", hex.EncodeToString(sum[:]))
 		response, requestErr := c.Do(req)
 		if requestErr != nil {
 			t.Fatal(requestErr)
