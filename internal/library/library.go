@@ -29,6 +29,8 @@ type Library struct {
 	thumbJobs     map[string]*thumbnailJob
 	changeMu      sync.RWMutex
 	changeSink    ChangeSink
+	activityMu    sync.RWMutex
+	activity      func() func()
 	repo          string
 	vault         *vault.Vault
 	catalog       *catalog.Catalog

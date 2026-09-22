@@ -146,6 +146,11 @@ created on a fresh node is the local administrator.
 Set `WEAZLCLOUD_SECURE_COOKIES=true` when HTTPS terminates in front of the
 node. Leave it unset for direct HTTP loopback development.
 
+Background maintenance waits until storage activity has been quiet for five
+minutes. Set `WEAZLCLOUD_MAINTENANCE_QUIET` to a positive Go duration such as
+`2m` to change that technical interval. Health probes and the library event
+stream do not reset the quiet timer.
+
 The drive listener is WebDAV. In Thunar, use **File → Connect to Server** and
 enter `dav://HOST:7274/` for a direct HTTP connection, or `davs://HOST/` when
 the drive name is behind the HTTPS reverse proxy. Authenticate with the local

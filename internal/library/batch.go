@@ -20,8 +20,9 @@ const (
 )
 
 type batchRequest struct {
-	stage stagedUpload
-	done  chan batchResult
+	stage   stagedUpload
+	done    chan batchResult
+	release func()
 }
 
 type batchResult struct {
@@ -30,7 +31,7 @@ type batchResult struct {
 }
 
 func (l *Library) commitStagedQueued(ctx context.Context, stage stagedUpload) (catalog.File, error) {
-	request := batchRequest{stage: stage, done: make(chan batchResult, 1)}
+	request := batchRequest{stage: stage, done: make(chan batchResult, 1), release: l.trackStorage()}
 	l.batchMu.Lock()
 	l.batchPending = append(l.batchPending, request)
 	if !l.batchRunning {
@@ -143,6 +144,7 @@ func (l *Library) processBatchRequests(requests []batchRequest) {
 func (l *Library) finishBatchRequests(requests []batchRequest) {
 	for _, request := range requests {
 		l.setStageActive(request.stage.ID, false)
+		request.release()
 	}
 }
 

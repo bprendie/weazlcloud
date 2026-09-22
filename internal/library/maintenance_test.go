@@ -3,8 +3,10 @@ package library
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,9 +70,8 @@ func TestCleanupTrashPurgesZeroByteFilesAndEmptyFolders(t *testing.T) {
 	if err := lib.Delete("zero.bin"); err != nil {
 		t.Fatal(err)
 	}
-	reclaimed, err := lib.CleanupTrash(ctx, time.Now().UTC().Add(time.Hour))
-	if err != nil || reclaimed != 0 {
-		t.Fatalf("cleanup bytes=%d err=%v", reclaimed, err)
+	if _, err := lib.CleanupTrash(ctx, time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatalf("cleanup err=%v", err)
 	}
 	trash, err := lib.Trash(ctx)
 	if err != nil || len(trash) != 0 {
@@ -107,6 +108,53 @@ func TestCleanupTrashPurgesZeroByteFilesAndEmptyFolders(t *testing.T) {
 	snapshots, err = lib.restic.Snapshots(ctx, restic.Repo{Location: lib.repo, Password: pass})
 	if err != nil || len(snapshots) != 1 || snapshots[0] != newFile.Snap {
 		t.Fatalf("cleanup did not preserve only the live snapshot: %v err=%v", snapshots, err)
+	}
+}
+
+func TestCleanupTrashRetriesFailedPruneAndMeasuresRepositoryReclaim(t *testing.T) {
+	resticPath, err := exec.LookPath("restic")
+	if err != nil {
+		t.Skip("restic not installed")
+	}
+	dir := t.TempDir()
+	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))
+	if err := v.Forge([]byte("maintenance-test"), []byte("maintenance-test")); err != nil {
+		t.Fatal(err)
+	}
+	lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+	ctx := context.Background()
+	if _, err := lib.Put(ctx, "expired.bin", bytes.Repeat([]byte("reclaim-me"), 32*1024)); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.Delete("expired.bin"); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "failed-once")
+	shim := filepath.Join(dir, "restic-shim")
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = forget ] && [ ! -e \"" + marker + "\" ]; then\n    touch \"" + marker + "\"\n    echo injected-prune-failure >&2\n    exit 1\n  fi\ndone\nexec \"" + resticPath + "\" \"$@\"\n"
+	if err := os.WriteFile(shim, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lib.restic.Binary = shim
+	cutoff := time.Now().UTC().Add(time.Hour)
+	if _, err := lib.CleanupTrash(ctx, cutoff); err == nil || !strings.Contains(err.Error(), "injected-prune-failure") {
+		t.Fatalf("expected injected prune failure, got %v", err)
+	}
+	if _, err := os.Stat(lib.trashIntentPath()); err != nil {
+		t.Fatalf("cleanup intent missing after failed prune: %v", err)
+	}
+	if got := len(mustTrash(t, lib, ctx)); got != 0 {
+		t.Fatalf("expired trash entries remain after catalog purge: %d", got)
+	}
+	reclaimed, err := lib.CleanupTrash(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("retry cleanup failed: %v", err)
+	}
+	if reclaimed <= 0 {
+		t.Fatalf("physical repository reclaim=%d bytes, want positive", reclaimed)
+	}
+	if _, err := os.Stat(lib.trashIntentPath()); !os.IsNotExist(err) {
+		t.Fatalf("cleanup intent remains after successful retry: %v", err)
 	}
 }
 

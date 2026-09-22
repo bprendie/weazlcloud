@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/cryptox"
 	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
@@ -53,6 +54,9 @@ func (l *Library) Restore(ctx context.Context, name string) error {
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}
+	if err := l.resumeTrashCleanup(ctx); err != nil {
+		return err
+	}
 	if err := l.catalog.Restore(name); err != nil {
 		return err
 	}
@@ -66,12 +70,26 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 	if err := l.ensure(ctx); err != nil {
 		return 0, err
 	}
+	initialBytes, err := repositoryBytes(l.repo)
+	if err != nil {
+		return 0, err
+	}
 	if err := l.recoverStaged(ctx); err != nil {
 		return 0, err
 	}
+	pendingIntent, err := l.loadTrashIntent()
+	if err != nil {
+		return 0, err
+	}
+	if err := l.resumeTrashCleanup(ctx); err != nil {
+		return 0, err
+	}
+	if pendingIntent.Version != 0 {
+		l.publishChange(Change{Kind: "trash-purge"})
+	}
 	expired, protected, candidates := trashSnapshotPlan(l.catalog.All(), before)
 	if len(expired) == 0 {
-		return 0, nil
+		return reclaimedRepositoryBytes(l.repo, initialBytes)
 	}
 	forget := make([]string, 0)
 	if len(candidates) > 0 {
@@ -79,6 +97,7 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 		if err != nil {
 			return 0, err
 		}
+		defer cryptox.Zero(pass)
 		snapshots, err := l.restic.Snapshots(ctx, restic.Repo{Location: l.repo, Password: pass})
 		if err != nil {
 			return 0, err
@@ -92,27 +111,27 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 			}
 		}
 	}
-	removed, err := l.catalog.PurgeTrash(before)
-	if err != nil {
+	var intent trashCleanupIntent
+	if len(forget) > 0 {
+		intent = trashCleanupIntent{Version: 1, Before: before, Snapshots: forget}
+		if err := l.saveTrashIntent(intent); err != nil {
+			return 0, err
+		}
+	}
+	if _, err := l.catalog.PurgeTrash(before); err != nil {
 		return 0, err
 	}
 	if len(forget) > 0 {
-		pass, _, err := l.vault.Secrets()
-		if err != nil {
+		intent.CatalogPurged = true
+		if err := l.saveTrashIntent(intent); err != nil {
 			return 0, err
 		}
-		if err := l.restic.Forget(ctx, restic.Repo{Location: l.repo, Password: pass}, forget); err != nil {
+		if err := l.resumeTrashCleanup(ctx); err != nil {
 			return 0, err
 		}
 	}
 	l.publishChange(Change{Kind: "trash-purge"})
-	var removedBytes int64
-	for _, f := range removed {
-		if !f.Folder {
-			removedBytes += f.Size
-		}
-	}
-	return removedBytes, nil
+	return reclaimedRepositoryBytes(l.repo, initialBytes)
 }
 
 func trashSnapshotPlan(all []catalog.File, before time.Time) ([]catalog.File, map[string]struct{}, map[string]struct{}) {

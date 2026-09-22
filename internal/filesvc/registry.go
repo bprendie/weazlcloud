@@ -21,10 +21,11 @@ type Resource struct {
 }
 
 type Registry struct {
-	users *users.Store
-	quota *quota.Manager
-	mu    sync.Mutex
-	items map[string]*Resource
+	users    *users.Store
+	quota    *quota.Manager
+	activity func() func()
+	mu       sync.Mutex
+	items    map[string]*Resource
 }
 
 func NewRegistry(us *users.Store, q ...*quota.Manager) *Registry {
@@ -33,6 +34,16 @@ func NewRegistry(us *users.Store, q ...*quota.Manager) *Registry {
 		manager = q[0]
 	}
 	return &Registry{users: us, quota: manager, items: make(map[string]*Resource)}
+}
+
+func (r *Registry) SetActivityTracker(track func() func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.activity = track
+	for _, resource := range r.items {
+		resource.Lib.SetActivityTracker(track)
+		resource.Archives.SetActivityTracker(track)
+	}
 }
 
 func (r *Registry) For(u users.User) *Resource {
@@ -56,6 +67,8 @@ func (r *Registry) For(u users.User) *Resource {
 		}
 	}
 	item := &Resource{Vault: v, Lib: l, Changes: changes, Archives: NewArchiveManager(l, reserve)}
+	item.Lib.SetActivityTracker(r.activity)
+	item.Archives.SetActivityTracker(r.activity)
 	r.items[u.ID] = item
 	return item
 }

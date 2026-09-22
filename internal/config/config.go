@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 var forbiddenEnv = []string{
@@ -18,13 +19,14 @@ var forbiddenEnv = []string{
 }
 
 type Config struct {
-	DataDir       string
-	DeskAddr      string
-	ShareAddr     string
-	DriveAddr     string
-	PublicBase    string
-	DriveBase     string
-	SecureCookies bool
+	DataDir          string
+	DeskAddr         string
+	ShareAddr        string
+	DriveAddr        string
+	PublicBase       string
+	DriveBase        string
+	SecureCookies    bool
+	MaintenanceQuiet time.Duration
 }
 
 func Load() (Config, error) {
@@ -32,13 +34,21 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		DataDir:       env("WEAZLCLOUD_DATA", "data"),
-		DeskAddr:      env("WEAZLCLOUD_DESK_ADDR", "127.0.0.1:7272"),
-		ShareAddr:     env("WEAZLCLOUD_SHARE_ADDR", "127.0.0.1:7273"),
-		DriveAddr:     env("WEAZLCLOUD_DRIVE_ADDR", "127.0.0.1:7274"),
-		PublicBase:    strings.TrimSpace(os.Getenv("WEAZLCLOUD_PUBLIC_BASE")),
-		DriveBase:     strings.TrimSpace(os.Getenv("WEAZLCLOUD_DRIVE_BASE")),
-		SecureCookies: strings.EqualFold(strings.TrimSpace(os.Getenv("WEAZLCLOUD_SECURE_COOKIES")), "true"),
+		DataDir:          env("WEAZLCLOUD_DATA", "data"),
+		DeskAddr:         env("WEAZLCLOUD_DESK_ADDR", "127.0.0.1:7272"),
+		ShareAddr:        env("WEAZLCLOUD_SHARE_ADDR", "127.0.0.1:7273"),
+		DriveAddr:        env("WEAZLCLOUD_DRIVE_ADDR", "127.0.0.1:7274"),
+		PublicBase:       strings.TrimSpace(os.Getenv("WEAZLCLOUD_PUBLIC_BASE")),
+		DriveBase:        strings.TrimSpace(os.Getenv("WEAZLCLOUD_DRIVE_BASE")),
+		SecureCookies:    strings.EqualFold(strings.TrimSpace(os.Getenv("WEAZLCLOUD_SECURE_COOKIES")), "true"),
+		MaintenanceQuiet: 5 * time.Minute,
+	}
+	if raw := strings.TrimSpace(os.Getenv("WEAZLCLOUD_MAINTENANCE_QUIET")); raw != "" {
+		quiet, err := time.ParseDuration(raw)
+		if err != nil || quiet <= 0 {
+			return Config{}, errors.New("maintenance quiet period must be a positive duration")
+		}
+		cfg.MaintenanceQuiet = quiet
 	}
 	return cfg, cfg.Validate()
 }

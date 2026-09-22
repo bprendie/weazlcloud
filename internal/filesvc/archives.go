@@ -32,19 +32,37 @@ type ArchiveJobView struct {
 
 type archiveJob struct {
 	ArchiveJobView
-	manifest library.ArchiveManifest
-	cancel   context.CancelFunc
-	release  func()
-	path     string
+	manifest        library.ArchiveManifest
+	cancel          context.CancelFunc
+	release         func()
+	activityRelease func()
+	path            string
 }
 
 type ArchiveManager struct {
-	lib     *library.Library
-	root    string
-	reserve func(int64) (func(), error)
-	slots   chan struct{}
-	mu      sync.Mutex
-	jobs    map[string]*archiveJob
+	lib      *library.Library
+	root     string
+	reserve  func(int64) (func(), error)
+	activity func() func()
+	slots    chan struct{}
+	mu       sync.Mutex
+	jobs     map[string]*archiveJob
+}
+
+func (m *ArchiveManager) SetActivityTracker(track func() func()) {
+	m.mu.Lock()
+	m.activity = track
+	m.mu.Unlock()
+}
+
+func (m *ArchiveManager) trackStorage() func() {
+	m.mu.Lock()
+	track := m.activity
+	m.mu.Unlock()
+	if track == nil {
+		return func() {}
+	}
+	return track()
 }
 
 func NewArchiveManager(lib *library.Library, reserve ...func(int64) (func(), error)) *ArchiveManager {
@@ -69,6 +87,13 @@ func (m *ArchiveManager) reserveBytes(bytes int64) (func(), error) {
 }
 
 func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
+	releaseActivity := m.trackStorage()
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			releaseActivity()
+		}
+	}()
 	if len(paths) == 0 {
 		return ArchiveJobView{}, errors.New("archive selection is empty")
 	}
@@ -94,16 +119,18 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	}
 	created := time.Now().UTC()
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, path: filepath.Join(m.root, id+".zip")}
+	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip")}
 	m.mu.Lock()
 	m.cleanupLocked(created)
 	m.jobs[id] = job
 	m.mu.Unlock()
+	handedOff = true
 	go m.run(ctx, job)
 	return job.ArchiveJobView, nil
 }
 
 func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
+	defer job.activityRelease()
 	select {
 	case m.slots <- struct{}{}:
 		defer func() { <-m.slots }()

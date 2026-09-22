@@ -6,11 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/buildinfo"
@@ -19,9 +17,9 @@ import (
 	"github.com/bprendie/weazlcloud/internal/desk"
 	"github.com/bprendie/weazlcloud/internal/drive"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
+	"github.com/bprendie/weazlcloud/internal/idle"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
-	"github.com/bprendie/weazlcloud/internal/ready"
 	"github.com/bprendie/weazlcloud/internal/share"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -38,6 +36,8 @@ type Node struct {
 	caps         *capsule.Store
 	uploads      func(context.Context)
 	uploadCancel context.CancelFunc
+	activity     *idle.Coordinator
+	idleCancel   context.CancelFunc
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -111,6 +111,7 @@ func Start(cfg config.Config) (*Node, error) {
 		go n.svcs[i].Serve(ln)
 	}
 	n.startUploadExpiry(context.Background())
+	n.startIdleMaintenance(context.Background())
 	return n, nil
 }
 
@@ -140,6 +141,7 @@ func (n *Node) serve(ctx context.Context) error {
 		return err
 	}
 	n.startUploadExpiry(ctx)
+	n.startIdleMaintenance(ctx)
 	errc := make(chan error, 3)
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go func(srv *http.Server, ln net.Listener) {
@@ -170,92 +172,34 @@ func (n *Node) bind() error {
 	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
+	n.activity = idle.New(n.cfg.MaintenanceQuiet, nil)
+	registry.SetActivityTracker(n.activity.Track)
+	n.activity.Register(registry.CleanupExpiredTrash)
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
 	n.uploads = deskHandler.RunUploads
 	n.svcs = []*http.Server{
-		server(n.desk, deskHandler, n.cfg.DataDir),
-		server(n.share, share.New(n.caps), n.cfg.DataDir),
-		server(n.drive, drive.NewMultiWith(us, q, registry), n.cfg.DataDir),
+		server(n.desk, deskHandler, n.cfg.DataDir, n.activity),
+		server(n.share, share.New(n.caps), n.cfg.DataDir, n.activity),
+		server(n.drive, drive.NewMultiWith(us, q, registry), n.cfg.DataDir, n.activity),
 	}
 	return nil
 }
 
-func server(ln net.Listener, h http.Handler, dataDir string) *http.Server {
+func server(ln net.Listener, h http.Handler, dataDir string, activity *idle.Coordinator) *http.Server {
 	return &http.Server{
 		Addr:              ln.Addr().String(),
-		Handler:           observed(health(h, dataDir)),
+		Handler:           observed(health(trackRequests(h, activity), dataDir)),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 }
 
-func health(next http.Handler, dataDir string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/live" && r.Method == http.MethodGet {
-			ready.Live(w, r)
-			return
-		}
-		if r.URL.Path == "/ready" && r.Method == http.MethodGet {
-			ready.Storage(w, r, func() error {
-				return storageReady(dataDir)
-			})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-type observedWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *observedWriter) WriteHeader(status int) {
-	w.status = status
-	w.ResponseWriter.WriteHeader(status)
-}
-
-func (w *observedWriter) Write(body []byte) (int, error) {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(body)
-}
-
-func (w *observedWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-
-func (w *observedWriter) Flush() {
-	if w.status == 0 {
-		w.WriteHeader(http.StatusOK)
-	}
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func observed(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		started := time.Now()
-		ow := &observedWriter{ResponseWriter: w}
-		next.ServeHTTP(ow, r)
-		status := ow.status
-		if status == 0 {
-			status = http.StatusOK
-		}
-		log.Printf("http method=%s path=%s status=%d duration_ms=%d", r.Method, safePath(r.URL.Path), status, time.Since(started).Milliseconds())
-	})
-}
-
-func safePath(path string) string {
-	if strings.HasPrefix(path, "/g/") {
-		return "/g/:capsule"
-	}
-	return path
-}
-
 func (n *Node) shutdown() error {
 	if n.uploadCancel != nil {
 		n.uploadCancel()
+	}
+	if n.idleCancel != nil {
+		n.idleCancel()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -266,6 +210,15 @@ func (n *Node) shutdown() error {
 		}
 	}
 	return first
+}
+
+func (n *Node) startIdleMaintenance(parent context.Context) {
+	if n.activity == nil || n.idleCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(parent)
+	n.idleCancel = cancel
+	go n.activity.Run(ctx)
 }
 
 func (n *Node) startUploadExpiry(parent context.Context) {
