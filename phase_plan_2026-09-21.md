@@ -225,7 +225,7 @@ Next task: P4.6 media lifecycle and safe SVG handling.
 
 Date: September 21, 2026
 Task ID: P4.6 foundation
-Commit: pending
+Commit: 9b745e1, 9e3ee90
 Changed: Added stable media paths to grid players, preserved playback position and play state across ordinary library redraws, enforced one active native player, and stopped media when leaving the library, changing folders, or locking the vault. Added safe escaped SVG text handling for expanded previews and retained authenticated native range streaming for media.
 Checks run and results: `make desk-assets` passed; `go test ./...` passed; `go vet ./...` passed; `go test -race ./internal/desk ./internal/library` passed; JavaScript syntax checks and `git diff --check` passed.
 Known limitations / decisions needed: Video poster extraction, audio artwork cards, expanded viewer polish, unsupported-codec fallback, and a browser fixture that proves play/seek/refresh behavior remain open before P4.6 can be checked off.
