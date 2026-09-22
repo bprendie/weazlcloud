@@ -1,8 +1,8 @@
 # WeazlCloud gap workbook — September 22, 2026
 
-Status: scope and product decisions pending. Continues `phase_plan_2026-09-21.md`.
+Status: initial decisions recorded; remaining questions pending. Continues `phase_plan_2026-09-21.md`.
 
-Purpose: define the next work after the existing workbook, with emphasis on dependable daily use. These are proposed tasks, not completed work or new retention/privacy policy. Resolve the questions below before implementing dependent behavior.
+Purpose: define the next work after the existing workbook, with emphasis on dependable daily use. These are proposed tasks, not completed work. Explicit decisions below govern retention and behavior. Resolve the questions below before implementing dependent behavior.
 
 Keep identity and processing local, preserve existing vaults and host settings, retain shared available-disk storage with the silent system reserve, and keep upload size unrestricted except by available space. Cross-user deduplication still needs a separate privacy design. Stored node keys remain the current convenience choice: controlling the host permits decryption; UI administrator isolation does not prevent that.
 
@@ -26,33 +26,38 @@ Questions:
 2. Must mounting remain built into Thunar with no helper, or would you accept a small local client if measurements justify it?
 3. Should mounted access remain LAN/VPN-only, or should remote internet access become part of the design?
 
-## G3 — Overwrite recovery and backups
+## G3 — Simple Trash retention
 
-- [ ] Design recovery for overwritten files with visible disk accounting and conflict-safe restore.
-- [ ] Rehearse recovery from an independent backup location, including older populated data and required key material.
+Decision: WeazlCloud is not a recovery service. Keep 30-day Trash with automatic emptying; do not add overwrite version history or a backup/recovery service to this gap's scope. Existing operational backup procedures remain separate.
 
-Questions:
-1. Should overwrites retain previous versions automatically, or should version history be opt-in by folder?
-2. What limit should govern old versions: age, version count, disk budget, or a combination?
-3. Do you already have WeazlBack backing up this volume to another disk/machine, and what maximum amount of lost work is acceptable?
+- [ ] Enforce automatic emptying of Trash after 30 days through idle maintenance.
+- [ ] Verify cleanup protects live files and reclaims unreferenced storage safely.
+
+The former version-history and recovery-service questions are superseded by this decision.
 
 ## G4 — Account lifecycle
+
+Decisions: disabling an account revokes its grab links. Deleting a user deletes all of that user's assets, with no retirement retention period. This defines future deletion behavior; it is not an instruction to delete any existing user now.
+
+- [ ] On deletion, invalidate sessions and cancel/drain active jobs before removing the user's vault, keys, catalog, repository, Trash, previews, staging, generated ZIPs, capsules, and other owned runtime data. Prevent in-flight work from recreating deleted assets; retry interrupted cleanup.
 
 - [ ] Add account suspension, session revocation, administrator succession, and deliberate retirement handling.
 - [ ] Ensure these controls do not expose vault contents through the admin UI.
 
 Questions:
-1. When an account is disabled, should its existing grab links remain usable or be revoked too?
-2. After an account is retired, should its vault remain indefinitely until explicit deletion, or enter a timed retention period?
+1. Resolved: revoke existing grab links when disabling an account.
+2. Resolved: user deletion removes all owned assets; no retirement retention period.
 3. Should another local account be promotable to administrator, or should there be one administrator with an explicit transfer procedure?
 
 ## G5 — Unattended maintenance
+
+Decision: run maintenance when the node is idle. Define idle detection and pause/resume behavior around active transfers during implementation.
 
 - [ ] Schedule expiry and abandoned-file cleanup independently of user visits; recover from interrupted work and report failures.
 - [ ] Coordinate cleanup with active uploads, archives, retained snapshots, and available disk.
 
 Questions:
-1. Should maintenance run continuously at low priority, during a nightly window, or only when the node is idle?
+1. Resolved: run when idle.
 2. Where should failures appear: an admin dashboard, locally configured email, or both?
 3. Near full capacity, should cleanup remove only already-expired data, or may it also evict previews and completed on-demand ZIPs before their normal expiry?
 
@@ -73,7 +78,7 @@ Questions:
 
 Questions:
 1. What should import support first: Google Takeout, a server-mounted folder, or a browser-selected folder tree?
-2. When an imported path already exists, should the default be skip identical/keep both when different, explicit replace, or ask per conflict?
+2. Resolved: keep both files when imported content differs at an existing path. Identical-file handling remains to be specified.
 3. Should a complete export contain current files only, or also Trash and retained file versions in separate folders?
 
 ## G8 — Failure and concurrency testing
@@ -82,14 +87,16 @@ Questions:
 - [ ] Record resource limits and browsing responsiveness under mixed workloads; avoid a 500-file fixture unless separately requested.
 
 Questions:
-1. For simultaneous edits to the same file, should the second save be rejected, preserved as a conflict copy, or explicitly allowed to replace the first?
+1. Resolved: allow replacement on simultaneous saves; the last successful committed write wins. Failed writes must not replace committed data. This is separate from the keep-both import policy.
 2. What everyday load should we target: concurrent users, typical folder sizes, and largest files?
 3. Can a disposable container on the production host be used for realistic disk/performance tests, or should all fault and load testing stay on this workstation?
 
 ## Proposed order
 
-Resumable uploads, mounted-drive performance, overwrite recovery, and unattended maintenance are the first priorities. Use failure tests throughout implementation. Schedule account lifecycle, richer previews, and import/export according to the answers above.
+Resumable uploads, mounted-drive performance, automatic 30-day Trash emptying, and unattended maintenance are the first priorities. Use failure tests throughout implementation. Schedule account lifecycle, richer previews, and import/export according to the answers above.
 
 ## Work log
 
 September 22, 2026: Recorded eight gaps and 24 outstanding questions. No new product decisions have been assumed. Implementation remains pending answers and task breakdown.
+
+September 22, 2026 — Bob's decisions: simple 30-day auto-empty Trash, no overwrite history/recovery service; revoke grabs on account disable; delete all owned assets on user deletion; maintenance when idle; keep both differing import files; allow replacement for simultaneous saves. References “1a”, “2a”, “6a”, and “7a” name questions but do not identify the selected options; clarification is pending. Other unanswered questions remain open. Documentation only; no runtime changes or user deletion performed.
