@@ -121,10 +121,17 @@ Read: `mockup-ui/app.js` ingest placeholder, `mockup-ui/views.js`, `internal/lib
 
 Read: `Makefile`, `.github/workflows/ci.yml`, `scripts/smoke-browser.sh`, `scripts/recovery-smoke.sh`, `scripts/container-smoke.sh`, `internal/app/run.go`, `internal/ready/ready.go`, and existing storage tests.
 
-- [ ] **G8.1 — Audit existing verification first.** Check whether `/ready` detects an unwritable/full data or temp volume rather than only path existence. Verify smoke scripts control the actual child process, use unique disposable names, clean only resources they created, fail on real errors, and assert their advertised behavior. The current browser page marker is not an authenticated workflow test. Pass: record concrete gaps, fix failing harness assumptions, and add deterministic checks where claims are unsupported.
+- [x] **G8.1 — Audit existing verification first.** Check whether `/ready` detects an unwritable/full data or temp volume rather than only path existence. Verify smoke scripts control the actual child process, use unique disposable names, clean only resources they created, fail on real errors, and assert their advertised behavior. The current browser page marker is not an authenticated workflow test. Pass: record concrete gaps, fix failing harness assumptions, and add deterministic checks where claims are unsupported.
 - [ ] **G8.2 — Inject failures locally.** Exercise interrupted catalog save, upload finalize, maintenance prune, user deletion, missing/read-only/full volume, and server restart. Use test seams or isolated bounded filesystems rather than filling host disks. Pass: committed content remains readable, incomplete operations reconcile, and readiness/errors explain storage failure without secrets.
 - [ ] **G8.3 — Check write ordering.** Race normal Desk and WebDAV replacements with distinct payload hashes, then verify final catalog and bytes agree with the final successful commit. A failed write must not win. Separately verify Takeout keep-both behavior. Pass: repeatable tests and race detector results; no mixed or truncated content.
 - [ ] **G8.4 — Rehearse upgrade and mixed use.** On this workstation, use populated disposable older-format data. Run browsing, upload, thumbnail, ZIP, maintenance, and mounted access together. Check actual login/unlock and user isolation through the browser/API. Pass: record latency, memory, queue limits, hashes, migration result, and rollback constraints. D10 governs broader load or production-host tests; use existing small fixtures meanwhile.
+
+G8 progress on September 22:
+
+- G8.1 is complete. `/ready` now writes, syncs, and removes bounded probes in the configured data and temp directories. The browser smoke builds and controls a direct child binary, authenticates and unlocks a disposable account through the API, and then checks the page. Docker smoke names and removes only its own unique container and volume.
+- G8.2 has deterministic coverage for missing and read-only data paths, catalog atomic-save failure, upload-finalize failure, durable staging, and restart reconciliation. Maintenance-prune, user-deletion, and genuinely full-volume injection remain open because those workflows are not yet implemented and no disk-filling test is allowed on the workstation.
+- G8.3 has a repeatable Desk/WebDAV replacement race; the final bytes must equal one complete successful payload, and `go test -race ./...` passes. Takeout keep-both remains pending G7.
+- G8.4 has passed the authenticated browser, restore, and disposable container smoke paths. A populated older-format upgrade rehearsal, simultaneous ZIP/thumbnail/maintenance/mounted use, and measured latency/memory report remain open.
 
 ## Acceptance and handoff
 
@@ -148,3 +155,4 @@ Next task:
 September 22: Recorded eight gaps and 24 questions in `d22e4ee`.
 September 22: Recorded 30-day Trash, destructive user deletion, grab revocation, idle maintenance, keep-both import conflicts, and replacement semantics in `b9a2263`.
 September 22: Bob confirmed restart-resumable uploads, folder-browsing priority, RAW/HEIC priority, and Google Takeout first. Expanded this workbook into ordered implementation tasks, acceptance conditions, and explicit remaining decisions. No runtime changes or production deployment performed by this planning update.
+September 22: Completed G8.1 verification hardening and the first G8.2/G8.3 failure and replacement checks. `make check`, authenticated browser smoke, recovery smoke, and updated disposable-container smoke passed. G8.2/G8.3/G8.4 remain partial as recorded above; no production data was touched.

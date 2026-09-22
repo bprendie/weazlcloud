@@ -98,3 +98,23 @@ func TestCatalogRejectsUnsafeRenameWithoutMutating(t *testing.T) {
 		t.Fatal("collision changed the catalog")
 	}
 }
+
+func TestCatalogSaveFailureDoesNotPublishMemoryState(t *testing.T) {
+	c := testCatalog(t)
+	if err := c.Put(File{Path: "before.txt", Size: 6, Hash: "before", Present: true}); err != nil {
+		t.Fatal(err)
+	}
+	// A directory at the target path makes the final atomic rename fail after
+	// the encrypted temporary file has been written and synced.
+	dir := filepath.Dir(c.path)
+	c.path = dir
+	if err := c.Put(File{Path: "after.txt", Size: 5, Hash: "after", Present: true}); err == nil {
+		t.Fatal("catalog save unexpectedly succeeded")
+	}
+	if _, ok := c.Get("after.txt"); ok {
+		t.Fatal("failed catalog save was published in memory")
+	}
+	if _, ok := c.Get("before.txt"); !ok {
+		t.Fatal("committed catalog entry disappeared after failed save")
+	}
+}

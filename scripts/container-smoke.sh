@@ -2,20 +2,19 @@
 set -euo pipefail
 
 image="${WEAZLCLOUD_IMAGE:-weazlcloud:2026.09.21}"
-name="weazlcloud-phase6-smoke"
+nonce="${WEAZLCLOUD_SMOKE_ID:-$(date +%s)-$$}"
+name="weazlcloud-phase6-smoke-$nonce"
 desk_port="${WEAZLCLOUD_CONTAINER_PORT:-19272}"
 share_port="$((desk_port + 1))"
 drive_port="$((desk_port + 2))"
 root="$(mktemp -d)"
-volume_name="weazlcloud-phase6-smoke-data"
+volume_name="weazlcloud-phase6-smoke-data-$nonce"
 jar="$root/cookies.txt"
 payload="$root/sample.svg"
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true; docker volume rm "$volume_name" >/dev/null 2>&1 || true; rm -rf "$root"' EXIT
 
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="purple"/></svg>\n' >"$payload"
 expected="$(sha256sum "$payload" | awk '{print $1}')"
-docker rm -f "$name" >/dev/null 2>&1 || true
-docker volume rm "$volume_name" >/dev/null 2>&1 || true
 docker run --detach --name "$name" \
   --publish "127.0.0.1:$desk_port:7272" \
   --publish "127.0.0.1:$share_port:7273" \

@@ -191,8 +191,7 @@ func health(next http.Handler, dataDir string) http.Handler {
 		}
 		if r.URL.Path == "/ready" && r.Method == http.MethodGet {
 			ready.Storage(w, r, func() error {
-				_, err := os.Stat(dataDir)
-				return err
+				return storageReady(dataDir)
 			})
 			return
 		}
