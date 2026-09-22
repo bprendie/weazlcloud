@@ -107,13 +107,19 @@ function gridFileCard(f, fullPath = false) {
   const video = ['MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V'].includes(kind) || ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'].includes(ext);
   const media = audio || video;
   const raster = ['JPG', 'JPEG', 'PNG', 'GIF'].includes(kind) || ['jpg', 'jpeg', 'png', 'gif'].includes(ext);
-  const capability = `data-grid-capability="${esc(path)}"`;
+  const model = ['STL', '3MF'].includes(kind);
+  const pdf = kind === 'PDF' || ext === 'pdf';
+  const capability = (!media && !raster && !model && !pdf) ? `data-grid-capability="${esc(path)}"` : '';
   const preview = media
-    ? `<${audio ? 'audio' : 'video'} class="grid-media-player" ${capability} src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
+    ? `<${audio ? 'audio' : 'video'} class="grid-media-player" data-media-path="${esc(path)}" src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
     : raster
     ? `<img class="grid-preview" ${capability} data-grid-thumbnail="${esc(path)}" alt="" loading="lazy">`
-    : ['WEB', 'WEBP', 'SVG', 'STL', '3MF'].includes(kind)
+    : ['WEB', 'WEBP'].includes(kind)
       ? `<img class="grid-preview" ${capability} src="${href}" alt="" loading="lazy">`
+      : model
+      ? `<img class="grid-preview" src="${href}" alt="" loading="lazy">`
+      : kind === 'SVG'
+      ? `<div class="grid-kind" ${capability}><span class="kind type-svg">SVG</span></div>`
       : ['MD', 'TXT', 'CSV', 'JSON', 'XML', 'LOG', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP'].includes(kind) || ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'].includes(ext)
       ? `<div class="grid-text-preview" ${capability} data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
       : `<div class="grid-kind" ${capability}><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
@@ -350,7 +356,31 @@ function admin() {
     `<div class="file-list admin-requests">${state.requests.length ? state.requests.map(q => `<div class="file-row"><span class="kind ${q.status === 'pending' ? 'type-dir' : ''}">${esc(q.status.toUpperCase())}</span><span><strong>${esc(q.username)}</strong><small>${esc(q.note || 'No note')} · ${esc(new Date(q.created_at).toLocaleString())}</small></span>${q.status === 'pending' ? `<button class="text-button" data-admin-approve="${esc(q.id)}">Approve</button><button class="text-button" data-admin-reject="${esc(q.id)}">Reject</button>` : ''}</div>`).join('') : '<p class="empty">No account requests.</p>'}</div>`;
 }
 
+let preservedMediaPlayback = null;
+
+function preserveMediaPlayback() {
+  const media = document.querySelector('.grid-media-player[data-media-path]');
+  if (!media || !Number.isFinite(media.currentTime) || media.currentTime === 0) return;
+  preservedMediaPlayback = {path: media.dataset.mediaPath, time: media.currentTime, paused: media.paused};
+}
+
+function restoreMediaPlayback() {
+  const saved = preservedMediaPlayback;
+  preservedMediaPlayback = null;
+  if (!saved) return;
+  const media = [...document.querySelectorAll('.grid-media-player[data-media-path]')]
+    .find(el => el.dataset.mediaPath === saved.path);
+  if (!media) return;
+  const restore = () => {
+    media.currentTime = saved.time;
+    if (!saved.paused) media.play().catch(() => {});
+  };
+  if (media.readyState >= 1) restore();
+  else media.addEventListener('loadedmetadata', restore, {once: true});
+}
+
 export function renderMain() {
+  preserveMediaPlayback();
   const pages = {home, library, send, capsules, places, admin, kit, takeout, check, destroy};
   const html = (pages[state.view] || home)();
   $('#content').innerHTML = html;
@@ -365,6 +395,7 @@ export function renderMain() {
     else b.removeAttribute('aria-current');
   });
   renderSide();
+  requestAnimationFrame(restoreMediaPlayback);
 }
 
 export function renderSide() {

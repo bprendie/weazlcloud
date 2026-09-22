@@ -116,6 +116,7 @@ function applyGridCapability(el, capability) {
     const isVideo = String(capability.content_type || '').startsWith('video/');
     replacement = document.createElement(isVideo ? 'video' : 'audio');
     replacement.className = 'grid-media-player';
+    replacement.dataset.mediaPath = path;
     replacement.src = `/api/library?path=${encoded}&inline=1`;
     replacement.controls = true;
     replacement.preload = 'metadata';
@@ -241,7 +242,8 @@ async function previewFile(id) {
     const url = URL.createObjectURL(result.blob);
     const type = result.type.split(';')[0];
     let body;
-    if (type.startsWith('image/')) body = `<img class="file-preview-image" src="${url}" alt="${esc(f.title)}">`;
+    if (type === 'image/svg+xml' || path.toLowerCase().endsWith('.svg')) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
+    else if (type.startsWith('image/')) body = `<img class="file-preview-image" src="${url}" alt="${esc(f.title)}">`;
     else if (type.startsWith('text/') || ['application/json', 'application/xml', 'application/javascript', 'application/x-yaml'].includes(type)) body = `<pre class="file-preview-text">${esc(await result.blob.text())}</pre>`;
     else if (type === 'application/pdf') body = `<iframe class="file-preview-frame" src="${url}" title="${esc(f.title)}"></iframe>`;
     else if (type.startsWith('audio/')) body = `<audio class="file-preview-media" src="${url}" controls preload="metadata"></audio>`;
@@ -448,9 +450,27 @@ function vaultCard() {
 }
 
 function navigate(view) {
+  if (state.view === 'library' && view !== 'library') stopMediaPlayback();
   state.view = view;
   renderMain();
 }
+
+let activeMedia = null;
+
+function stopMediaPlayback() {
+  document.querySelectorAll('.grid-media-player, .file-preview-media').forEach(media => {
+    media.pause();
+    media.currentTime = 0;
+  });
+  activeMedia = null;
+}
+
+document.addEventListener('play', event => {
+  const media = event.target;
+  if (!(media instanceof HTMLMediaElement)) return;
+  if (activeMedia && activeMedia !== media) activeMedia.pause();
+  activeMedia = media;
+}, true);
 
 function selectFile(id) {
   state.selected = {type: 'file', id};
@@ -586,6 +606,7 @@ function ingest() {
 
 async function lockVault() {
   stopWork();
+  stopMediaPlayback();
   if (live) {
     try { await engine.lock(); } catch (err) { toast(err.message); return; }
   }
@@ -758,8 +779,8 @@ document.addEventListener('click', e => {
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
-  if (b.dataset.openFolder) { state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
-  if (b.dataset.libraryPath !== undefined) { state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
+  if (b.dataset.openFolder) { stopMediaPlayback(); state.currentPath = b.dataset.openFolder; state.selected = null; renderMain(); renderDeck(); }
+  if (b.dataset.libraryPath !== undefined) { stopMediaPlayback(); state.currentPath = b.dataset.libraryPath; state.selected = null; renderMain(); renderDeck(); }
   if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.selectFile) { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
