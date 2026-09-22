@@ -85,7 +85,7 @@ Goal: make Library feel like a Drive-style file browser. Show useful content pre
 
 Read: `internal/desk/preview.go`, `internal/desk/library.go`, `mockup-ui/views.js`, `mockup-ui/app.js`, `internal/desk/preview_test.go`.
 
-**Blocking gate — P4.0 account/vault handoff:** the authenticated login state must transition cleanly into vault-only unlock. A hidden or disabled username field must never be required while unlocking the already-authenticated user's vault. This gate is mandatory before Phase 4 can exit. Verify the sequence with account login, an incorrect vault passphrase, a retry using the correct passphrase, a refresh between steps, and a locked-vault session; the user must never be told that the username is missing after account authentication succeeds.
+**Blocking gate — P4.0 account/vault handoff: cleared.** The authenticated login state now transitions cleanly into vault-only unlock. A hidden or disabled username field is never required while unlocking the already-authenticated user's vault. Chromium smoke verification covered account login, an incorrect vault passphrase, retry with the correct passphrase, refresh between steps, and a locked-vault session; the user was never told that the username was missing after account authentication succeeded.
 
 - [x] **P4.1 — Add a private thumbnail endpoint.** Generate small raster thumbnails instead of returning full-size photos to grid cards. Key cached previews by owner, file version, renderer version, and requested size. Enforce authorization and vault state on cache hits too. Define encryption and eviction for cached data. Pass: replacing a file changes its preview; another user and a locked session cannot read a cached thumbnail. Implemented for JPEG, PNG, and GIF with encrypted per-user cache files, a 256 MiB/4096-file eviction bound, versioned keys, and an authenticated `/api/library/thumbnail` endpoint. The localhost smoke path uploaded a PNG after bootstrap/unlock and received a `200 image/png` thumbnail.
 - [ ] **P4.2 — Bound preview work.** Limit simultaneous render jobs and total cache size; prioritize visible cards and cancel obsolete requests. Limit parser memory, archive expansion, and execution time without restricting upload size. Pass: a large folder or malformed preview file does not monopolize uploads or exhaust the node.
@@ -205,6 +205,14 @@ Commit: pending
 Changed: Split document and model preview parsing into bounded helpers. XLSX previews now resolve shared strings and cell types into row/cell labels; PPTX previews sort slide numbers naturally; 3MF previews honor build objects, nested components, and 3MF affine transforms; STL and 3MF geometry rejects non-finite coordinates and remains capped.
 Checks run and results: `go test ./...` passed; `go vet ./...` passed; `go test -race ./internal/desk` passed; new XLSX, PPTX, 3MF component-transform, and existing STL/DOCX tests passed. New preview files remain below the repository's 300-line file policy.
 Known limitations / decisions needed: These are text-only document previews rather than page-faithful office rendering. The browser still chooses preview behavior from a frontend extension/kind allowlist; generic MIME capability detection, SVG safety, and browser/node large-folder measurements remain open.
+Next task: P4.5 shared preview capabilities and generic MIME detection.
+
+Date: September 21, 2026
+Task ID: P4.0 account/vault handoff gate
+Commit: pending
+Changed: Fixed the multiuser login transition so a successful account login enters vault-only mode even when the account and vault passwords differ. Vault retries no longer validate the hidden username field; refreshes and explicit vault locks restore the same vault-only screen; the passphrase label changes from account/vault to vault-only. Synced both frontend copies.
+Checks run and results: `node --check mockup-ui/app.js` passed; Chromium/CDP smoke passed account login with `phase4-password`, wrong vault attempt, refresh, correct `phase4-vault` unlock, lock, and second vault-only unlock state; `git diff --check` passed.
+Known limitations / decisions needed: The browser gate uses a local Chromium smoke flow; full browser automation remains part of P6.2.
 Next task: P4.5 shared preview capabilities and generic MIME detection.
 
 Measurement run, September 21, 2026:
