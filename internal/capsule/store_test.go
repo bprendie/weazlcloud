@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -97,5 +98,21 @@ func TestExpired(t *testing.T) {
 	}
 	if _, _, err := s.Grab(got.ID, ""); err != ErrGone {
 		t.Fatalf("expired %v", err)
+	}
+}
+
+func TestCleanupExpiredRemovesPayload(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	rec, err := s.Mint(Record{Name: "old.bin", Kind: "file", Gate: "open", Expires: time.Now().Add(-time.Minute), Limit: 1}, "", []byte("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleaned, err := s.CleanupExpired(time.Now())
+	if err != nil || cleaned != 1 {
+		t.Fatalf("cleaned=%d err=%v", cleaned, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, rec.ID, "payload")); !os.IsNotExist(err) {
+		t.Fatalf("expired payload still exists: %v", err)
 	}
 }

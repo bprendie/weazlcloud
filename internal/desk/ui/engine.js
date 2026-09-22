@@ -84,6 +84,20 @@ export function putLibraryProgress(path, body, onProgress) {
 
 export const createFolder = path => post('/api/library/folder', {path});
 export const renameLibrary = (from, to) => post('/api/library/rename', {from, to});
+export const copyLibrary = (from, to) => post('/api/library/copy', {from, to});
+export async function listTrash() {
+  const r = await fetch('/api/trash');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'trash');
+  return j;
+}
+export const restoreTrash = path => post('/api/trash/restore', {path});
+export async function cleanupTrash() {
+  const r = await fetch('/api/trash', {method: 'DELETE', headers: jsonHeaders});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'trash cleanup');
+  return j;
+}
 
 export async function quota() {
   const r = await fetch('/api/quota');

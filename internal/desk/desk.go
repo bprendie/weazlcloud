@@ -106,6 +106,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.guard(w, r, h.putLibrary)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodDelete:
 		h.guard(w, r, h.deleteLibrary)
+	case r.URL.Path == "/api/library/copy" && r.Method == http.MethodPost:
+		h.guard(w, r, h.copyLibrary)
+	case r.URL.Path == "/api/trash" && r.Method == http.MethodGet:
+		h.trash(w, r)
+	case r.URL.Path == "/api/trash/restore" && r.Method == http.MethodPost:
+		h.guard(w, r, h.restoreTrash)
+	case r.URL.Path == "/api/trash" && r.Method == http.MethodDelete:
+		h.guard(w, r, h.cleanupTrash)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodGet:
 		h.listCapsules(w, r)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodPost:

@@ -43,6 +43,34 @@ func (r Runner) Dump(ctx context.Context, repo Repo, snap, name string, w io.Wri
 	return r.Run(ctx, repo, nil, w, "dump", snap, name)
 }
 
+func (r Runner) Snapshots(ctx context.Context, repo Repo) ([]string, error) {
+	var raw []struct {
+		ID string `json:"id"`
+	}
+	var out bytes.Buffer
+	if err := r.Run(ctx, repo, nil, &out, "snapshots", "--json"); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(raw))
+	for _, snapshot := range raw {
+		if snapshot.ID != "" {
+			ids = append(ids, snapshot.ID)
+		}
+	}
+	return ids, nil
+}
+
+func (r Runner) Forget(ctx context.Context, repo Repo, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	args := append([]string{"forget", "--prune"}, ids...)
+	return r.Run(ctx, repo, nil, io.Discard, args...)
+}
+
 func snapshotID(stdout []byte) (string, error) {
 	var id string
 	for _, line := range bytes.Split(stdout, []byte("\n")) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/restic"
@@ -33,6 +34,8 @@ type Library struct {
 	catalog       *catalog.Catalog
 	restic        restic.Runner
 }
+
+const TrashLifetime = 30 * 24 * time.Hour
 
 func (l *Library) SetChangeSink(sink ChangeSink) {
 	l.changeMu.Lock()
@@ -144,6 +147,85 @@ func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
 	return percent, logical, unique, nil
 }
 
+func (l *Library) Trash(ctx context.Context) ([]catalog.File, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return nil, err
+	}
+	return l.catalog.Trash(), nil
+}
+
+func (l *Library) Restore(ctx context.Context, name string) error {
+	name, err := cleanPath(name)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	if err := l.catalog.Restore(name); err != nil {
+		return err
+	}
+	l.publishChange(Change{Kind: "restore", Paths: []string{name}})
+	return nil
+}
+
+func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return 0, err
+	}
+	all := l.catalog.All()
+	protected := make(map[string]struct{})
+	var reclaimable int64
+	for _, f := range all {
+		if f.Present || f.DeletedAt == nil || f.DeletedAt.After(before) {
+			if f.Snap != "" {
+				protected[f.Snap] = struct{}{}
+			}
+		}
+		if !f.Present && f.DeletedAt != nil && !f.DeletedAt.After(before) && !f.Folder {
+			reclaimable += f.Size
+		}
+	}
+	if reclaimable == 0 {
+		return 0, nil
+	}
+	pass, _, err := l.vault.Secrets()
+	if err != nil {
+		return 0, err
+	}
+	snapshots, err := l.restic.Snapshots(ctx, restic.Repo{Location: l.repo, Password: pass})
+	if err != nil {
+		return 0, err
+	}
+	forget := make([]string, 0)
+	for _, snap := range snapshots {
+		if _, ok := protected[snap]; !ok {
+			forget = append(forget, snap)
+		}
+	}
+	removed, err := l.catalog.PurgeTrash(before)
+	if err != nil {
+		return 0, err
+	}
+	if err := l.restic.Forget(ctx, restic.Repo{Location: l.repo, Password: pass}, forget); err != nil {
+		return 0, err
+	}
+	l.publishChange(Change{Kind: "trash-purge"})
+	var removedBytes int64
+	for _, f := range removed {
+		if !f.Folder {
+			removedBytes += f.Size
+		}
+	}
+	return removedBytes, nil
+}
+
 func (l *Library) Mkdir(ctx context.Context, name string) error {
 	name, err := cleanPath(name)
 	if err != nil {
@@ -179,6 +261,27 @@ func (l *Library) Rename(ctx context.Context, oldName, newName string) error {
 		return err
 	}
 	l.publishChange(Change{Kind: "rename", Paths: []string{oldName, newName}})
+	return nil
+}
+
+func (l *Library) Copy(ctx context.Context, oldName, newName string) error {
+	oldName, err := cleanPath(oldName)
+	if err != nil {
+		return err
+	}
+	newName, err = cleanPath(newName)
+	if err != nil {
+		return err
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	if err := l.catalog.Copy(oldName, newName); err != nil {
+		return err
+	}
+	l.publishChange(Change{Kind: "copy", Paths: []string{oldName, newName}})
 	return nil
 }
 

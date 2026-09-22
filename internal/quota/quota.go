@@ -16,6 +16,7 @@ type Status struct {
 	Capacity uint64 `json:"capacity"`
 	Used     uint64 `json:"used"`
 	Limit    uint64 `json:"limit"`
+	Reserved uint64 `json:"reserved"`
 	Percent  int    `json:"percent"`
 	Users    int    `json:"users"`
 }
@@ -162,5 +163,5 @@ func (m *Manager) status(users int) (Status, error) {
 	if limit > 0 {
 		percent = int(math.Min(100, float64(used)*100/float64(limit)))
 	}
-	return Status{Capacity: capacity, Used: used, Limit: limit, Percent: percent, Users: users}, nil
+	return Status{Capacity: capacity, Used: used, Limit: limit, Reserved: m.reserved, Percent: percent, Users: users}, nil
 }

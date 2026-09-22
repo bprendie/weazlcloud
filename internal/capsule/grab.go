@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
@@ -142,6 +143,34 @@ func (s *Store) List() []Record {
 		}
 	}
 	return out
+}
+
+func (s *Store) CleanupExpired(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ents, err := os.ReadDir(s.root)
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	cleaned := 0
+	for _, entry := range ents {
+		if !entry.IsDir() {
+			continue
+		}
+		dir := filepath.Join(s.root, entry.Name())
+		rec, err := readMeta(dir)
+		if err != nil || rec.Revoked || now.Before(rec.Expires) {
+			continue
+		}
+		if err := s.revokeDir(dir, rec); err != nil {
+			return cleaned, err
+		}
+		cleaned++
+	}
+	return cleaned, nil
 }
 
 func loadKey(dir, gate, phrase string) ([]byte, error) {

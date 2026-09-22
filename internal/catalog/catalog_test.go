@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
@@ -16,6 +17,45 @@ func testCatalog(t *testing.T) *Catalog {
 		t.Fatal(err)
 	}
 	return New(filepath.Join(dir, "catalog.enc"), v)
+}
+
+func TestCatalogDeleteRestoreAndPurgeTrash(t *testing.T) {
+	c := testCatalog(t)
+	if err := c.Mkdir("photos"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Put(File{Path: "photos/a.jpg", Size: 12, Snap: "snap-a", Present: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Copy("photos", "backup"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Get("backup/a.jpg"); !ok {
+		t.Fatal("copy did not preserve the file")
+	}
+	if err := c.Copy("photos", "backup"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("copy collision: %v", err)
+	}
+	if err := c.Delete("photos"); err != nil {
+		t.Fatal(err)
+	}
+	trash := c.Trash()
+	if len(trash) != 2 || trash[1].DeletedAt == nil {
+		t.Fatalf("trash=%+v", trash)
+	}
+	if err := c.Restore("photos"); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.List()) != 4 || len(c.Trash()) != 0 {
+		t.Fatalf("restored list=%+v trash=%+v", c.List(), c.Trash())
+	}
+	if err := c.Delete("photos/a.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := c.PurgeTrash(time.Now().UTC().Add(time.Minute))
+	if err != nil || len(removed) != 1 || removed[0].Path != "photos/a.jpg" {
+		t.Fatalf("removed=%+v err=%v", removed, err)
+	}
 }
 
 func TestCatalogRejectsFileFolderCollisions(t *testing.T) {

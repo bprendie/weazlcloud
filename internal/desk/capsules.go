@@ -30,6 +30,7 @@ func (h *Handler) listCapsules(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"capsules": []any{}})
 		return
 	}
+	_, _ = h.caps.CleanupExpired(time.Now().UTC())
 	recs := h.caps.List()
 	out := make([]map[string]any, 0, len(recs))
 	for _, r := range recs {

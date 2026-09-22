@@ -265,7 +265,9 @@ function fileMenu(id) {
   return [
     {act: `send-file:${id}`, label: 'Share this'},
     {act: `preview-file:${id}`, label: 'Open preview'},
+    {act: `details-file:${id}`, label: 'Details'},
     {act: `download:${id}`, label: 'Download'},
+    {act: `copy-file:${id}`, label: 'Copy'},
     {act: `rename-file:${id}`, label: 'Rename'},
     {sep: true},
     {act: `delete-file:${id}`, label: 'Delete'}
@@ -276,6 +278,8 @@ function folderMenu(path) {
   return [
     {act: `send-folder:${path}`, label: 'Share this'},
     {act: `download-folder:${path}`, label: 'Download'},
+    {act: `copy-folder:${path}`, label: 'Copy'},
+    {act: `details-folder:${path}`, label: 'Details'},
     {act: `upload-here:${path}`, label: 'Upload into'},
     {act: `rename-folder:${path}`, label: 'Rename'},
     {sep: true},
@@ -283,13 +287,14 @@ function folderMenu(path) {
   ];
 }
 
-function rootMenu(withSelection = false) {
+function rootMenu(withSelection = false, withClipboard = false) {
   const items = [
     {act: 'upload', label: 'Upload files…'},
     {act: 'upload-folder-root', label: 'Upload folder…'},
     {act: 'new-folder-root', label: 'New folder'}
   ];
   if (withSelection) items.push({sep: true}, {act: 'batch-move', label: 'Move selected…'}, {act: 'batch-download', label: 'Download selected'}, {act: 'batch-delete', label: 'Delete selected'});
+  if (withClipboard) items.push({sep: true}, {act: 'paste', label: 'Paste here'});
   return items;
 }
 
@@ -300,11 +305,27 @@ async function moveFile(id, folder) {
   if (from === to) return;
   if (!live) { toast('Files can move on the connected node.'); return; }
   try {
-    await engine.renameLibrary(from, to);
+    await resolveLibraryOperation(target => engine.renameLibrary(from, target), to);
+    state.undo = {kind: 'rename', from: to, to: from};
     await loadLibrary();
     renderMain();
     toast(`Moved ${name} to ${folder || 'the library root'}.`);
   } catch (err) { toast(err.message); }
+}
+
+async function resolveLibraryOperation(operation, target) {
+  try {
+    return await operation(target);
+  } catch (err) {
+    if (!/conflict|exists/i.test(err.message || '')) throw err;
+    if (confirm(`An item already exists at ${target}. Replace it? OK replaces it into Trash; Cancel lets you keep both.`)) {
+      await engine.deleteLibrary(target);
+      return operation(target);
+    }
+    const keep = prompt('Keep both. Enter a new destination path, or Cancel to skip.', target);
+    if (!keep) throw err;
+    return operation(keep);
+  }
 }
 
 function chooseRange(id) {
@@ -336,7 +357,7 @@ async function runBatchAction(action) {
   if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
   if (!live) { toast('Batch actions are available on the connected node.'); return; }
   if (action === 'download' && rows.length > 1) { await createArchiveJob(rows.map(file => filePath(file.id))); return; }
-  if (action === 'delete' && !confirm(`Delete ${rows.length} selected file${rows.length === 1 ? '' : 's'}? Present or not. No recycle bin.`)) return;
+  if (action === 'delete' && !confirm(`Move ${rows.length} selected file${rows.length === 1 ? '' : 's'} to Trash? They remain recoverable for ${state.trashRetention} days.`)) return;
   let destination = '';
   if (action === 'move') {
     destination = prompt('Move selected files into folder (leave blank for library root)', state.currentPath) ?? '';
@@ -346,8 +367,8 @@ async function runBatchAction(action) {
   for (const file of rows) {
     const from = filePath(file.id);
     try {
-      if (action === 'delete') await engine.deleteLibrary(from);
-      if (action === 'move') await engine.renameLibrary(from, [destination, file.title].filter(Boolean).join('/'));
+      if (action === 'delete') { await engine.deleteLibrary(from); state.undo = {kind: 'restore', path: from}; }
+      if (action === 'move') { const to = [destination, file.title].filter(Boolean).join('/'); await resolveLibraryOperation(target => engine.renameLibrary(from, target), to); state.undo = {kind: 'rename', from: to, to: from}; }
       if (action === 'download') await engine.downloadLibrary(from, file.title);
       completed.push(file.id);
     } catch (err) { failed.push(`${file.title}: ${err.message}`); }
@@ -359,6 +380,87 @@ async function runBatchAction(action) {
   renderDeck();
   if (failed.length) toast(`${completed.length} completed; ${failed.length} failed. ${failed[0]}`);
   else toast(`${completed.length} file${completed.length === 1 ? '' : 's'} ${action === 'delete' ? 'deleted' : action === 'move' ? 'moved' : 'sent to download'}.`);
+}
+
+function setClipboard(paths, mode) {
+  state.clipboard = {mode, paths: [...new Set(paths.filter(Boolean))]};
+  toast(`${state.clipboard.paths.length} item${state.clipboard.paths.length === 1 ? '' : 's'} ${mode === 'cut' ? 'cut' : 'copied'}. Press Ctrl/Cmd+V in a folder.`);
+}
+
+function detailsFile(id) {
+  const file = files.find(item => item.id === id);
+  if (!file) return;
+  modal(`<span class="eyebrow purple">FILE DETAILS</span><h2>${esc(file.title)}</h2><div class="file-details"><p><strong>Path</strong><span>${esc(filePath(id))}</span></p><p><strong>Type</strong><span>${esc(file.kind || 'FILE')}</span></p><p><strong>Size</strong><span>${esc(file.size || '—')}</span></p><p><strong>Date modified</strong><span>${esc(new Date(file.mtime || 0).toLocaleString())}</span></p></div><div class="dialog-actions"><button class="secondary" data-close>Done</button></div>`);
+}
+
+function detailsFolder(path) {
+  const children = filesInFolder(path);
+  modal(`<span class="eyebrow purple">FOLDER DETAILS</span><h2>${esc(path.split('/').pop())}</h2><div class="file-details"><p><strong>Path</strong><span>${esc(path)}</span></p><p><strong>Items</strong><span>${children.length}</span></p></div><div class="dialog-actions"><button class="secondary" data-close>Done</button></div>`);
+}
+
+async function pasteClipboard() {
+  const clip = state.clipboard || {paths: [], mode: ''};
+  if (!live || !clip.paths.length) return;
+  const failed = [];
+  for (const source of clip.paths) {
+    const target = [state.currentPath, source.split('/').pop()].filter(Boolean).join('/');
+    try {
+      if (clip.mode === 'cut') await resolveLibraryOperation(destination => engine.renameLibrary(source, destination), target);
+      else await resolveLibraryOperation(destination => engine.copyLibrary(source, destination), target);
+    } catch (err) {
+      failed.push(`${source}: ${err.message}`);
+    }
+  }
+  if (clip.mode === 'cut' && !failed.length) state.clipboard = {mode: '', paths: []};
+  await loadLibrary();
+  renderMain();
+  renderDeck();
+  toast(failed.length ? `${failed.length} paste item${failed.length === 1 ? '' : 's'} failed: ${failed[0]}` : 'Pasted into this folder.');
+}
+
+async function renameSelected() {
+  const folder = state.selected?.type === 'folder' ? state.selected.path : '';
+  const rows = selectedFileRows();
+  const source = folder || (rows.length === 1 ? filePath(rows[0].id) : '');
+  if (!source || !live) return;
+  const next = prompt('Rename to', source.split('/').pop());
+  if (!next || next.includes('/')) return;
+  try {
+    const target = source.split('/').slice(0, -1).concat(next).join('/');
+    await resolveLibraryOperation(destination => engine.renameLibrary(source, destination), target);
+    await loadLibrary();
+    renderMain();
+    toast('Renamed.');
+  } catch (err) { toast(`Rename failed: ${err.message}. Choose a different name if it already exists.`); }
+}
+
+async function deleteSelectedFolder() {
+  const path = state.selected?.type === 'folder' ? state.selected.path : '';
+  if (!path || !live || !confirm(`Delete ${path}? It will stay in Trash for ${state.trashRetention} days.`)) return;
+  try {
+    await engine.deleteLibrary(path);
+    state.undo = {kind: 'restore', path};
+    state.selected = null;
+    await loadLibrary();
+    renderMain();
+    renderDeck();
+    toast('Moved to Trash.');
+  } catch (err) { toast(err.message); }
+}
+
+async function undoLast() {
+  const action = state.undo;
+  if (!action || !live) return;
+  try {
+    if (action.kind === 'restore') await engine.restoreTrash(action.path);
+    else await engine.renameLibrary(action.from, action.to);
+    state.undo = null;
+    await loadLibrary();
+    if (state.view === 'trash') await loadTrash();
+    renderMain();
+    renderDeck();
+    toast('Undone.');
+  } catch (err) { toast(`Undo failed: ${err.message}. A later change may have caused a conflict.`); }
 }
 
 async function createArchiveJob(paths) {
@@ -606,17 +708,46 @@ function modal(html, wide = false) {
 
 function help() {
   modal('<span class="eyebrow purple">KEEP YOUR HANDS ON THE KEYS</span><h2>The short route.</h2>' +
-    [['Home / Library / Send / Capsules / Places', '1–5'], ['Mint grab link', 'S'], ['Lock vault', 'L'], ['File / folder actions', 'Right-click or ⋯'], ['This cheat sheet', '?']].map(([a, b]) => `<div class="shortcut"><span>${a}</span><kbd>${b}</kbd></div>`).join(''));
+    [['Home / Library / Send / Capsules / Places', '1–5'], ['Mint grab link', 'S'], ['Undo last move/delete', 'Ctrl/Cmd+Z'], ['Copy / cut / paste', 'Ctrl/Cmd+C/X/V'], ['Lock vault', 'L'], ['File / folder actions', 'Right-click or ⋯'], ['This cheat sheet', '?']].map(([a, b]) => `<div class="shortcut"><span>${a}</span><kbd>${b}</kbd></div>`).join(''));
 }
 
 function vaultCard() {
   modal(`<img class="auth-brand" src="weazlcloud.png" alt="WeazlCloud"><span class="eyebrow purple">ACCOUNT SETTINGS</span><h2>${esc(state.fullName || state.username || 'Your account')}</h2><p>Local identity and vault controls. The administrator cannot open this user's vault.</p><form id="settings-form" class="auth-form"><label>Full name<input name="full_name" value="${esc(state.fullName)}" maxlength="120" placeholder="Your full name"></label><label>Current account password<input name="current_password" type="password" autocomplete="current-password"></label><label>New account password<input name="new_password" type="password" autocomplete="new-password"></label><button class="primary">Save settings</button></form><hr><h3>Rekey vault</h3><p class="eyebrow">Changes the vault passphrase while preserving the library.</p><form id="rekey-form" class="auth-form"><label>Current vault passphrase<input name="current" type="password" required></label><label>New vault passphrase<input name="next" type="password" required></label><label>Confirm new vault passphrase<input name="confirm" type="password" required></label><button class="secondary">Rekey vault</button></form><div class="dialog-actions"><button class="secondary" id="do-lock">${state.unlocked ? 'Lock vault' : 'Unlock…'}</button></div>` , true);
 }
 
-function navigate(view) {
+function routeHash(view = state.view) {
+  return `#${view}${view === 'library' && state.currentPath ? '/' + encodeURIComponent(state.currentPath) : ''}`;
+}
+
+function setLibraryPath(path, push = true) {
+  stopMediaPlayback();
+  clearFileSelection();
+  state.currentPath = String(path || '').replace(/^\/+|\/+$/g, '');
+  state.view = 'library';
+  renderMain();
+  renderDeck();
+  if (push) history.pushState({}, '', routeHash('library'));
+}
+
+function applyRoute() {
+  const raw = location.hash.replace(/^#/, '') || 'home';
+  const [view, encoded] = raw.split('/');
+  const allowed = new Set(['home', 'library', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
+  state.view = allowed.has(view) ? view : 'home';
+  if (state.view === 'library') {
+    try { state.currentPath = encoded ? decodeURIComponent(encoded) : ''; } catch { state.currentPath = ''; }
+  }
+  renderMain();
+  renderDeck();
+  if (state.view === 'trash') loadTrash();
+}
+
+function navigate(view, replace = false) {
   if (state.view === 'library' && view !== 'library') stopMediaPlayback();
   state.view = view;
   renderMain();
+  if (view === 'trash') loadTrash();
+  history[replace ? 'replaceState' : 'pushState']({}, '', routeHash(view));
 }
 
 let activeMedia = null;
@@ -847,6 +978,16 @@ async function loadQuota() {
   try { state.quota = await engine.quota(); } catch (err) { toast(err.message); }
 }
 
+async function loadTrash() {
+  if (!live) return;
+  try {
+    const result = await engine.listTrash();
+    state.trash = result.items || [];
+    state.trashRetention = result.retention_days || 30;
+    renderMain();
+  } catch (err) { toast(err.message); }
+}
+
 function openDesk() {
   state.unlocked = true;
   $('#unlock-screen').hidden = true;
@@ -928,6 +1069,11 @@ async function runMenu(act) {
     if (live) await createArchiveJob([key]);
     else toast('Download is the engine. This preview has no bytes.');
   }
+  if (kind === 'copy-file') { setClipboard([filePath(key)], 'copy'); }
+  if (kind === 'copy-folder') { setClipboard([key], 'copy'); }
+  if (kind === 'details-file') detailsFile(key);
+  if (kind === 'details-folder') detailsFolder(key);
+  if (kind === 'paste') { await pasteClipboard(); }
   if (kind === 'download') {
     const f = files.find(x => x.id === key);
     const path = filePath(key);
@@ -941,13 +1087,13 @@ async function runMenu(act) {
     const next = prompt('Rename to', from.split('/').pop());
     if (!next || next.includes('/')) return;
     const to = from.split('/').slice(0, -1).concat(next).join('/');
-    if (live) { try { await engine.renameLibrary(from, to); await loadLibrary(); renderMain(); toast('Renamed.'); } catch (err) { toast(err.message); } }
+    if (live) { try { await resolveLibraryOperation(destination => engine.renameLibrary(from, destination), to); state.undo = {kind: 'rename', from: to, to: from}; await loadLibrary(); renderMain(); toast('Renamed.'); } catch (err) { toast(err.message); } }
     else toast('Renamed in the connected node.');
   }
   if (kind === 'delete-file' || kind === 'delete-folder') {
     const f = files.find(x => x.id === key);
     const path = kind === 'delete-folder' ? key : (f ? f.folders.concat(f.title).join('/') : key);
-    if (!confirm(`Delete ${path}? Present or not. No recycle bin.`)) return;
+    if (!confirm(`Move ${path} to Trash? It remains recoverable for ${state.trashRetention} days.`)) return;
     if (live) {
       try {
         await engine.deleteLibrary(path);
@@ -999,10 +1145,27 @@ document.addEventListener('click', e => {
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
   if (b.dataset.archiveDownload) { engine.downloadArchive(b.dataset.archiveDownload); return; }
   if (b.dataset.archiveCancel) { engine.cancelArchive(b.dataset.archiveCancel).then(() => renderUploadTray()).catch(err => toast(err.message)); return; }
+  if (b.dataset.trashRestore) {
+    engine.restoreTrash(b.dataset.trashRestore).then(async () => { await loadLibrary(); await loadTrash(); toast('Restored.'); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'trash-cleanup') {
+    if (!confirm(`Permanently remove Trash items older than ${state.trashRetention} days?`)) return;
+    engine.cleanupTrash().then(async result => { await loadTrash(); await loadQuota(); toast(`Expired Trash cleaned. ${formatBytes(result.reclaimed_bytes || 0)} reclaimed.`); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'toggle-favorite') {
+    const index = state.favorites.indexOf(state.currentPath);
+    if (index >= 0) state.favorites.splice(index, 1);
+    else state.favorites.push(state.currentPath);
+    localStorage.setItem('wzcl-favorites', JSON.stringify(state.favorites));
+    renderMain();
+    return;
+  }
   if (b.closest('form') && !b.dataset.action) return;
   if (b.dataset.view) navigate(b.dataset.view);
-  if (b.dataset.openFolder) { stopMediaPlayback(); clearFileSelection(); state.currentPath = b.dataset.openFolder; renderMain(); renderDeck(); }
-  if (b.dataset.libraryPath !== undefined) { stopMediaPlayback(); clearFileSelection(); state.currentPath = b.dataset.libraryPath; renderMain(); renderDeck(); }
+  if (b.dataset.openFolder) { setLibraryPath(b.dataset.openFolder); }
+  if (b.dataset.libraryPath !== undefined) { setLibraryPath(b.dataset.libraryPath); }
   if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.batch) { runBatchAction(b.dataset.batch); return; }
@@ -1079,6 +1242,11 @@ document.addEventListener('change', e => {
   if (e.target.dataset.librarySort !== undefined) {
     state.librarySort = e.target.value;
     renderMain();
+  }
+  if (e.target.dataset.libraryFilter) {
+    const key = e.target.dataset.libraryFilter;
+    const stateKey = {scope: 'libraryScope', type: 'libraryType', date: 'libraryDate', size: 'librarySize'}[key];
+    if (stateKey) { state[stateKey] = e.target.value; renderMain(); }
   }
 });
 
@@ -1283,11 +1451,31 @@ document.addEventListener('submit', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.altKey) return;
   if ($('#modal').open) return;
   if (!state.unlocked) return;
   if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
+  const modifier = e.ctrlKey || e.metaKey;
+  if (modifier && e.key.toLowerCase() === 'z') { e.preventDefault(); undoLast(); return; }
+  if (modifier && e.key.toLowerCase() === 'c') {
+    const rows = selectedFileRows();
+    const paths = rows.map(row => filePath(row.id));
+    if (state.selected?.type === 'folder') paths.push(state.selected.path);
+    if (paths.length) { e.preventDefault(); setClipboard(paths, 'copy'); }
+    return;
+  }
+  if (modifier && e.key.toLowerCase() === 'x') {
+    const rows = selectedFileRows();
+    const paths = rows.map(row => filePath(row.id));
+    if (state.selected?.type === 'folder') paths.push(state.selected.path);
+    if (paths.length) { e.preventDefault(); setClipboard(paths, 'cut'); }
+    return;
+  }
+  if (modifier && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
+  if (modifier) return;
   if (e.key === 'Escape') hideMenu();
+  if (e.key === 'Delete' && state.view === 'library') { e.preventDefault(); state.selected?.type === 'folder' ? deleteSelectedFolder() : runBatchAction('delete'); return; }
+  if (e.key === 'F2' && state.view === 'library') { e.preventDefault(); renameSelected(); return; }
   if (e.key === '?') help();
   if (e.key.toLowerCase() === 'l') lockVault();
   if (e.key.toLowerCase() === 's') {
@@ -1298,6 +1486,8 @@ document.addEventListener('keydown', e => {
 });
 
 $('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide'); });
+window.addEventListener('popstate', applyRoute);
+try { state.favorites = JSON.parse(localStorage.getItem('wzcl-favorites') || '[]').filter(path => typeof path === 'string'); } catch { state.favorites = []; }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (frame) cancelAnimationFrame(frame);
@@ -1307,6 +1497,7 @@ document.addEventListener('visibilitychange', () => {
   if (state.operation === 'mint' && !frame) frame = requestAnimationFrame(tickMint);
   if (state.operation === 'ingest' && !frame) frame = requestAnimationFrame(tickIngest);
 });
+applyRoute();
 renderDeck();
 document.addEventListener('contextmenu', e => {
   const file = e.target.closest('[data-ctx-file]');
@@ -1317,7 +1508,7 @@ document.addEventListener('contextmenu', e => {
   if (file) { e.preventDefault(); showMenu(e.clientX, e.clientY, fileMenu(file.dataset.ctxFile)); return; }
   if (folder) { e.preventDefault(); showMenu(e.clientX, e.clientY, folderMenu(folder.dataset.ctxFolder)); return; }
   if (cap) { e.preventDefault(); showMenu(e.clientX, e.clientY, capsuleMenu(cap.dataset.ctxCapsule)); return; }
-  if (tree || libraryContent) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu((state.selectedFiles || []).length > 0)); }
+  if (tree || libraryContent) { e.preventDefault(); showMenu(e.clientX, e.clientY, rootMenu((state.selectedFiles || []).length > 0, !!state.clipboard?.paths?.length)); }
 });
 
 document.addEventListener('dragstart', e => {

@@ -127,6 +127,10 @@ export const state = {
   expanded: [],
   currentPath: '',
   librarySearch: '',
+  libraryScope: 'all',
+  libraryType: 'all',
+  libraryDate: 'all',
+  librarySize: 'all',
   librarySort: 'name',
   librarySortDir: 'asc',
   libraryView: 'list',
@@ -134,6 +138,8 @@ export const state = {
   selected: null,
   selectedFiles: [],
   selectionAnchor: '',
+  clipboard: {mode: '', paths: []},
+  undo: null,
   gate: 'open',
   passphrase: '',
   expiry: '24h',
@@ -149,7 +155,7 @@ export const state = {
   destroyId: '',
   capsules: []
   ,upload: {active: false, dismissed: false, collapsed: false, current: '', done: 0, total: 0, loaded: 0, totalBytes: 0, percent: 0, failed: [], items: [], rails: Array.from({length: 3}, () => ({name: 'Waiting…', pct: 0, status: 'waiting'}))}
-  ,admin: false, requests: [], accessMode: '', username: '', fullName: '', archiveJobs: []
+  ,admin: false, requests: [], accessMode: '', username: '', fullName: '', archiveJobs: [], trash: [], trashRetention: 30, favorites: []
 };
 
 export function seedPreview() {

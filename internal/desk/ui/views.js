@@ -94,7 +94,7 @@ function fileRow(f, fullPath = false) {
   const path = f.folders.concat(f.title).join('/');
   return `<div class="file-row tree-file${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
     <button data-select-file="${f.id}" aria-label="Select ${esc(f.title)}"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><span class="file-name"><strong>${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}</span></button>
-    <span class="library-modified">${esc(modifiedLabel(f.mtime))}</span><span class="size">${esc(f.size)}</span>
+    <span class="library-modified">${esc(modifiedLabel(f.mtime))}</span><span class="size" title="${esc(f.size)}">${esc(f.size)}</span>
     <button class="icon-button menu-btn" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
   </div>`;
 }
@@ -130,7 +130,7 @@ function gridFileCard(f, fullPath = false) {
     : `<button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>`;
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
     ${opener}
-    <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong>${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
+    <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong title="${esc(f.title)}">${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
     <button class="icon-button menu-btn grid-menu" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
   </div>`;
 }
@@ -151,7 +151,7 @@ function libraryRows(node) {
   for (const child of Object.values(node.folders).sort(compareLibrary)) {
     html += folderRow(child);
   }
-  html += [...node.files].sort(compareLibrary).map(f => fileRow(f)).join('');
+  html += [...node.files].filter(matchesLibraryFilters).sort(compareLibrary).map(f => fileRow(f)).join('');
   return html;
 }
 
@@ -159,6 +159,7 @@ function librarySearchRows() {
   const query = state.librarySearch.trim().toLowerCase();
   const folders = new Map();
   for (const file of files) {
+    if (file.folder || !matchesLibraryFilters(file)) continue;
     let path = '';
     for (const part of file.folders) {
       path = path ? `${path}/${part}` : part;
@@ -166,8 +167,31 @@ function librarySearchRows() {
     }
   }
   const folderRows = [...folders.values()].sort(compareLibrary).map(folder => folderRow(folder)).join('');
-  const fileRows = files.filter(f => !f.folder && fileMatches(f, query)).sort(compareLibrary).map(f => fileRow(f, true)).join('');
+  const fileRows = files.filter(f => !f.folder && fileMatches(f, query) && matchesLibraryFilters(f)).sort(compareLibrary).map(f => fileRow(f, true)).join('');
   return folderRows + fileRows;
+}
+
+function matchesLibraryFilters(file) {
+  if (state.libraryScope === 'folder' && state.currentPath && !file.folders.join('/').startsWith(state.currentPath + '/') && file.folders.join('/') !== state.currentPath) return false;
+  const ext = file.title.includes('.') ? file.title.slice(file.title.lastIndexOf('.') + 1).toLowerCase() : '';
+  const groups = {
+    image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'heic', 'avif'],
+    video: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'],
+    audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga'],
+    document: ['md', 'txt', 'csv', 'json', 'xml', 'log', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'],
+    archive: ['zip', 'tar', 'gz', '7z', 'rar', 'iso']
+  };
+  if (state.libraryType !== 'all' && !(groups[state.libraryType] || []).includes(ext)) return false;
+  if (state.libraryDate !== 'all') {
+    const age = Date.now() - new Date(file.mtime || 0).getTime();
+    const days = state.libraryDate === '7d' ? 7 : state.libraryDate === '30d' ? 30 : 365;
+    if (!Number.isFinite(age) || age > days * 86400000) return false;
+  }
+  const bytes = Number(file.bytes || 0);
+  if (state.librarySize === 'small' && bytes >= 1 << 20) return false;
+  if (state.librarySize === 'medium' && (bytes < 1 << 20 || bytes >= 100 << 20)) return false;
+  if (state.librarySize === 'large' && bytes < 100 << 20) return false;
+  return true;
 }
 
 function libraryHeader() {
@@ -206,7 +230,8 @@ function library() {
   const rows = searching ? librarySearchRows() : libraryRows(node);
   return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
     `<div class="library-workspace" data-ctx-tree="1">${libraryBreadcrumb()}
-    <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button></div>
+    <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><label class="library-filter">Scope<select data-library-filter="scope"><option value="all" ${state.libraryScope === 'all' ? 'selected' : ''}>All my files</option><option value="folder" ${state.libraryScope === 'folder' ? 'selected' : ''}>This folder</option></select></label><label class="library-filter">Type<select data-library-filter="type"><option value="all" ${state.libraryType === 'all' ? 'selected' : ''}>Any type</option><option value="image" ${state.libraryType === 'image' ? 'selected' : ''}>Images</option><option value="video" ${state.libraryType === 'video' ? 'selected' : ''}>Video</option><option value="audio" ${state.libraryType === 'audio' ? 'selected' : ''}>Audio</option><option value="document" ${state.libraryType === 'document' ? 'selected' : ''}>Documents</option><option value="archive" ${state.libraryType === 'archive' ? 'selected' : ''}>Archives</option></select></label><label class="library-filter">Modified<select data-library-filter="date"><option value="all" ${state.libraryDate === 'all' ? 'selected' : ''}>Any time</option><option value="7d" ${state.libraryDate === '7d' ? 'selected' : ''}>Past 7 days</option><option value="30d" ${state.libraryDate === '30d' ? 'selected' : ''}>Past 30 days</option><option value="365d" ${state.libraryDate === '365d' ? 'selected' : ''}>Past year</option></select></label><label class="library-filter">Size<select data-library-filter="size"><option value="all" ${state.librarySize === 'all' ? 'selected' : ''}>Any size</option><option value="small" ${state.librarySize === 'small' ? 'selected' : ''}>Under 1 MB</option><option value="medium" ${state.librarySize === 'medium' ? 'selected' : ''}>1–100 MB</option><option value="large" ${state.librarySize === 'large' ? 'selected' : ''}>Over 100 MB</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button><button class="text-button" data-action="toggle-favorite">${state.favorites?.includes(state.currentPath) ? 'Unpin folder' : 'Pin folder'}</button></div>
+    ${state.favorites?.length ? `<div class="library-favorites" aria-label="Pinned folders">${state.favorites.map(path => `<button class="text-button" data-library-path="${esc(path)}">${esc(path || 'LIBRARY')}</button>`).join('')}</div>` : ''}
     ${selectedCount ? `<div class="selection-toolbar" role="toolbar" aria-label="Selected files"><strong>${selectedCount} selected</strong><button class="secondary" data-batch="move">Move to…</button><button class="secondary" data-batch="download">Download</button><button class="secondary" data-batch="delete">Delete</button><button class="text-button" data-batch="clear">Clear</button></div>` : ''}
     <div class="hero-actions">
       <button class="primary" data-view="send" ${sel && selectedCount === 1 ? '' : 'disabled'}>Send ${selectedCount > 1 ? `${selectedCount} files` : sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
@@ -214,6 +239,7 @@ function library() {
       <button class="secondary" data-action="upload">Upload…</button>
       <button class="secondary" data-action="upload-folder">Upload folder…</button>
       <button class="secondary" data-action="new-folder">New folder</button>
+      <button class="text-button" data-view="trash">Trash</button>
     </div>
     ${searching ? `<p class="library-result-count">Search results across the library</p>` : ''}
     <div class="view-toggle"><span>VIEW</span><button class="${state.libraryView === 'list' ? 'active' : ''}" data-library-view="list">☷ List</button><button class="${state.libraryView === 'grid' ? 'active' : ''}" data-library-view="grid">▦ Grid</button></div>
@@ -353,6 +379,13 @@ function destroy() {
     `<form id="destroy-form" class="auth-form"><label>Confirmation phrase<input name="phrase" required autocomplete="off" placeholder="DESTROY ${esc(state.destroyId)}"></label><button class="primary">Destroy capsule</button></form>`;
 }
 
+function trash() {
+  const items = state.trash || [];
+  return head('WEAZLCLOUD / TRASH', 'Recoverable for a while.', `Deleted items stay here for ${state.trashRetention} days before permanent cleanup. Restoring checks for newer conflicts.`) +
+    `<div class="hero-actions"><button class="secondary" data-action="trash-cleanup">Permanently clean expired items</button><button class="text-button" data-view="library">Back to Library</button></div>` +
+    (items.length ? `<div class="file-list">${items.map(item => `<div class="file-row"><span class="kind ${item.folder ? 'type-dir' : 'type-file'}">${item.folder ? 'DIR' : 'FILE'}</span><span class="file-name"><strong>${esc(item.path)}</strong><small>${item.folder ? 'Folder' : formatBytes(item.size)} · deleted ${esc(modifiedLabel(item.deleted_at))}</small></span><button class="text-button" data-trash-restore="${esc(item.path)}">Restore</button></div>`).join('')}</div>` : '<p class="empty">Trash is empty.</p>');
+}
+
 function admin() {
   const pending = state.requests.filter(q => q.status === 'pending');
   return head('NODE ADMIN / ACCESS', 'Approve local accounts.', 'Identity approval only. User vaults and their contents stay outside the administrator view.') +
@@ -385,10 +418,10 @@ function restoreMediaPlayback() {
 
 export function renderMain() {
   preserveMediaPlayback();
-  const pages = {home, library, send, capsules, places, admin, kit, takeout, check, destroy};
+  const pages = {home, library, send, capsules, places, admin, kit, takeout, check, destroy, trash};
   const html = (pages[state.view] || home)();
   $('#content').innerHTML = html;
-  const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', admin: 'ADMIN', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY'};
+  const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', admin: 'ADMIN', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY', trash: 'TRASH'};
   $('#breadcrumb').textContent = state.view === 'library' && state.currentPath
     ? `LIBRARY / ${state.currentPath.split('/').join(' / ')}`
     : (crumb[state.view] || state.view.toUpperCase());
@@ -438,7 +471,7 @@ export function renderDeck() {
   const quotaNumber = $('#quota-n');
   if (quotaNumber) quotaNumber.textContent = quota ? `${quotaPercent}%` : '—';
   const quotaCaption = $('#quota-caption');
-  if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} used · ${formatBytes(quota.capacity)} volume` : 'Waiting for vault';
+  if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} physical · ${formatBytes(quota.logical_bytes || 0)} library · ${formatBytes(quota.available_bytes || 0)} available` : 'Waiting for vault';
   const unit = $('#dedupe-unit');
   const heading = $('#dedupe-heading');
   if (state.engine && !busy) {

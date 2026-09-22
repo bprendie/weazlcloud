@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
@@ -72,8 +73,16 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiCreateFolder)
 	case r.URL.Path == "/api/library/rename" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiRename)
+	case r.URL.Path == "/api/library/copy" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiCopy)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodDelete:
 		h.multiGuard(w, r, true, h.multiDeleteLibrary)
+	case r.URL.Path == "/api/trash" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiTrash)
+	case r.URL.Path == "/api/trash/restore" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiRestoreTrash)
+	case r.URL.Path == "/api/trash" && r.Method == http.MethodDelete:
+		h.multiGuard(w, r, true, h.multiCleanupTrash)
 	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiCreateArchive)
 	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodGet:
@@ -540,13 +549,27 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
-	out := map[string]any{"capacity": q.Capacity, "used": q.Used, "limit": q.Limit, "percent": q.Percent, "users": q.Users}
+	out := map[string]any{"capacity": q.Capacity, "used": q.Used, "limit": q.Limit, "reserved": q.Reserved, "percent": q.Percent, "users": q.Users}
 	if res.Vault.Unlocked() {
 		if dedupe, logical, unique, e := res.Lib.Dedupe(r.Context()); e == nil {
 			out["dedupe_percent"] = dedupe
 			out["logical_bytes"] = logical
 			out["unique_bytes"] = unique
 		}
+		if trash, e := res.Lib.Trash(r.Context()); e == nil {
+			var bytes int64
+			for _, item := range trash {
+				if !item.Folder {
+					bytes += item.Size
+				}
+			}
+			out["trash_bytes"] = bytes
+		}
+	}
+	if q.Limit > q.Used+q.Reserved {
+		out["available_bytes"] = q.Limit - q.Used - q.Reserved
+	} else {
+		out["available_bytes"] = 0
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -704,6 +727,7 @@ func (h *Handler) multiListCapsules(w http.ResponseWriter, r *http.Request) {
 		apiUsersError(w, err)
 		return
 	}
+	_, _ = h.caps.CleanupExpired(time.Now().UTC())
 	out := []map[string]any{}
 	for _, rec := range h.caps.ListOwner(u.ID) {
 		out = append(out, rec.View())
