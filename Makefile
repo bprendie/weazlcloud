@@ -40,7 +40,8 @@ smoke-recovery: desk-assets
 	bash scripts/recovery-smoke.sh
 
 smoke-browser: desk-assets
-	bash scripts/smoke-browser.sh
+	WEAZLCLOUD_BROWSER_PORT=28772 bash scripts/smoke-browser.sh
+	WEAZLCLOUD_BROWSER_PORT=28872 WEAZLCLOUD_SMOKE_STORAGE_BACKEND=shared-experimental bash scripts/smoke-browser.sh
 
 smoke-container:
 	docker build -f deploy/Dockerfile -t weazlcloud:smoke .

@@ -27,6 +27,15 @@ func TestCollectorHonorsDurableHoldAndResumesClaim(t *testing.T) {
 	if err = s.Commit(ctx, p.Operation); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = s.db.Exec("UPDATE owners SET state='aborted' WHERE op_id=?", p.Operation); err != nil {
+		t.Fatal(err)
+	}
+	if freed, err := s.Collect(ctx); err != nil || freed != 0 {
+		t.Fatalf("collector trusted a corrupt owner state: freed=%d err=%v", freed, err)
+	}
+	if err = s.ReconcileOwner(ctx, "owner", map[string]struct{}{p.Operation: {}}); err != nil {
+		t.Fatal(err)
+	}
 	release, err := s.Hold(ctx, "owner", p.Reference)
 	if err != nil {
 		t.Fatal(err)

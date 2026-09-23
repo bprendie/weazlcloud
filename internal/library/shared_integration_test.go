@@ -34,6 +34,9 @@ func (b *isolatedLegacy) Put(_ context.Context, name string, r io.Reader) (catal
 		b.files = map[string][]byte{}
 	}
 	b.files[id] = data
+	if err := os.WriteFile(filepath.Join(b.root, id), data, 0o600); err != nil {
+		return catalog.Reference{}, err
+	}
 	return catalog.Reference{Backend: catalog.ResticBackend, Version: 1, Snapshot: id, Object: id}, nil
 }
 func (b *isolatedLegacy) PutBatch(context.Context, string) (BatchReference, error) {
@@ -41,7 +44,15 @@ func (b *isolatedLegacy) PutBatch(context.Context, string) (BatchReference, erro
 }
 func (b *isolatedLegacy) Capture(f catalog.File) (catalog.Reference, error) { return fileReference(f) }
 func (b *isolatedLegacy) Read(_ context.Context, r catalog.Reference, w io.Writer) error {
-	_, e := w.Write(b.files[r.Object])
+	data := b.files[r.Object]
+	if data == nil {
+		var err error
+		data, err = os.ReadFile(filepath.Join(b.root, r.Object))
+		if err != nil {
+			return err
+		}
+	}
+	_, e := w.Write(data)
 	return e
 }
 func (b *isolatedLegacy) ReadRange(ctx context.Context, r catalog.Reference, o, n int64, w io.Writer) error {
@@ -72,7 +83,7 @@ func TestSharedBackendMixedLibraryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	makeLib := func(owner string) (*Library, *vault.Vault) {
 		dir := filepath.Join(root, "users", owner)
 		_ = os.MkdirAll(dir, 0o700)
@@ -85,8 +96,8 @@ func TestSharedBackendMixedLibraryLifecycle(t *testing.T) {
 		lib.ConfigureShared(owner, store, false)
 		return lib, v
 	}
-	alice, _ := makeLib("alice")
-	bob, _ := makeLib("bob")
+	alice, aliceVault := makeLib("alice")
+	bob, bobVault := makeLib("bob")
 	legacy, err := alice.Put(ctx, "legacy.bin", []byte("restic side"))
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +131,36 @@ func TestSharedBackendMixedLibraryLifecycle(t *testing.T) {
 	if _, err = png.Decode(bytes.NewReader(thumb)); err != nil {
 		t.Fatalf("shared thumbnail is invalid: %v", err)
 	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = sharedstore.Open(filepath.Join(root, "node"), sharedstore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliceVault.Lock()
+	bobVault.Lock()
+	if err = aliceVault.Unlock([]byte("test-pass-alice")); err != nil {
+		t.Fatal(err)
+	}
+	if err = bobVault.Unlock([]byte("test-pass-bob")); err != nil {
+		t.Fatal(err)
+	}
+	newLib := func(owner string, v *vault.Vault) *Library {
+		dir := filepath.Join(root, "users", owner)
+		lib := New(filepath.Join(dir, "library"), filepath.Join(dir, "catalog.enc"), v)
+		lib.backend = &isolatedLegacy{root: filepath.Join(dir, "repo")}
+		lib.ConfigureShared(owner, store, true)
+		return lib
+	}
+	alice, bob = newLib("alice", aliceVault), newLib("bob", bobVault)
+	thumb, thumbType, err = alice.Thumbnail(ctx, "preview.png", 128)
+	if err != nil || thumbType != "image/png" {
+		t.Fatalf("shared preview after reopen type=%q err=%v", thumbType, err)
+	}
+	if _, err = png.Decode(bytes.NewReader(thumb)); err != nil {
+		t.Fatalf("shared preview after reopen is invalid: %v", err)
+	}
 	for _, tc := range []struct {
 		lib  *Library
 		path string
@@ -141,7 +182,7 @@ func TestSharedBackendMixedLibraryLifecycle(t *testing.T) {
 	if err = alice.StreamTo(ctx, "copy.bin", &copied); err != nil || !bytes.Equal(copied.Bytes(), payload) {
 		t.Fatalf("copy grant failed: %v", err)
 	}
-	manifest, err := alice.PrepareArchive(ctx, []string{"same.bin"})
+	manifest, err := alice.PrepareArchive(ctx, []string{"legacy.bin", "same.bin"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,15 +198,21 @@ func TestSharedBackendMixedLibraryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry, err := archive.File[0].Open()
-	if err != nil {
-		t.Fatal(err)
+	archiveContents := make(map[string][]byte)
+	for _, zipped := range archive.File {
+		entry, openErr := zipped.Open()
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		body, readErr := io.ReadAll(entry)
+		_ = entry.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		archiveContents[zipped.Name] = body
 	}
-	var archived bytes.Buffer
-	_, _ = io.Copy(&archived, entry)
-	_ = entry.Close()
-	if !bytes.Equal(archived.Bytes(), payload) {
-		t.Fatal("captured archive followed replacement instead of immutable reference")
+	if !bytes.Equal(archiveContents["same.bin"], payload) || !bytes.Equal(archiveContents["legacy.bin"], []byte("restic side")) {
+		t.Fatal("mixed archive lost its Restic entry or followed replacement instead of captured shared content")
 	}
 	var liveOld bytes.Buffer
 	if err = alice.StreamTo(ctx, "copy.bin", &liveOld); err != nil || !bytes.Equal(liveOld.Bytes(), payload) {

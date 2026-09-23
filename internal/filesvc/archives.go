@@ -132,11 +132,12 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip"), done: make(chan struct{})}
 	m.jobs[id] = job
 	m.workers.Add(1)
+	view := job.ArchiveJobView
 	m.mu.Unlock()
 	handedOff = true
 	manifestHandedOff = true
 	go m.run(ctx, job)
-	return job.ArchiveJobView, nil
+	return view, nil
 }
 
 func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {

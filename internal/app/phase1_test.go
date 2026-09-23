@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -148,6 +149,53 @@ func TestPhase1ConcurrentDeskAndWebDAVWritesShareCatalog(t *testing.T) {
 	download.Body.Close()
 	if readErr != nil || download.StatusCode != http.StatusOK || string(davBytes) != "dav" {
 		t.Fatalf("shared WebDAV download status=%d body=%q err=%v", download.StatusCode, davBytes, readErr)
+	}
+	sharedPayload := []byte("same bytes owned independently by two people")
+	for _, client := range []*http.Client{c, bobClient} {
+		put, _ := http.NewRequest(http.MethodPut, "http://"+n.DeskAddr()+"/api/library?path=private-name.txt", bytes.NewReader(sharedPayload))
+		put.Header.Set("X-Weazl-Desk", "1")
+		response, putErr := client.Do(put)
+		if putErr != nil {
+			t.Fatal(putErr)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("shared duplicate upload status=%d", response.StatusCode)
+		}
+	}
+	type aggregate struct {
+		Scope     string `json:"dedupe_scope"`
+		Percent   int    `json:"dedupe_percent"`
+		Logical   int64  `json:"logical_bytes"`
+		Unique    int64  `json:"unique_bytes"`
+		Allocated int64  `json:"shared_allocated_bytes"`
+	}
+	quotaFor := func(client *http.Client) (aggregate, string) {
+		t.Helper()
+		request, _ := http.NewRequest(http.MethodGet, "http://"+n.DeskAddr()+"/api/quota", nil)
+		request.Header.Set("X-Weazl-Desk", "1")
+		response, getErr := client.Do(request)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		defer response.Body.Close()
+		body, readErr := io.ReadAll(response.Body)
+		if readErr != nil || response.StatusCode != http.StatusOK {
+			t.Fatalf("quota status=%d err=%v", response.StatusCode, readErr)
+		}
+		var result aggregate
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatal(err)
+		}
+		return result, string(body)
+	}
+	adminStats, adminJSON := quotaFor(c)
+	userStats, userJSON := quotaFor(bobClient)
+	if adminStats != userStats || adminStats.Logical <= adminStats.Unique || adminStats.Percent == 0 || adminStats.Allocated <= 0 {
+		t.Fatalf("global quota aggregation differs by role: admin=%+v user=%+v", adminStats, userStats)
+	}
+	if adminStats.Scope != "all live and Trash references using shared storage" || strings.Contains(adminJSON, "private-name.txt") || strings.Contains(userJSON, "private-name.txt") {
+		t.Fatalf("quota response exposed ownership detail or omitted scope: %s", adminJSON)
 	}
 }
 

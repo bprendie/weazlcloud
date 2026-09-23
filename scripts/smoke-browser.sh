@@ -18,6 +18,7 @@ if [[ -z "$browser" ]]; then
 fi
 
 port="${WEAZLCLOUD_BROWSER_PORT:-17272}"
+storage_backend="${WEAZLCLOUD_SMOKE_STORAGE_BACKEND:-restic}"
 data_dir="$(mktemp -d)"
 log_file="$(mktemp)"
 binary="$(mktemp)"
@@ -37,6 +38,7 @@ WEAZLCLOUD_DATA="$data_dir" \
 WEAZLCLOUD_DESK_ADDR="127.0.0.1:$port" \
 WEAZLCLOUD_SHARE_ADDR="127.0.0.1:$((port + 1))" \
 WEAZLCLOUD_DRIVE_ADDR="127.0.0.1:$((port + 2))" \
+WEAZLCLOUD_STORAGE_BACKEND="$storage_backend" \
 "$binary" >"$log_file" 2>&1 &
 pid=$!
 live=0

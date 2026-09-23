@@ -95,18 +95,24 @@ func (s *Store) ReconcileOwner(ctx context.Context, owner string, published map[
 			return err
 		}
 	}
-	rows, err = s.db.QueryContext(ctx, "SELECT entry_id,revision,op_id FROM owners WHERE owner_id=? AND state='live'", s.keys.ownerToken(owner))
+	token := s.keys.ownerToken(owner)
+	for op := range published {
+		if _, err = s.db.ExecContext(ctx, `UPDATE owners SET state='live' WHERE owner_id=? AND op_id=? AND state NOT IN ('live','retired') AND EXISTS(SELECT 1 FROM operations p WHERE p.op_id=owners.op_id AND p.owner_id=owners.owner_id AND p.entry_id=owners.entry_id AND p.revision=owners.revision AND p.object_id=owners.object_id AND p.state='committed')`, token, op); err != nil {
+			return err
+		}
+	}
+	rows, err = s.db.QueryContext(ctx, "SELECT entry_id,revision,op_id,state FROM owners WHERE owner_id=? AND state!='retired'", token)
 	if err != nil {
 		return err
 	}
 	type staleReference struct {
-		entry, operation string
-		revision         uint64
+		entry, operation, state string
+		revision                uint64
 	}
 	var stale []staleReference
 	for rows.Next() {
 		var ref staleReference
-		if err = rows.Scan(&ref.entry, &ref.revision, &ref.operation); err != nil {
+		if err = rows.Scan(&ref.entry, &ref.revision, &ref.operation, &ref.state); err != nil {
 			rows.Close()
 			return err
 		}
@@ -122,8 +128,17 @@ func (s *Store) ReconcileOwner(ctx context.Context, owner string, published map[
 		return err
 	}
 	for _, ref := range stale {
-		if err = s.Release(ctx, owner, ref.entry, ref.revision); err != nil {
-			return err
+		switch ref.state {
+		case "live":
+			if err = s.Release(ctx, owner, ref.entry, ref.revision); err != nil {
+				return err
+			}
+		case "aborted":
+			if _, err = s.db.ExecContext(ctx, "DELETE FROM owners WHERE owner_id=? AND entry_id=? AND revision=? AND op_id=? AND state='aborted'", token, ref.entry, ref.revision, ref.operation); err != nil {
+				return err
+			}
+		default:
+			return ErrState
 		}
 	}
 	return nil
@@ -174,7 +189,7 @@ func (s *Store) Collect(ctx context.Context) (int64, error) {
 			return freed, err
 		}
 		var id string
-		err = tx.QueryRowContext(ctx, `SELECT x.object_id FROM objects x WHERE x.state='ready' AND NOT EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id AND o.state IN ('prepared','published','live')) AND NOT EXISTS(SELECT 1 FROM holds h WHERE h.object_id=x.object_id) LIMIT 1`).Scan(&id)
+		err = tx.QueryRowContext(ctx, `SELECT x.object_id FROM objects x WHERE x.state='ready' AND NOT EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id) AND NOT EXISTS(SELECT 1 FROM holds h WHERE h.object_id=x.object_id) LIMIT 1`).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = tx.Rollback()
 			return freed, nil
