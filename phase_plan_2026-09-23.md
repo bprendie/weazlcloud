@@ -1,8 +1,8 @@
 # Multi-user dedupe integration workbook — September 23, 2026
 
 Owner: Bob. Implementation: Luna.
-Status: planned; no implementation or migration tasks completed.
-Continues [September 22's workbook](phase_plan_2026-09-22.md). Baseline reviewed: `74aa734`.
+Status: D0 complete; D1 is next. Shared storage and migration remain disabled.
+Continues [September 22's workbook](phase_plan_2026-09-22.md). D0 started from `72d186f`.
 
 ## What we are building
 
@@ -95,11 +95,19 @@ On restart, reconcile each journal entry against the actual catalog revision bef
 
 ## D0 — Establish the baseline and freeze the contract
 
-- [ ] **D0.1 — Inventory every storage caller.** Follow the code-map rows above. List direct `restic.Dump`, `Put`, `PutBatch`, `Forget`, repository deletion, and vault-secret uses in `docs/dedupe-design.md`. Include legacy/single-user entry points, persisted ZIP manifests, upload recovery, and existing Trash cleanup intents. **Pass:** each caller has a destination adapter or an explicit legacy-only purpose; none is silently dropped.
-- [ ] **D0.2 — Build the small fixture set and measure current storage.** Use two ordinary users and one application admin. Include a shared identical file, unique files, repeated chunks, an image/document preview, an empty file/folder, and a generated disk-image-shaped file with one modified region. Add live and trashed versions at the same path and files sharing one Restic batch snapshot. Record hashes, logical bytes, repository allocation, write/read time, and peak memory. Use bounded fixture sizes and distinguish synthetic patterns from real-world savings. **Pass:** the baseline is reproducible and all fixture paths/content are recorded without real user data.
-- [ ] **D0.3 — Write the exact format and transaction contract.** Document the records, encryption/frame rules, lock ordering, operation recovery matrix, error behavior, and prototype defaults. Select/pin the index driver and chunker after checking their official documentation. State that migration is off by default. **Pass:** another implementer can identify which records survive each crash point and how an owner is authorized; static Docker build still works.
+- [x] **D0.1 — Inventory every storage caller.** `docs/dedupe-design.md` maps runtime Restic operations, the legacy whole-body route, plaintext stage/recovery files, batch snapshots, ZIP captures/artifacts, thumbnail cache, Trash intents, account bootstrap migration, account deletion, vault-secret paths, and sealed capsules to their next adapter/lifecycle treatment.
+- [x] **D0.2 — Build the small fixture set and measure current storage.** `scripts/dedupe-fixtures.py` produces deterministic synthetic files and a SHA-256 manifest. `scripts/dedupe-baseline.sh` runs real two-user/admin Desk handlers with Restic 0.18.0 inside a disposable Docker volume. Hashes, logical bytes, per-user and total allocated/apparent repository space, read/write timing, Go allocation/heap/RSS, and workload wall time are recorded in `docs/dedupe-design.md`. The test verifies admin isolation, previews, Trash/replacement, empty entries, and shared batch snapshot identity.
+- [x] **D0.3 — Write the exact format and transaction contract.** `docs/dedupe-design.md` defines versioned AES-GCM frames and nonce/AAD rules, keyed fingerprints, private owner wrappers, index/record layout, lock ordering, crash recovery, safe errors, and disabled-by-default migration. It selects `modernc.org/sqlite v1.59.0` and `github.com/restic/chunker v0.5.0` from their published package/upstream documentation; dependencies remain deferred until their implementation phases.
 
-Phase exit: design note + fixture generator + baseline evidence. No storage format is switched.
+Phase exit: complete. `make check`, the final isolated Restic baseline, and a `CGO_ENABLED=0` Docker image build pass. No storage format is switched and no production data is touched.
+
+### D0 evidence
+
+- Design and caller inventory: [docs/dedupe-design.md](docs/dedupe-design.md).
+- Reproducible fixture and isolated baseline: [scripts/dedupe-fixtures.py](scripts/dedupe-fixtures.py), [scripts/dedupe-baseline.sh](scripts/dedupe-baseline.sh), `internal/library/dedupe_baseline_test.go`, and `internal/library/dedupe_baseline_helpers_test.go`.
+- Actual final disposable run: 2 ordinary accounts + 1 admin; Restic 0.18.0; 20,447,511 logical upload bytes; Alice/Bob each allocated 548,864 bytes after their first identical file; separate repositories do not share that content. Upload request-time sum 16,705 ms; verified read-time sum 6,864 ms; Go test-process HWM 157,832 KiB; 27.52 s workload. Exact fixture hashes and full allocation figures are in the design note.
+- Limits: synthetic bounded workload only; the Restic child process RSS is not included in the Go test-process HWM. It does not predict household savings or prove production concurrency/migration behavior.
+- Data safety: the harness removed its temporary volume; `weazlcloud-local-test-data-20260922` was preserved. No production host or volume was accessed.
 
 ## D1 — Put current Restic storage behind an interface
 
