@@ -22,6 +22,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/share"
+	"github.com/bprendie/weazlcloud/internal/storageformat"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
@@ -67,15 +68,21 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err := cfg.EnsureData(); err != nil {
 		return err
 	}
-	if err := ensureTempDir(); err != nil {
-		return err
-	}
 	if *check {
+		if err := storageformat.Check(cfg.DataDir); err != nil {
+			return err
+		}
 		fmt.Fprintln(stdout, "weazlcloud: configuration valid")
 		return nil
 	}
 	if *ready {
 		return probeReady(cfg.DeskAddr)
+	}
+	if err := storageformat.Initialize(cfg.DataDir); err != nil {
+		return err
+	}
+	if err := ensureTempDir(); err != nil {
+		return err
 	}
 	n, err := listen(cfg)
 	if err != nil {
@@ -95,6 +102,9 @@ func ensureTempDir() error {
 
 func Start(cfg config.Config) (*Node, error) {
 	if err := cfg.EnsureData(); err != nil {
+		return nil, err
+	}
+	if err := storageformat.Initialize(cfg.DataDir); err != nil {
 		return nil, err
 	}
 	if err := ensureTempDir(); err != nil {

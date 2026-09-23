@@ -32,12 +32,12 @@ func TestFailedFinalizeLeavesCommittedBytesAndDurableStage(t *testing.T) {
 	if err := os.WriteFile(failBinary, []byte("#!/bin/sh\necho injected backup failure >&2\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lib.restic = restic.Runner{Binary: failBinary}
+	lib.backend.(*resticBackend).runner = restic.Runner{Binary: failBinary}
 	if _, err := lib.Put(ctx, "disk-image.iso", []byte("replacement-that-must-not-win")); err == nil {
 		t.Fatal("injected finalize failure unexpectedly succeeded")
 	}
 
-	lib.restic = restic.New()
+	lib.backend.(*resticBackend).runner = restic.New()
 	got, err := lib.Get(ctx, "disk-image.iso")
 	if err != nil {
 		t.Fatal(err)

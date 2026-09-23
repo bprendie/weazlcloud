@@ -15,20 +15,20 @@ import (
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/cryptox"
-	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 type stagedUpload struct {
-	ID        string    `json:"id"`
-	Path      string    `json:"path"`
-	Data      string    `json:"data"`
-	Size      int64     `json:"size"`
-	Expected  int64     `json:"expected"`
-	Hash      string    `json:"hash"`
-	Snap      string    `json:"snap,omitempty"`
-	Object    string    `json:"object,omitempty"`
-	BatchRoot string    `json:"batch_root,omitempty"`
-	Mtime     time.Time `json:"mtime"`
+	ID        string             `json:"id"`
+	Path      string             `json:"path"`
+	Data      string             `json:"data"`
+	Size      int64              `json:"size"`
+	Expected  int64              `json:"expected"`
+	Hash      string             `json:"hash"`
+	Snap      string             `json:"snap,omitempty"`
+	Object    string             `json:"object,omitempty"`
+	Reference *catalog.Reference `json:"reference,omitempty"`
+	BatchRoot string             `json:"batch_root,omitempty"`
+	Mtime     time.Time          `json:"mtime"`
 }
 
 func (l *Library) stageReader(name string, body io.Reader, expected int64) (stagedUpload, error) {
@@ -84,16 +84,15 @@ func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog
 		if err != nil {
 			return catalog.File{}, err
 		}
-		pass, _, err := l.vault.Secrets()
-		if err == nil {
-			stage.Snap, err = l.restic.Put(ctx, restic.Repo{Location: l.repo, Password: pass}, stage.Hash, tmp)
-		}
+		var ref catalog.Reference
+		ref, err = l.backend.Put(ctx, stage.Hash, tmp)
 		_ = tmp.Close()
 		if err != nil {
 			return catalog.File{}, err
 		}
+		stage.Reference = &ref
+		stage.Snap, stage.Object = ref.Snapshot, ref.Object
 		l.resticCommits.Add(1)
-		stage.Object = stage.Hash
 		if err := l.writeStage(stage); err != nil {
 			return catalog.File{}, err
 		}
@@ -101,7 +100,11 @@ func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog
 	if stage.Object == "" {
 		stage.Object = stage.Hash
 	}
-	f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Present: true}
+	if stage.Reference == nil {
+		ref := resticReference(stage.Snap, stage.Object, stage.Hash)
+		stage.Reference = &ref
+	}
+	f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Reference: stage.Reference, Present: true}
 	if err := l.catalog.Put(f); err != nil {
 		return catalog.File{}, err
 	}

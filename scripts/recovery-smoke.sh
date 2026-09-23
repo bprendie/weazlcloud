@@ -31,6 +31,7 @@ start_node() {
   WEAZLCLOUD_DESK_ADDR="127.0.0.1:$base_port" \
   WEAZLCLOUD_SHARE_ADDR="127.0.0.1:$((base_port + 1))" \
   WEAZLCLOUD_DRIVE_ADDR="127.0.0.1:$((base_port + 2))" \
+  WEAZLCLOUD_MAINTENANCE_QUIET=100ms \
   "$binary" >"$node_log" 2>&1 &
   pid=$!
   for _ in $(seq 1 80); do
@@ -81,6 +82,10 @@ curl -fsS -b "$restore_jar" -H 'X-Weazl-Desk: 1' -H 'Content-Type: application/j
   -d '{"passphrase":"recovery-vault"}' "http://127.0.0.1:$base_port/api/unlock" >/dev/null
 curl -sS -b "$restore_jar" -H 'X-Weazl-Desk: 1' \
   "http://127.0.0.1:$base_port/api/library/archive?id=stale-check" >/dev/null || true
+for _ in $(seq 1 30); do
+  [[ ! -e "$restored_dir/users/$user_id/.weazl-archives/.archive-stale.tmp" ]] && break
+  sleep 0.2
+done
 curl -fsS -b "$restore_jar" -H 'X-Weazl-Desk: 1' \
   "http://127.0.0.1:$base_port/api/library?path=payload.bin" -o "$root/restored.bin"
 restored_hash="$(sha256sum "$root/restored.bin" | awk '{print $1}')"

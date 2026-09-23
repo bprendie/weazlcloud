@@ -1,7 +1,7 @@
 # Multi-user dedupe integration workbook — September 23, 2026
 
 Owner: Bob. Implementation: Luna.
-Status: D0 complete; D1 is next. Shared storage and migration remain disabled.
+Status: D0 and D1 complete; D2 is next. Shared storage and migration remain disabled.
 Continues [September 22's workbook](phase_plan_2026-09-22.md). D0 started from `72d186f`.
 
 ## What we are building
@@ -10,7 +10,7 @@ Store identical content once across the household while keeping each user's libr
 
 Keep local accounts, private encrypted catalogs, vault passwords, stored node-key convenience, shared available disk, and the silent system reserve. The application administrator must not gain a file browser for other users. The server remains trusted to process plaintext; someone controlling the host can already decrypt through stored keys. This is not end-to-end encryption against the server.
 
-**First assignment: complete D0, then D1. Do not start by merging Restic repositories or migrating real data.** The small whole-file prototype proves ownership and recovery. Chunk dedupe is required before production adoption so we do not lose Restic's existing savings on similar disk images.
+**D0 and D1 are complete; D2 is next. Do not start by merging Restic repositories or migrating real data.** D2's small whole-file prototype will prove ownership and recovery. Chunk dedupe is required before production adoption so we do not lose Restic's existing savings on similar disk images.
 
 Execution order: D0 baseline → D1 storage interface → D2 sharing prototype → D3 chunks → D4 application integration → D5 migration tooling → D6 rollback/recovery → D7 rehearsal and handoff. Build D5 retirement tooling early, but keep it disabled outside disposable tests until D6 passes.
 
@@ -111,11 +111,19 @@ Phase exit: complete. `make check`, the final isolated Restic baseline, and a `C
 
 ## D1 — Put current Restic storage behind an interface
 
-- [ ] **D1.1 — Add stable catalog identities and versioned references.** Assign a stable ID to each existing catalog row, including separate tombstones with the same path. Advance revisions on replacement, move/rename, Trash, and restore. Interpret rows without a backend field as legacy Restic. Preserve exact `Snap` and `Object` values; `Object` may be a batch path and must not be reconstructed from the filename. **Pass:** legacy fixtures load without loss, identity survives restart, and unknown formats fail closed without rewriting the catalog.
-- [ ] **D1.2 — Implement the Restic adapter.** Define streaming write/read, bounded-prefix/range access, immutable-reference capture, holds, and lifecycle hooks. Keep owner authorization above raw storage lookup. Move direct backend calls behind this interface, including ZIPs and previews. **Pass:** Desk, WebDAV, direct PUT, resumable finalize, empty files, previews, ZIPs, grabs, and Trash still work using only the old backend.
-- [ ] **D1.3 — Prepare compatibility checks before shared writes.** Add the node format marker and an operator preflight that checks supported versions before startup. Keep writes legacy-only at this stage; reject shared references until their adapter exists. Unsupported writers must be rejected by the supported deployment path. Document that historic binaries do not know this marker and must never be launched directly on a changed volume. **Pass:** unknown-format data cannot be silently stripped by a supported downgrade. D4.2 completes the mixed-format reader needed for the bridge release.
+- [x] **D1.1 — Add stable catalog identities and versioned references.** Legacy catalogs gain random stable IDs, revision 1, and version-1 Restic references on first unlocked load. Original `Snap` and `Object` values remain intact, including batch object paths and empty legacy object fields; separate same-path Trash/live entries receive separate IDs. Replacement preserves ID and advances revision; move, Trash, and restore advance revisions; copy gets a new ID. Unknown or inconsistent references fail without catalog rewrite or in-memory publication.
+- [x] **D1.2 — Implement the Restic adapter.** `internal/library.Backend` owns initialization, streamed writes/reads/ranges, batch writes, immutable-reference capture, holds, snapshot listing/pruning, and drain. All runtime Restic operations now go through its Restic implementation. ZIP manifests hold captured snapshots until success/cancel/failure, and Trash cleanup durably defers pruning while a snapshot is held. Previews, downloads, ranges, Desk/WebDAV uploads, resumable upload finalization, ZIPs, grabs, empty files, and Trash remain on the legacy backend.
+- [x] **D1.3 — Prepare compatibility checks before shared writes.** Startup creates/checks `.weazl-storage.json` before listeners bind; `weazlcloud -check` validates it read-only. The current marker permits only `restic-legacy` format version 1. Unknown versions/modes and unsupported reader/writer requirements reject supported starts before catalog writes. Shared references/writes and migration remain unavailable. [docs/storage-format.md](docs/storage-format.md) explains the old-binary boundary: historic images do not inspect the marker and cannot be launched against a future changed volume.
 
-Phase exit: `make check` and existing smoke paths pass with the Restic adapter. The eventual bridge image becomes a usable rollback target only after D4 and D6 validation; do not assume `74aa734` can read the future format.
+Phase exit: complete. `make check`, the static Docker build, disposable container upload/download/preview/grab smoke, browser smoke, and filesystem restart/restore smoke pass. The default browser-smoke port was occupied by an existing local service, so the smoke passed on an alternate port without stopping that service. The recovery smoke now uses a short isolated idle interval and waits for its cleanup job. The D1 bridge is not yet a supported rollback target for future shared data; D4 and D6 must validate it first.
+
+### D1 evidence
+
+- Catalog compatibility: [internal/catalog/identity.go](internal/catalog/identity.go), [internal/catalog/reference_test.go](internal/catalog/reference_test.go), and [docs/storage-format.md](docs/storage-format.md). Tests cover stable reload, batch object preservation, two same-path identities, revision transitions, and fail-closed unknown references.
+- Storage boundary and lifecycle: [internal/library/backend.go](internal/library/backend.go), [internal/library/restic_backend.go](internal/library/restic_backend.go), [internal/library/backend_test.go](internal/library/backend_test.go). The integration test checks byte-range output and proves an active ZIP-style hold defers Trash pruning until released.
+- Startup gate: [internal/storageformat/marker.go](internal/storageformat/marker.go) is checked from `Start` and normal `Run` before listeners bind; `-check` does not create the marker. Future/unknown marker tests confirm it is not rewritten.
+- Validation: `make check`; `docker build -f deploy/Dockerfile`; `WEAZLCLOUD_IMAGE=weazlcloud:d1-smoke make smoke-container`; `WEAZLCLOUD_BROWSER_PORT=22772 bash scripts/smoke-browser.sh`; `WEAZLCLOUD_RECOVERY_PORT=18272 bash scripts/recovery-smoke.sh`.
+- Limits: Restic's range adapter bounds memory but must stream from the beginning through the end of the dump, so a high-offset media seek still costs I/O proportional to the offset and remaining stream. Holds are process-local D1 legacy protections; shared-store durable holds belong to later phases.
 
 ## D2 — Prove safe whole-file sharing on disposable data
 

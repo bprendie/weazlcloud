@@ -3,9 +3,6 @@ package library
 import (
 	"context"
 	"errors"
-	"io"
-
-	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 const prefixLimit = 512
@@ -27,16 +24,12 @@ func (l *Library) Prefix(ctx context.Context, name string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("file is not in the library")
 	}
-	pass, _, err := l.vault.Secrets()
+	ref, err := l.backend.Capture(f)
 	if err != nil {
 		return nil, err
 	}
-	object := f.Object
-	if object == "" {
-		object = f.Hash
-	}
 	var prefix prefixWriter
-	err = l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, object, &prefix)
+	err = l.backend.ReadRange(ctx, ref, 0, min(int64(prefixLimit), f.Size), &prefix)
 	return append([]byte(nil), prefix.buf...), err
 }
 
@@ -54,5 +47,3 @@ func (w *prefixWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
-
-var _ io.Writer = (*prefixWriter)(nil)

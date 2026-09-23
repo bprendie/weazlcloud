@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
-	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 type trashCleanupIntent struct {
@@ -81,12 +80,7 @@ func (l *Library) resumeTrashCleanup(ctx context.Context) error {
 		}
 	}
 	if len(intent.Snapshots) > 0 {
-		pass, _, err := l.vault.Secrets()
-		if err != nil {
-			return err
-		}
-		defer cryptox.Zero(pass)
-		existing, err := l.restic.Snapshots(ctx, restic.Repo{Location: l.repo, Password: pass})
+		existing, err := l.backend.Snapshots(ctx)
 		if err != nil {
 			return err
 		}
@@ -100,8 +94,14 @@ func (l *Library) resumeTrashCleanup(ctx context.Context) error {
 				remaining = append(remaining, id)
 			}
 		}
-		if err := l.restic.Forget(ctx, restic.Repo{Location: l.repo, Password: pass}, remaining); err != nil {
+		deferred, err := l.backend.Forget(ctx, remaining)
+		if err != nil {
 			return err
+		}
+		if len(deferred) > 0 {
+			intent.Snapshots = deferred
+			intent.CatalogPurged = true
+			return l.saveTrashIntent(intent)
 		}
 	}
 	if err := os.Remove(l.trashIntentPath()); err != nil && !errors.Is(err, os.ErrNotExist) {

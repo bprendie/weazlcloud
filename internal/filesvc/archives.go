@@ -98,6 +98,12 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	if err != nil {
 		return ArchiveJobView{}, err
 	}
+	manifestHandedOff := false
+	defer func() {
+		if !manifestHandedOff {
+			manifest.Release()
+		}
+	}()
 	if err := os.MkdirAll(m.root, 0o700); err != nil {
 		return ArchiveJobView{}, err
 	}
@@ -128,11 +134,13 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	m.workers.Add(1)
 	m.mu.Unlock()
 	handedOff = true
+	manifestHandedOff = true
 	go m.run(ctx, job)
 	return job.ArchiveJobView, nil
 }
 
 func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
+	defer job.manifest.Release()
 	defer job.activityRelease()
 	defer close(job.done)
 	defer m.workers.Done()

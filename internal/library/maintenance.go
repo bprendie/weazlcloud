@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
-	"github.com/bprendie/weazlcloud/internal/cryptox"
-	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
@@ -93,12 +91,7 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 	}
 	forget := make([]string, 0)
 	if len(candidates) > 0 {
-		pass, _, err := l.vault.Secrets()
-		if err != nil {
-			return 0, err
-		}
-		defer cryptox.Zero(pass)
-		snapshots, err := l.restic.Snapshots(ctx, restic.Repo{Location: l.repo, Password: pass})
+		snapshots, err := l.backend.Snapshots(ctx)
 		if err != nil {
 			return 0, err
 		}

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
-	"github.com/bprendie/weazlcloud/internal/restic"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -77,11 +76,7 @@ func TestCleanupTrashPurgesZeroByteFilesAndEmptyFolders(t *testing.T) {
 	if err != nil || len(trash) != 0 {
 		t.Fatalf("zero-byte/empty-folder entries remain in Trash: %+v err=%v", trash, err)
 	}
-	pass, _, err := v.Secrets()
-	if err != nil {
-		t.Fatal(err)
-	}
-	snapshots, err := lib.restic.Snapshots(ctx, restic.Repo{Location: lib.repo, Password: pass})
+	snapshots, err := lib.backend.Snapshots(ctx)
 	if err != nil || len(snapshots) != 0 {
 		t.Fatalf("zero-byte file snapshot remains: %v err=%v", snapshots, err)
 	}
@@ -105,7 +100,7 @@ func TestCleanupTrashPurgesZeroByteFilesAndEmptyFolders(t *testing.T) {
 	if err != nil || !bytes.Equal(got, []byte("new bytes")) {
 		t.Fatalf("cleanup changed replacement content: %q err=%v", got, err)
 	}
-	snapshots, err = lib.restic.Snapshots(ctx, restic.Repo{Location: lib.repo, Password: pass})
+	snapshots, err = lib.backend.Snapshots(ctx)
 	if err != nil || len(snapshots) != 1 || snapshots[0] != newFile.Snap {
 		t.Fatalf("cleanup did not preserve only the live snapshot: %v err=%v", snapshots, err)
 	}
@@ -135,7 +130,7 @@ func TestCleanupTrashRetriesFailedPruneAndMeasuresRepositoryReclaim(t *testing.T
 	if err := os.WriteFile(shim, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lib.restic.Binary = shim
+	lib.backend.(*resticBackend).runner.Binary = shim
 	cutoff := time.Now().UTC().Add(time.Hour)
 	if _, err := lib.CleanupTrash(ctx, cutoff); err == nil || !strings.Contains(err.Error(), "injected-prune-failure") {
 		t.Fatalf("expected injected prune failure, got %v", err)

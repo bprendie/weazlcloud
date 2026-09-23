@@ -11,7 +11,6 @@ import (
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/cryptox"
-	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 const (
@@ -168,12 +167,7 @@ func (l *Library) commitStagedBatch(ctx context.Context, requests []batchRequest
 			return err
 		}
 	}
-	pass, _, err := l.vault.Secrets()
-	if err != nil {
-		_ = os.RemoveAll(root)
-		return err
-	}
-	snap, err := l.restic.PutBatch(ctx, restic.Repo{Location: l.repo, Password: pass}, root)
+	batch, err := l.backend.PutBatch(ctx, root)
 	if err != nil {
 		_ = os.RemoveAll(root)
 		return err
@@ -181,19 +175,23 @@ func (l *Library) commitStagedBatch(ctx context.Context, requests []batchRequest
 	l.batchCommits.Add(1)
 	for _, request := range requests {
 		stage := request.stage
-		stage.Snap = snap
+		stage.Snap = batch.Snapshot
 		stage.BatchRoot = root
 		stage.Object = filepath.Join(root, filepath.FromSlash(stage.Path))
+		ref := resticReference(stage.Snap, stage.Object, stage.Hash)
+		stage.Reference = &ref
 		if err := l.writeStage(stage); err != nil {
 			return err
 		}
 	}
 	for _, request := range requests {
 		stage := request.stage
-		stage.Snap = snap
+		stage.Snap = batch.Snapshot
 		stage.BatchRoot = root
 		stage.Object = filepath.Join(root, filepath.FromSlash(stage.Path))
-		f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: snap, Object: stage.Object, Present: true}
+		ref := resticReference(stage.Snap, stage.Object, stage.Hash)
+		stage.Reference = &ref
+		f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Reference: &ref, Present: true}
 		if err := l.catalog.Put(f); err != nil {
 			return err
 		}

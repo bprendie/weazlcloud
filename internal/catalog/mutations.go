@@ -35,7 +35,11 @@ func (c *Catalog) Copy(oldPath, newPath string) error {
 	next := append([]File(nil), c.files...)
 	for _, f := range source {
 		f.Path = newPath + strings.TrimPrefix(f.Path, oldPath)
+		f.EntryID, f.Revision = "", 0
 		f.DeletedAt = nil
+		if err := assignIdentity(&f); err != nil {
+			return err
+		}
 		next = append(next, f)
 	}
 	if err := c.saveFilesLocked(next); err != nil {
@@ -53,7 +57,11 @@ func (c *Catalog) Delete(path string) error {
 	for i, f := range next {
 		if f.Path == path || strings.HasPrefix(f.Path, path+"/") {
 			if f.Present {
+				if f.Revision == ^uint64(0) {
+					return ErrRevisionOverflow
+				}
 				next[i].Present = false
+				next[i].Revision++
 				now := time.Now().UTC()
 				next[i].DeletedAt = &now
 				changed = true
@@ -95,7 +103,11 @@ func (c *Catalog) Restore(path string) error {
 	next := append([]File(nil), c.files...)
 	for i, f := range next {
 		if !f.Present && f.DeletedAt != nil && (f.Path == path || strings.HasPrefix(f.Path, path+"/")) {
+			if f.Revision == ^uint64(0) {
+				return ErrRevisionOverflow
+			}
 			next[i].Present = true
+			next[i].Revision++
 			next[i].DeletedAt = nil
 		}
 	}

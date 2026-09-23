@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
-	"github.com/bprendie/weazlcloud/internal/restic"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -35,7 +34,7 @@ type Library struct {
 	repo          string
 	vault         *vault.Vault
 	catalog       *catalog.Catalog
-	restic        restic.Runner
+	backend       Backend
 }
 
 const TrashLifetime = 30 * 24 * time.Hour
@@ -60,7 +59,7 @@ func New(repo, catalogPath string, v *vault.Vault) *Library {
 		repo:         repo,
 		vault:        v,
 		catalog:      catalog.New(catalogPath, v),
-		restic:       restic.New(),
+		backend:      newResticBackend(repo, v),
 		activeStages: make(map[string]struct{}),
 		thumbJobs:    make(map[string]*thumbnailJob),
 		batchWake:    make(chan struct{}, 1),
@@ -80,11 +79,7 @@ func (l *Library) ensure(ctx context.Context) error {
 	if !l.vault.Unlocked() {
 		return vault.ErrLocked
 	}
-	pass, _, err := l.vault.Secrets()
-	if err != nil {
-		return err
-	}
-	if err := l.restic.Init(ctx, restic.Repo{Location: l.repo, Password: pass}); err != nil {
+	if err := l.backend.Ensure(ctx); err != nil {
 		return err
 	}
 	return l.catalog.Load()
@@ -213,16 +208,12 @@ func (l *Library) Get(ctx context.Context, name string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("file is not in the library")
 	}
-	pass, _, err := l.vault.Secrets()
+	ref, err := l.backend.Capture(f)
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	object := f.Object
-	if object == "" {
-		object = f.Hash
-	}
-	if err := l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, object, &buf); err != nil {
+	if err := l.backend.Read(ctx, ref, &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -268,15 +259,33 @@ func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error 
 	if !ok {
 		return errors.New("file is not in the library")
 	}
-	pass, _, err := l.vault.Secrets()
+	ref, err := l.backend.Capture(f)
 	if err != nil {
 		return err
 	}
-	object := f.Object
-	if object == "" {
-		object = f.Hash
+	return l.backend.Read(ctx, ref, w)
+}
+
+// StreamRange reads a byte range without retaining the complete file.
+func (l *Library) StreamRange(ctx context.Context, name string, offset, length int64, w io.Writer) error {
+	name, err := cleanPath(name)
+	if err != nil {
+		return err
 	}
-	return l.restic.Dump(ctx, restic.Repo{Location: l.repo, Password: pass}, f.Snap, object, w)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return err
+	}
+	f, ok := l.catalog.Get(name)
+	if !ok || f.Folder || offset < 0 || length < 0 || offset > f.Size || length > f.Size-offset {
+		return errors.New("invalid file range")
+	}
+	ref, err := l.backend.Capture(f)
+	if err != nil {
+		return err
+	}
+	return l.backend.ReadRange(ctx, ref, offset, length, w)
 }
 
 func (l *Library) ResticCommitCounts() (single, batch uint64) {

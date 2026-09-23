@@ -168,17 +168,7 @@ func serveLibraryRange(w http.ResponseWriter, r *http.Request, l *library.Librar
 	w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+"/"+strconv.FormatInt(size, 10))
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
 	w.WriteHeader(http.StatusPartialContent)
-	pr, pw := io.Pipe()
-	go func() {
-		pw.CloseWithError(l.StreamTo(r.Context(), path, pw))
-	}()
-	defer pr.Close()
-	if start > 0 {
-		if _, err := io.CopyN(io.Discard, pr, start); err != nil {
-			return
-		}
-	}
-	_, _ = io.CopyN(w, pr, length)
+	_ = l.StreamRange(r.Context(), path, start, length, w)
 }
 
 func byteRange(raw string, size int64) (int64, int64, bool) {

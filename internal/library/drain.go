@@ -7,7 +7,7 @@ func (l *Library) Drain(ctx context.Context) error {
 		l.batchMu.Lock()
 		if !l.batchRunning {
 			l.batchMu.Unlock()
-			return nil
+			return l.backend.Drain(ctx)
 		}
 		done := l.batchDone
 		l.batchMu.Unlock()

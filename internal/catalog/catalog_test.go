@@ -30,8 +30,16 @@ func TestCatalogDeleteRestoreAndPurgeTrash(t *testing.T) {
 	if err := c.Copy("photos", "backup"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := c.Get("backup/a.jpg"); !ok {
+	original, ok := c.Get("photos/a.jpg")
+	if !ok {
+		t.Fatal("source file missing after copy")
+	}
+	copied, ok := c.Get("backup/a.jpg")
+	if !ok {
 		t.Fatal("copy did not preserve the file")
+	}
+	if copied.EntryID == original.EntryID || copied.Revision != 1 {
+		t.Fatalf("copy did not get a new identity: original=%+v copied=%+v", original, copied)
 	}
 	if err := c.Copy("photos", "backup"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("copy collision: %v", err)

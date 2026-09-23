@@ -13,12 +13,25 @@ import (
 )
 
 var (
-	ErrConflict   = errors.New("library path conflicts with an existing file or folder")
-	ErrNotFound   = errors.New("library path does not exist")
-	ErrDescendant = errors.New("cannot move a folder into itself or a descendant")
+	ErrConflict         = errors.New("library path conflicts with an existing file or folder")
+	ErrNotFound         = errors.New("library path does not exist")
+	ErrDescendant       = errors.New("cannot move a folder into itself or a descendant")
+	ErrUnknownReference = errors.New("catalog contains an unsupported storage reference")
+	ErrRevisionOverflow = errors.New("catalog entry revision overflow")
 )
 
+const ResticBackend = "restic"
+
+type Reference struct {
+	Backend  string `json:"backend"`
+	Version  uint16 `json:"version"`
+	Snapshot string `json:"snapshot"`
+	Object   string `json:"object"`
+}
+
 type File struct {
+	EntryID   string     `json:"entry_id,omitempty"`
+	Revision  uint64     `json:"revision,omitempty"`
 	Path      string     `json:"path"`
 	Folder    bool       `json:"folder,omitempty"`
 	Size      int64      `json:"size"`
@@ -26,6 +39,7 @@ type File struct {
 	Hash      string     `json:"hash"`
 	Snap      string     `json:"snap"`
 	Object    string     `json:"object,omitempty"`
+	Reference *Reference `json:"reference,omitempty"`
 	Present   bool       `json:"present"`
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 }
@@ -48,6 +62,7 @@ func New(path string, v *vault.Vault) *Catalog {
 func (c *Catalog) Load() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.files = nil
 	b, err := os.ReadFile(c.path)
 	if os.IsNotExist(err) {
 		c.files = nil
@@ -65,7 +80,16 @@ func (c *Catalog) Load() error {
 	if err := json.Unmarshal(plain, &t); err != nil {
 		return err
 	}
-	c.files = t.Files
+	files, changed, err := upgradeFiles(t.Files)
+	if err != nil {
+		return err
+	}
+	if changed {
+		if err := c.saveFilesLocked(files); err != nil {
+			return err
+		}
+	}
+	c.files = files
 	return nil
 }
 
@@ -75,7 +99,7 @@ func (c *Catalog) List() []File {
 	out := make([]File, 0, len(c.files))
 	for _, f := range c.files {
 		if f.Present {
-			out = append(out, f)
+			out = append(out, cloneFile(f))
 		}
 	}
 	return out
@@ -84,7 +108,11 @@ func (c *Catalog) List() []File {
 func (c *Catalog) All() []File {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return append([]File(nil), c.files...)
+	out := make([]File, len(c.files))
+	for i, f := range c.files {
+		out[i] = cloneFile(f)
+	}
+	return out
 }
 
 func (c *Catalog) Trash() []File {
@@ -93,7 +121,7 @@ func (c *Catalog) Trash() []File {
 	out := make([]File, 0)
 	for _, f := range c.files {
 		if !f.Present && f.DeletedAt != nil {
-			out = append(out, f)
+			out = append(out, cloneFile(f))
 		}
 	}
 	return out
@@ -104,7 +132,7 @@ func (c *Catalog) Get(path string) (File, bool) {
 	defer c.mu.Unlock()
 	for _, f := range c.files {
 		if f.Path == path && f.Present {
-			return f, true
+			return cloneFile(f), true
 		}
 	}
 	return File{}, false
@@ -132,12 +160,24 @@ func (c *Catalog) Put(f File) error {
 	found := false
 	for i, x := range next {
 		if x.Path == f.Path && x.Present {
+			if x.Revision == ^uint64(0) {
+				return ErrRevisionOverflow
+			}
+			f.EntryID = x.EntryID
+			f.Revision = x.Revision + 1
+			if err := assignReference(&f); err != nil {
+				return err
+			}
 			next[i] = f
 			found = true
 			break
 		}
 	}
 	if !found {
+		f.EntryID, f.Revision = "", 0
+		if err := assignIdentity(&f); err != nil {
+			return err
+		}
 		next = append(next, f)
 	}
 	if err := c.saveFilesLocked(next); err != nil {
@@ -159,7 +199,11 @@ func (c *Catalog) Mkdir(path string) error {
 		}
 	}
 	next := append([]File(nil), c.files...)
-	next = append(next, File{Path: path, Folder: true, Mtime: time.Now().UTC(), Present: true})
+	f := File{Path: path, Folder: true, Mtime: time.Now().UTC(), Present: true}
+	if err := assignIdentity(&f); err != nil {
+		return err
+	}
+	next = append(next, f)
 	if err := c.saveFilesLocked(next); err != nil {
 		return err
 	}
@@ -198,8 +242,12 @@ func (c *Catalog) Rename(oldPath, newPath string) error {
 		if !f.Present || (f.Path != oldPath && !strings.HasPrefix(f.Path, oldPath+"/")) {
 			continue
 		}
+		if f.Revision == ^uint64(0) {
+			return ErrRevisionOverflow
+		}
 		suffix := strings.TrimPrefix(f.Path, oldPath)
 		next[i].Path = newPath + suffix
+		next[i].Revision++
 	}
 	if err := c.saveFilesLocked(next); err != nil {
 		return err
