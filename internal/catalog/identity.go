@@ -6,13 +6,41 @@ import (
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
+func newEntryID() (string, error) {
+	id, err := cryptox.Random(16)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(id), nil
+}
+
+// NextIdentity reserves the immutable entry tuple a backend write must bind to.
+// The caller serializes the later Put with the library mutation lock.
+func (c *Catalog) NextIdentity(path string) (string, uint64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, f := range c.files {
+		if f.Path == path && f.Present {
+			if f.Revision == ^uint64(0) {
+				return "", 0, ErrRevisionOverflow
+			}
+			return f.EntryID, f.Revision + 1, nil
+		}
+	}
+	id, err := newEntryID()
+	if err != nil {
+		return "", 0, err
+	}
+	return id, 1, nil
+}
+
 func upgradeFiles(files []File) ([]File, bool, error) {
 	out := append([]File(nil), files...)
 	seen := make(map[string]struct{}, len(out))
 	changed := false
 	for i := range out {
 		f := &out[i]
-		if f.Reference != nil && (f.Reference.Backend != ResticBackend || f.Reference.Version != 1) {
+		if f.Reference != nil && validateReference(*f) != nil {
 			return nil, false, ErrUnknownReference
 		}
 	}
@@ -47,11 +75,11 @@ func upgradeFiles(files []File) ([]File, bool, error) {
 
 func assignIdentity(f *File) error {
 	if f.EntryID == "" {
-		id, err := cryptox.Random(16)
+		id, err := newEntryID()
 		if err != nil {
 			return err
 		}
-		f.EntryID = hex.EncodeToString(id)
+		f.EntryID = id
 	}
 	if f.Revision == 0 {
 		f.Revision = 1
@@ -75,11 +103,19 @@ func validateReference(f File) error {
 		return nil
 	}
 	ref := f.Reference
-	if f.Folder || ref.Backend != ResticBackend || ref.Version != 1 || ref.Snapshot != f.Snap || (f.Object != "" && ref.Object != f.Object) {
+	if f.Folder || (f.Object != "" && ref.Object != f.Object) {
 		return ErrUnknownReference
 	}
-	return nil
+	if ref.Backend == ResticBackend && ref.Version == 1 && ref.Snapshot == f.Snap {
+		return nil
+	}
+	if ref.Backend == SharedBackend && ref.Version == 1 && ref.Snapshot == "" && ref.Object != "" && ref.Operation != "" && f.Snap == "" {
+		return nil
+	}
+	return ErrUnknownReference
 }
+
+func ValidateFileReference(f File) error { return validateReference(f) }
 
 func cloneFile(f File) File {
 	if f.Reference != nil {

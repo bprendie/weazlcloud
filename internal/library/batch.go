@@ -30,6 +30,21 @@ type batchResult struct {
 }
 
 func (l *Library) commitStagedQueued(ctx context.Context, stage stagedUpload) (catalog.File, error) {
+	if stage.Backend == catalog.SharedBackend {
+		release := l.trackStorage()
+		defer release()
+		l.mu.Lock()
+		file, err := l.commitSharedStaged(ctx, stage)
+		l.mu.Unlock()
+		l.setStageActive(stage.ID, false)
+		return file, err
+	}
+	if stage.Backend == "" {
+		stage.Backend = catalog.ResticBackend
+		if err := l.writeStage(stage); err != nil {
+			return catalog.File{}, err
+		}
+	}
 	request := batchRequest{stage: stage, done: make(chan batchResult, 1), release: l.trackStorage()}
 	l.batchMu.Lock()
 	l.batchPending = append(l.batchPending, request)

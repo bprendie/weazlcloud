@@ -92,6 +92,10 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 			out["dedupe_percent"] = dedupe
 			out["logical_bytes"] = logical
 			out["unique_bytes"] = unique
+			if shared, allocated, metricsErr := res.Lib.SharedMetrics(r.Context()); metricsErr == nil && shared {
+				out["dedupe_scope"] = "all live and Trash references using shared storage"
+				out["shared_allocated_bytes"] = allocated
+			}
 		}
 		if trash, e := res.Lib.Trash(r.Context()); e == nil {
 			var bytes int64
@@ -195,7 +199,11 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 			apiError(w, e)
 			return
 		}
-		guarded, release, err := h.quota.GuardReader(u.ID, h.users.Count(), used, current, r.ContentLength, r.Body)
+		multiplier := int64(1)
+		if res.Lib.SharedWritesEnabled() {
+			multiplier = 2
+		}
+		guarded, release, err := h.quota.GuardReaderMultiplier(u.ID, h.users.Count(), used, current, r.ContentLength, multiplier, r.Body)
 		if err != nil {
 			apiError(w, err)
 			return

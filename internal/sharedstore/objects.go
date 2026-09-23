@@ -18,6 +18,9 @@ func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprin
 		var storedLen int64
 		err := s.db.QueryRowContext(ctx, "SELECT object_id,state,node_key,plain_len FROM objects WHERE fingerprint=?", fingerprint).Scan(&id, &state, &wrapped, &storedLen)
 		if err == nil {
+			if state == "deleting" {
+				return "", nil, ErrState
+			}
 			return s.verifyExisting(id, state, wrapped, storedLen, length)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {

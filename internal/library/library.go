@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/sharedstore"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
@@ -35,6 +36,9 @@ type Library struct {
 	vault         *vault.Vault
 	catalog       *catalog.Catalog
 	backend       Backend
+	sharedStore   *sharedstore.Store
+	ownerID       string
+	sharedWrites  bool
 }
 
 const TrashLifetime = 30 * 24 * time.Hour
@@ -83,40 +87,6 @@ func (l *Library) ensure(ctx context.Context) error {
 		return err
 	}
 	return l.catalog.Load()
-}
-
-func (l *Library) List() []catalog.File {
-	return l.catalog.List()
-}
-
-func (l *Library) Usage(ctx context.Context) (int64, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return 0, err
-	}
-	var total int64
-	for _, f := range l.catalog.List() {
-		total += f.Size
-	}
-	return total, nil
-}
-
-func (l *Library) Metadata(ctx context.Context, name string) (catalog.File, error) {
-	name, err := cleanPath(name)
-	if err != nil {
-		return catalog.File{}, err
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return catalog.File{}, err
-	}
-	f, ok := l.catalog.Get(name)
-	if !ok {
-		return catalog.File{}, errors.New("file is not in the library")
-	}
-	return f, nil
 }
 
 func (l *Library) Mkdir(ctx context.Context, name string) error {
@@ -171,7 +141,22 @@ func (l *Library) Copy(ctx context.Context, oldName, newName string) error {
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}
-	if err := l.catalog.Copy(oldName, newName); err != nil {
+	err = l.catalog.CopyWith(oldName, newName, func(source, destination *catalog.File) error {
+		if source.Reference == nil || source.Reference.Backend != catalog.SharedBackend {
+			return nil
+		}
+		if l.sharedStore == nil || l.ownerID == "" {
+			return catalog.ErrUnknownReference
+		}
+		ref, e := l.sharedStore.Grant(ctx, l.ownerID, l.vault, toSharedReference(*source.Reference), destination.EntryID, destination.Revision)
+		if e != nil {
+			return e
+		}
+		destination.Reference = &catalog.Reference{Backend: catalog.SharedBackend, Version: 1, Object: ref.ObjectID, Operation: ref.Operation, OwnerEntryID: ref.EntryID, OwnerRevision: ref.Revision}
+		destination.Object = ref.ObjectID
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 	l.publishChange(Change{Kind: "copy", Paths: []string{oldName, newName}})
@@ -208,12 +193,12 @@ func (l *Library) Get(ctx context.Context, name string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("file is not in the library")
 	}
-	ref, err := l.backend.Capture(f)
+	ref, err := l.capture(f)
 	if err != nil {
 		return nil, err
 	}
 	var buf bytes.Buffer
-	if err := l.backend.Read(ctx, ref, &buf); err != nil {
+	if err := l.readReference(ctx, ref, &buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -259,11 +244,11 @@ func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error 
 	if !ok {
 		return errors.New("file is not in the library")
 	}
-	ref, err := l.backend.Capture(f)
+	ref, err := l.capture(f)
 	if err != nil {
 		return err
 	}
-	return l.backend.Read(ctx, ref, w)
+	return l.readReference(ctx, ref, w)
 }
 
 // StreamRange reads a byte range without retaining the complete file.
@@ -281,11 +266,11 @@ func (l *Library) StreamRange(ctx context.Context, name string, offset, length i
 	if !ok || f.Folder || offset < 0 || length < 0 || offset > f.Size || length > f.Size-offset {
 		return errors.New("invalid file range")
 	}
-	ref, err := l.backend.Capture(f)
+	ref, err := l.capture(f)
 	if err != nil {
 		return err
 	}
-	return l.backend.ReadRange(ctx, ref, offset, length, w)
+	return l.readReferenceRange(ctx, ref, offset, length, w)
 }
 
 func (l *Library) ResticCommitCounts() (single, batch uint64) {

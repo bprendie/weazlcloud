@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -45,6 +46,10 @@ func Open(root string, options Options) (*Store, error) {
 		s.Close()
 		return nil, err
 	}
+	if err := s.resumeDeletes(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if err := s.reconcileObjects(); err != nil {
 		s.Close()
 		return nil, err
@@ -60,14 +65,54 @@ func (s *Store) Close() error {
 
 // Prepare verifies source bytes and persists a private pending reference.
 func (s *Store) Prepare(ctx context.Context, owner string, v *vault.Vault, entry string, revision uint64, input io.Reader, expected int64) (Prepared, error) {
-	if owner == "" || entry == "" || revision == 0 || v == nil || !v.Unlocked() || expected < -1 {
-		return Prepared{}, ErrDenied
-	}
 	opRaw, err := cryptox.Random(16)
 	if err != nil {
 		return Prepared{}, err
 	}
-	op := opaqueID(opRaw)
+	return s.PrepareWithID(ctx, opaqueID(opRaw), owner, v, entry, revision, input, expected)
+}
+
+// PrepareWithID makes upload finalization recoverable using the caller's durable operation ID.
+func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Vault, entry string, revision uint64, input io.Reader, expected int64) (Prepared, error) {
+	if owner == "" || entry == "" || revision == 0 || v == nil || !v.Unlocked() || expected < -1 {
+		return Prepared{}, ErrDenied
+	}
+	if !validOperationID(op) {
+		return Prepared{}, ErrDenied
+	}
+	var existingOwner []byte
+	var existingEntry, objectID, state string
+	var existingRevision uint64
+	err := s.db.QueryRowContext(ctx, "SELECT owner_id,entry_id,revision,object_id,state FROM operations WHERE op_id=?", op).Scan(&existingOwner, &existingEntry, &existingRevision, &objectID, &state)
+	if err == nil {
+		if !equalBytes(existingOwner, s.keys.ownerToken(owner)) || existingEntry != entry || existingRevision != revision || state == "aborted" || state == "released" {
+			return Prepared{}, ErrState
+		}
+		h := sha256.New()
+		n, hashErr := io.Copy(h, contextReader{ctx, input})
+		if hashErr != nil {
+			return Prepared{}, hashErr
+		}
+		if expected >= 0 && n != expected {
+			return Prepared{}, ErrState
+		}
+		fingerprint := s.keys.fingerprintFor(n, h.Sum(nil))
+		var storedFingerprint []byte
+		var objectState string
+		if hashErr = s.db.QueryRowContext(ctx, "SELECT fingerprint,state FROM objects WHERE object_id=?", objectID).Scan(&storedFingerprint, &objectState); hashErr != nil {
+			return Prepared{}, hashErr
+		}
+		if objectState != "ready" || !equalBytes(fingerprint, storedFingerprint) {
+			return Prepared{}, ErrState
+		}
+		return Prepared{Reference: Reference{Version: formatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Prepared{}, err
+	}
+	if v == nil || !v.Unlocked() {
+		return Prepared{}, ErrDenied
+	}
 	stage, err := os.CreateTemp(filepath.Join(s.root, "shared-staging"), "source-")
 	if err != nil {
 		return Prepared{}, err
@@ -138,6 +183,18 @@ func (s *Store) Prepare(ctx context.Context, owner string, v *vault.Vault, entry
 		return Prepared{}, err
 	}
 	return Prepared{Reference: Reference{Version: formatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
+}
+
+func validOperationID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) cleanupStages() error {

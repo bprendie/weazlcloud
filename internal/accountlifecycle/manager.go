@@ -86,6 +86,9 @@ func (m *Manager) finish(ctx context.Context, u users.User) error {
 	if err := m.capsules.DeleteOwner(u.ID); err != nil {
 		return fail("grab links", err)
 	}
+	if err := m.registry.ReleaseSharedOwner(ctx, u.ID); err != nil {
+		return fail("shared storage", err)
+	}
 	path, err := m.users.DataPath(u)
 	if err != nil {
 		return fail("user data", err)

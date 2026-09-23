@@ -18,17 +18,21 @@ import (
 )
 
 type stagedUpload struct {
-	ID        string             `json:"id"`
-	Path      string             `json:"path"`
-	Data      string             `json:"data"`
-	Size      int64              `json:"size"`
-	Expected  int64              `json:"expected"`
-	Hash      string             `json:"hash"`
-	Snap      string             `json:"snap,omitempty"`
-	Object    string             `json:"object,omitempty"`
-	Reference *catalog.Reference `json:"reference,omitempty"`
-	BatchRoot string             `json:"batch_root,omitempty"`
-	Mtime     time.Time          `json:"mtime"`
+	ID           string             `json:"id"`
+	Path         string             `json:"path"`
+	Data         string             `json:"data"`
+	Size         int64              `json:"size"`
+	Expected     int64              `json:"expected"`
+	Hash         string             `json:"hash"`
+	Snap         string             `json:"snap,omitempty"`
+	Object       string             `json:"object,omitempty"`
+	Reference    *catalog.Reference `json:"reference,omitempty"`
+	Backend      string             `json:"backend,omitempty"`
+	EntryID      string             `json:"entry_id,omitempty"`
+	Revision     uint64             `json:"revision,omitempty"`
+	OldReference *catalog.Reference `json:"old_reference,omitempty"`
+	BatchRoot    string             `json:"batch_root,omitempty"`
+	Mtime        time.Time          `json:"mtime"`
 }
 
 func (l *Library) stageReader(name string, body io.Reader, expected int64) (stagedUpload, error) {
@@ -40,7 +44,11 @@ func (l *Library) stageReader(name string, body io.Reader, expected int64) (stag
 		return stagedUpload{}, err
 	}
 	id := hex.EncodeToString(idBytes)
-	stage := stagedUpload{ID: id, Path: name, Data: id + ".data", Expected: expected, Mtime: time.Now().UTC()}
+	backend := catalog.ResticBackend
+	if l.sharedWrites {
+		backend = catalog.SharedBackend
+	}
+	stage := stagedUpload{ID: id, Path: name, Data: id + ".data", Expected: expected, Mtime: time.Now().UTC(), Backend: backend}
 	l.setStageActive(id, true)
 	dataPath := filepath.Join(l.stageDir(), stage.Data)
 	tmp, err := os.OpenFile(dataPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -75,6 +83,9 @@ func (l *Library) stageReader(name string, body io.Reader, expected int64) (stag
 }
 
 func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog.File, error) {
+	if stage.Backend == catalog.SharedBackend {
+		return l.commitSharedStaged(ctx, stage)
+	}
 	if stage.Size == 0 && stage.Snap == "" {
 		return l.commitEmptyStage(ctx, stage)
 	}

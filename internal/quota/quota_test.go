@@ -1,6 +1,10 @@
 package quota
 
-import "testing"
+import (
+	"bytes"
+	"io"
+	"testing"
+)
 
 func TestReserveUsesSharedStorageWithoutUserAllocation(t *testing.T) {
 	m := newWithStatfs("test", func(string) (uint64, uint64, error) {
@@ -23,4 +27,33 @@ func TestReserveCountsOverwriteSpoolSpace(t *testing.T) {
 	if _, err := m.Reserve("alice", 1, 100, 100, 100); err == nil {
 		t.Fatal("same-sized overwrite still needs temporary working space")
 	}
+}
+
+func TestGuardReaderMultiplierReservesSharedWriteWorkspace(t *testing.T) {
+	m := newWithStatfs("test", func(string) (uint64, uint64, error) {
+		return 1000, 900, nil
+	})
+	_, release, err := m.GuardReaderMultiplier("alice", 1, 0, 0, 150, 2, bytes.NewReader(bytes.Repeat([]byte{'x'}, 150)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	status, err := m.Status(1)
+	if err != nil || status.Reserved != 300 {
+		t.Fatalf("reserved=%d err=%v", status.Reserved, err)
+	}
+	if _, _, err = m.GuardReaderMultiplier("bob", 1, 0, 0, 300, 2, bytes.NewReader(nil)); err == nil {
+		t.Fatal("shared write reservation must include coexisting source and destination")
+	}
+	reader, releaseUnknown, err := m.GuardReaderMultiplier("alice", 1, 0, 0, -1, 2, bytes.NewReader(bytes.Repeat([]byte{'y'}, 10)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.Copy(io.Discard, reader); err != nil {
+		t.Fatal(err)
+	}
+	if status, err = m.Status(1); err != nil || status.Reserved != 320 {
+		t.Fatalf("unknown-length reservation=%d err=%v", status.Reserved, err)
+	}
+	releaseUnknown()
 }

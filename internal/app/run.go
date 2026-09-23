@@ -22,6 +22,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/share"
+	"github.com/bprendie/weazlcloud/internal/sharedstore"
 	"github.com/bprendie/weazlcloud/internal/storageformat"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -39,6 +40,7 @@ type Node struct {
 	activity   *idle.Coordinator
 	idleCancel context.CancelFunc
 	idleDone   chan struct{}
+	shared     *sharedstore.Store
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -69,7 +71,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if *check {
-		if err := storageformat.Check(cfg.DataDir); err != nil {
+		if err := storageformat.CheckMode(cfg.DataDir, storageMode(cfg)); err != nil {
 			return err
 		}
 		fmt.Fprintln(stdout, "weazlcloud: configuration valid")
@@ -78,7 +80,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if *ready {
 		return probeReady(cfg.DeskAddr)
 	}
-	if err := storageformat.Initialize(cfg.DataDir); err != nil {
+	if err := storageformat.InitializeMode(cfg.DataDir, storageMode(cfg)); err != nil {
 		return err
 	}
 	if err := ensureTempDir(); err != nil {
@@ -104,7 +106,7 @@ func Start(cfg config.Config) (*Node, error) {
 	if err := cfg.EnsureData(); err != nil {
 		return nil, err
 	}
-	if err := storageformat.Initialize(cfg.DataDir); err != nil {
+	if err := storageformat.InitializeMode(cfg.DataDir, storageMode(cfg)); err != nil {
 		return nil, err
 	}
 	if err := ensureTempDir(); err != nil {
@@ -180,11 +182,22 @@ func (n *Node) bind() error {
 	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
+	if n.cfg.StorageBackend == "shared-experimental" {
+		n.shared, err = sharedstore.Open(n.cfg.DataDir, sharedstore.Options{})
+		if err != nil {
+			return err
+		}
+		if err = n.shared.ClearAbandonedHolds(context.Background()); err != nil {
+			return err
+		}
+		registry.ConfigureShared(n.shared, true)
+	}
 	n.activity = idle.New(n.cfg.MaintenanceQuiet, nil)
 	if err := n.activity.SetStatusPath(filepath.Join(n.cfg.DataDir, "maintenance-status.json")); err != nil {
 		return err
 	}
 	registry.SetActivityTracker(n.activity.Track)
+	n.registerSharedMaintenance(registry)
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
 	deskHandler.SetMaintenanceStatus(n.activity)
 	n.activity.RegisterNamed("pending-account-cleanup", func(ctx context.Context) error {
@@ -234,7 +247,19 @@ func (n *Node) shutdown() error {
 			first = err
 		}
 	}
+	if n.shared != nil {
+		if err := n.shared.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
 	return first
+}
+
+func storageMode(cfg config.Config) string {
+	if cfg.StorageBackend == "shared-experimental" {
+		return storageformat.MixedExperimentalMode
+	}
+	return storageformat.LegacyMode
 }
 
 func (n *Node) startIdleMaintenance(parent context.Context) {

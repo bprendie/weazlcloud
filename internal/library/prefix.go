@@ -24,12 +24,12 @@ func (l *Library) Prefix(ctx context.Context, name string) ([]byte, error) {
 	if !ok {
 		return nil, errors.New("file is not in the library")
 	}
-	ref, err := l.backend.Capture(f)
+	ref, err := l.capture(f)
 	if err != nil {
 		return nil, err
 	}
 	var prefix prefixWriter
-	err = l.backend.ReadRange(ctx, ref, 0, min(int64(prefixLimit), f.Size), &prefix)
+	err = l.readReferenceRange(ctx, ref, 0, min(int64(prefixLimit), f.Size), &prefix)
 	return append([]byte(nil), prefix.buf...), err
 }
 

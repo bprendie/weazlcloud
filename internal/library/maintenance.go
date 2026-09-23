@@ -13,6 +13,18 @@ func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
 	if err := l.ensure(ctx); err != nil {
 		return 0, 0, 0, err
 	}
+	if l.sharedStore != nil {
+		stats, err := l.sharedStore.Metrics(ctx)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		logical, unique := stats.LogicalBytes, stats.UniqueBytes
+		percent := 0
+		if logical > 0 {
+			percent = int((logical - unique) * 100 / logical)
+		}
+		return percent, logical, unique, nil
+	}
 	logical := int64(0)
 	unique := int64(0)
 	hashes := make(map[string]int64)
@@ -104,9 +116,17 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 			}
 		}
 	}
+	var sharedRefs []catalog.Reference
+	if l.sharedStore != nil {
+		for _, f := range expired {
+			if f.Reference != nil && f.Reference.Backend == catalog.SharedBackend {
+				sharedRefs = append(sharedRefs, *f.Reference)
+			}
+		}
+	}
 	var intent trashCleanupIntent
-	if len(forget) > 0 {
-		intent = trashCleanupIntent{Version: 1, Before: before, Snapshots: forget}
+	if len(forget) > 0 || len(sharedRefs) > 0 {
+		intent = trashCleanupIntent{Version: 1, Before: before, Snapshots: forget, SharedReferences: sharedRefs}
 		if err := l.saveTrashIntent(intent); err != nil {
 			return 0, err
 		}
@@ -114,7 +134,7 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 	if _, err := l.catalog.PurgeTrash(before); err != nil {
 		return 0, err
 	}
-	if len(forget) > 0 {
+	if intent.Version != 0 {
 		intent.CatalogPurged = true
 		if err := l.saveTrashIntent(intent); err != nil {
 			return 0, err
@@ -124,7 +144,18 @@ func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, er
 		}
 	}
 	l.publishChange(Change{Kind: "trash-purge"})
-	return reclaimedRepositoryBytes(l.repo, initialBytes)
+	freed, err := reclaimedRepositoryBytes(l.repo, initialBytes)
+	if err != nil {
+		return 0, err
+	}
+	if l.sharedStore != nil {
+		sharedFreed, e := l.sharedStore.Collect(ctx)
+		if e != nil {
+			return freed, e
+		}
+		freed += sharedFreed
+	}
+	return freed, nil
 }
 
 func trashSnapshotPlan(all []catalog.File, before time.Time) ([]catalog.File, map[string]struct{}, map[string]struct{}) {

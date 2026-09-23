@@ -127,7 +127,11 @@ func (l *Library) finishThumbnailJob(key string, job *thumbnailJob) {
 
 func thumbnailKey(name string, f catalog.File, size int) string {
 	h := sha256.New()
-	_, _ = io.WriteString(h, thumbnailRenderer+"\x00"+strconv.Itoa(size)+"\x00"+name+"\x00"+f.Hash+"\x00"+f.Snap+"\x00"+f.Object+"\x00"+f.Mtime.UTC().Format(time.RFC3339Nano))
+	ref := ""
+	if f.Reference != nil {
+		ref = f.Reference.Backend + "\x00" + f.Reference.Object + "\x00" + f.Reference.Operation + "\x00" + f.Reference.OwnerEntryID + "\x00" + strconv.FormatUint(f.Reference.OwnerRevision, 10)
+	}
+	_, _ = io.WriteString(h, thumbnailRenderer+"\x00"+strconv.Itoa(size)+"\x00"+name+"\x00"+f.Hash+"\x00"+f.Snap+"\x00"+f.Object+"\x00"+ref+"\x00"+f.Mtime.UTC().Format(time.RFC3339Nano))
 	return hex.EncodeToString(h.Sum(nil))
 }
 

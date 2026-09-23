@@ -148,6 +148,10 @@ Phase exit: complete for the isolated prototype. Two logical 2,940,000-byte copi
 
 Phase exit: selected chunk format is tested and documented; no opaque custom crypto or whole-file-only regression hidden in the rollout.
 
+### D4 implementation checkpoint — 2026-09-23
+
+The mixed-backend integration is implemented behind `WEAZLCLOUD_STORAGE_BACKEND=shared-experimental`; the default remains `restic`. It includes durable per-upload backend/operation identity, mixed reads and owner-bound copy grants, archive holds, shared Trash/account cleanup, startup and idle reconciliation, claimed-object recovery, shared aggregate metrics, and conservative source-plus-destination upload reservations. The isolated library integration and container smoke cover mixed writes, previews, Desk/WebDAV read-write, ZIP capture, grabs, and recovery; the smoke target builds the image from the current checkout and runs both storage modes. This is still an experimental whole-file store: D3 chunking and benchmarks remain incomplete, and D4 acceptance boxes stay open until the full browser, lifecycle, and restart gates below pass. Do not enable this setting for production users.
+
 ## D4 — Integrate uploads, deletion, maintenance, and reporting
 
 - [ ] **D4.1 — Route normal writes through the new backend behind a setting.** Preserve direct PUT/WebDAV and the resumable upload API, 24-hour expiry, three browser rails, and last-successful-commit replacement. Persist the backend and operation ID when a finalize attempt begins; a retry cannot switch backends halfway through. Reconcile old queued Restic commits before changing an owner's write mode. **Pass:** interrupted finalize and server restart complete once with identical bytes in either mode.

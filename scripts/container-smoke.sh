@@ -2,6 +2,7 @@
 set -euo pipefail
 
 image="${WEAZLCLOUD_IMAGE:-weazlcloud:2026.09.21}"
+storage_backend="${WEAZLCLOUD_SMOKE_STORAGE_BACKEND:-restic}"
 nonce="${WEAZLCLOUD_SMOKE_ID:-$(date +%s)-$$}"
 name="weazlcloud-phase6-smoke-$nonce"
 desk_port="${WEAZLCLOUD_CONTAINER_PORT:-19272}"
@@ -24,6 +25,7 @@ docker run --detach --name "$name" \
   --env WEAZLCLOUD_SHARE_ADDR=:7273 \
   --env WEAZLCLOUD_DRIVE_ADDR=:7274 \
   --env WEAZLCLOUD_PUBLIC_BASE=https://grab.test \
+  --env "WEAZLCLOUD_STORAGE_BACKEND=$storage_backend" \
   --env HOME=/data \
   --env TMPDIR=/data/tmp \
   --volume "$volume_name:/data" \
@@ -49,6 +51,10 @@ curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' --upload-file "$payload" \
 curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' \
   "http://127.0.0.1:$desk_port/api/library?path=sample.svg" -o "$root/download.svg"
 [[ "$(sha256sum "$root/download.svg" | awk '{print $1}')" == "$expected" ]]
+curl -fsS -u 'container:container-pass' --upload-file "$payload" \
+  "http://127.0.0.1:$drive_port/dav.svg" >/dev/null
+curl -fsS -u 'container:container-pass' "http://127.0.0.1:$drive_port/dav.svg" -o "$root/webdav.svg"
+[[ "$(sha256sum "$root/webdav.svg" | awk '{print $1}')" == "$expected" ]]
 curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' \
   "http://127.0.0.1:$desk_port/api/library?path=sample.svg&preview=1" | grep -Fq '<svg'
 grab="$(curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' -H 'Content-Type: application/json' \
@@ -58,4 +64,4 @@ id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$grab"
 curl -fsS "http://127.0.0.1:$share_port/g/$id/meta" >/dev/null
 curl -fsS "http://127.0.0.1:$share_port/g/$id/file" -o "$root/grab.svg"
 [[ "$(sha256sum "$root/grab.svg" | awk '{print $1}')" == "$expected" ]]
-echo "container smoke: readiness, login, unlock, admin maintenance status, upload, download, preview, and disposable grab passed"
+echo "container smoke ($storage_backend): readiness, login, unlock, maintenance, Desk/WebDAV upload and download, preview, and disposable grab passed"

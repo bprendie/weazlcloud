@@ -120,12 +120,12 @@ func (l *Library) PrepareArchive(ctx context.Context, selections []string) (Arch
 	}
 	for _, path := range fileNames {
 		file := files[path]
-		ref, err := l.backend.Capture(file)
+		ref, err := l.capture(file)
 		if err != nil {
 			manifest.Release()
 			return ArchiveManifest{}, err
 		}
-		release, err := l.backend.Hold(ref)
+		release, err := l.holdReference(ref)
 		if err != nil {
 			manifest.Release()
 			return ArchiveManifest{}, err
@@ -168,7 +168,7 @@ func (l *Library) WriteArchive(ctx context.Context, manifest ArchiveManifest, w 
 		if entry.Folder {
 			continue
 		}
-		if err := l.backend.Read(ctx, entry.Ref, out); err != nil {
+		if err := l.readReference(ctx, entry.Ref, out); err != nil {
 			_ = archive.Close()
 			return files, total, err
 		}

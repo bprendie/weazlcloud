@@ -14,7 +14,7 @@ import (
 )
 
 func TestPhase1ConcurrentDeskAndWebDAVWritesShareCatalog(t *testing.T) {
-	n, err := Start(config.Config{DataDir: filepath.Join(t.TempDir(), "data"), DeskAddr: "127.0.0.1:0", ShareAddr: "127.0.0.1:0", DriveAddr: "127.0.0.1:0"})
+	n, err := Start(config.Config{DataDir: filepath.Join(t.TempDir(), "data"), DeskAddr: "127.0.0.1:0", ShareAddr: "127.0.0.1:0", DriveAddr: "127.0.0.1:0", StorageBackend: "shared-experimental"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +134,20 @@ func TestPhase1ConcurrentDeskAndWebDAVWritesShareCatalog(t *testing.T) {
 	}
 	if !seen["desk.txt"] || !seen["dav.txt"] {
 		t.Fatalf("concurrent writes lost a catalog entry: %#v", seen)
+	}
+	get, err := http.NewRequest(http.MethodGet, "http://"+n.DriveAddr()+"/dav.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get.SetBasicAuth("alice", "alice-password")
+	download, err := http.DefaultClient.Do(get)
+	if err != nil {
+		t.Fatal(err)
+	}
+	davBytes, readErr := io.ReadAll(download.Body)
+	download.Body.Close()
+	if readErr != nil || download.StatusCode != http.StatusOK || string(davBytes) != "dav" {
+		t.Fatalf("shared WebDAV download status=%d body=%q err=%v", download.StatusCode, davBytes, readErr)
 	}
 }
 

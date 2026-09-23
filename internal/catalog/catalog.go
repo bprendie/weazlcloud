@@ -18,15 +18,22 @@ var (
 	ErrDescendant       = errors.New("cannot move a folder into itself or a descendant")
 	ErrUnknownReference = errors.New("catalog contains an unsupported storage reference")
 	ErrRevisionOverflow = errors.New("catalog entry revision overflow")
+	ErrRevisionMismatch = errors.New("catalog entry changed during storage commit")
 )
 
-const ResticBackend = "restic"
+const (
+	ResticBackend = "restic"
+	SharedBackend = "shared-object"
+)
 
 type Reference struct {
-	Backend  string `json:"backend"`
-	Version  uint16 `json:"version"`
-	Snapshot string `json:"snapshot"`
-	Object   string `json:"object"`
+	Backend       string `json:"backend"`
+	Version       uint16 `json:"version"`
+	Snapshot      string `json:"snapshot"`
+	Object        string `json:"object"`
+	Operation     string `json:"operation,omitempty"`
+	OwnerEntryID  string `json:"owner_entry_id,omitempty"`
+	OwnerRevision uint64 `json:"owner_revision,omitempty"`
 }
 
 type File struct {
@@ -136,55 +143,6 @@ func (c *Catalog) Get(path string) (File, bool) {
 		}
 	}
 	return File{}, false
-}
-
-func (c *Catalog) Put(f File) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	f.Present = true
-	for _, x := range c.files {
-		if !x.Present {
-			continue
-		}
-		if x.Path == f.Path && x.Folder != f.Folder {
-			return ErrConflict
-		}
-		if x.Path != f.Path && !x.Folder && strings.HasPrefix(f.Path, x.Path+"/") {
-			return ErrConflict
-		}
-		if f.Folder && x.Path != f.Path && strings.HasPrefix(x.Path, f.Path+"/") {
-			return ErrConflict
-		}
-	}
-	next := append([]File(nil), c.files...)
-	found := false
-	for i, x := range next {
-		if x.Path == f.Path && x.Present {
-			if x.Revision == ^uint64(0) {
-				return ErrRevisionOverflow
-			}
-			f.EntryID = x.EntryID
-			f.Revision = x.Revision + 1
-			if err := assignReference(&f); err != nil {
-				return err
-			}
-			next[i] = f
-			found = true
-			break
-		}
-	}
-	if !found {
-		f.EntryID, f.Revision = "", 0
-		if err := assignIdentity(&f); err != nil {
-			return err
-		}
-		next = append(next, f)
-	}
-	if err := c.saveFilesLocked(next); err != nil {
-		return err
-	}
-	c.files = next
-	return nil
 }
 
 func (c *Catalog) Mkdir(path string) error {

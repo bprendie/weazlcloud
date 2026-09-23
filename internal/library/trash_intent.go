@@ -9,14 +9,16 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
 type trashCleanupIntent struct {
-	Version       int       `json:"version"`
-	Before        time.Time `json:"before"`
-	Snapshots     []string  `json:"snapshots"`
-	CatalogPurged bool      `json:"catalog_purged"`
+	Version          int                 `json:"version"`
+	Before           time.Time           `json:"before"`
+	Snapshots        []string            `json:"snapshots"`
+	SharedReferences []catalog.Reference `json:"shared_references,omitempty"`
+	CatalogPurged    bool                `json:"catalog_purged"`
 }
 
 func (l *Library) trashIntentPath() string {
@@ -76,6 +78,11 @@ func (l *Library) resumeTrashCleanup(ctx context.Context) error {
 		}
 		intent.CatalogPurged = true
 		if err := l.saveTrashIntent(intent); err != nil {
+			return err
+		}
+	}
+	for _, ref := range intent.SharedReferences {
+		if err := l.releaseReference(ctx, &ref); err != nil {
 			return err
 		}
 	}

@@ -10,12 +10,16 @@ import (
 )
 
 const (
-	CurrentVersion uint16 = 1
-	LegacyMode            = "restic-legacy"
-	MarkerName            = ".weazl-storage.json"
+	CurrentVersion        uint16 = 1
+	LegacyMode                   = "restic-legacy"
+	MixedExperimentalMode        = "mixed-shared-experimental"
+	MarkerName                   = ".weazl-storage.json"
 )
 
-var ErrUnsupported = errors.New("data directory uses an unsupported storage format")
+var (
+	ErrUnsupported  = errors.New("data directory uses an unsupported storage format")
+	ErrModeMismatch = errors.New("configured storage mode does not match the data directory")
+)
 
 type Marker struct {
 	FormatVersion uint16 `json:"format_version"`
@@ -32,23 +36,56 @@ func Check(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	if marker.FormatVersion != CurrentVersion || marker.MinimumReader > CurrentVersion || marker.MinimumWriter > CurrentVersion || marker.Mode != LegacyMode {
+	if marker.FormatVersion != CurrentVersion || marker.MinimumReader > CurrentVersion || marker.MinimumWriter > CurrentVersion || (marker.Mode != LegacyMode && marker.Mode != MixedExperimentalMode) {
 		return ErrUnsupported
 	}
 	return nil
 }
 
+func CheckMode(dataDir, mode string) error {
+	if err := Check(dataDir); err != nil {
+		return err
+	}
+	marker, err := read(dataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if marker.Mode == MixedExperimentalMode && mode != MixedExperimentalMode {
+		return ErrModeMismatch
+	}
+	return nil
+}
+
 func Initialize(dataDir string) error {
+	return InitializeMode(dataDir, LegacyMode)
+}
+
+func InitializeMode(dataDir, mode string) error {
+	if mode != LegacyMode && mode != MixedExperimentalMode {
+		return ErrUnsupported
+	}
 	if err := Check(dataDir); err != nil {
 		return err
 	}
 	path := filepath.Join(dataDir, MarkerName)
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		marker, e := read(dataDir)
+		if e != nil {
+			return e
+		}
+		if marker.Mode == MixedExperimentalMode && mode == LegacyMode {
+			return ErrModeMismatch
+		}
+		if marker.Mode == MixedExperimentalMode || mode == LegacyMode {
+			return nil
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	marker := Marker{FormatVersion: CurrentVersion, MinimumReader: CurrentVersion, MinimumWriter: CurrentVersion, Mode: LegacyMode}
+	marker := Marker{FormatVersion: CurrentVersion, MinimumReader: CurrentVersion, MinimumWriter: CurrentVersion, Mode: mode}
 	body, err := json.Marshal(marker)
 	if err != nil {
 		return err

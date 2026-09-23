@@ -12,6 +12,64 @@ import (
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
+// Grant creates a separately authorized owner-entry wrapper for existing bytes.
+func (s *Store) Grant(ctx context.Context, owner string, v *vault.Vault, source Reference, entry string, revision uint64) (Reference, error) {
+	if entry == "" || revision == 0 {
+		return Reference{}, ErrDenied
+	}
+	// Verify the source through the ordinary owner path before issuing another wrapper.
+	if err := s.Read(ctx, owner, v, source, io.Discard); err != nil {
+		return Reference{}, err
+	}
+	// Re-open only the short-lived source wrapper and rewrap its file key to the new identity.
+	var wrapped []byte
+	if err := s.db.QueryRowContext(ctx, "SELECT wrapped_key FROM owners WHERE owner_id=? AND entry_id=? AND revision=? AND object_id=? AND op_id=? AND state='live'", s.keys.ownerToken(owner), source.EntryID, source.Revision, source.ObjectID, source.Operation).Scan(&wrapped); err != nil {
+		return Reference{}, ErrDenied
+	}
+	plain, err := v.Unwrap(wrapped)
+	if err != nil {
+		return Reference{}, ErrDenied
+	}
+	defer cryptox.Zero(plain)
+	var env struct {
+		Key string `json:"key"`
+	}
+	if err = json.Unmarshal(plain, &env); err != nil {
+		return Reference{}, ErrState
+	}
+	opRaw, err := cryptox.Random(16)
+	if err != nil {
+		return Reference{}, err
+	}
+	op := opaqueID(opRaw)
+	copyEnv := map[string]any{"version": formatVersion, "owner": owner, "entry": entry, "revision": revision, "object": source.ObjectID, "key": env.Key}
+	newPlain, err := json.Marshal(copyEnv)
+	if err != nil {
+		return Reference{}, err
+	}
+	wrapper, err := v.Wrap(newPlain)
+	cryptox.Zero(newPlain)
+	if err != nil {
+		return Reference{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Reference{}, err
+	}
+	defer tx.Rollback()
+	token := s.keys.ownerToken(owner)
+	if _, err = tx.ExecContext(ctx, "INSERT INTO operations(op_id,owner_id,entry_id,revision,object_id,state) VALUES(?,?,?,?,?,'committed')", op, token, entry, revision, source.ObjectID); err != nil {
+		return Reference{}, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO owners(owner_id,entry_id,revision,object_id,wrapped_key,op_id,state) VALUES(?,?,?,?,?,?,'live')", token, entry, revision, source.ObjectID, wrapper, op); err != nil {
+		return Reference{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Reference{}, err
+	}
+	return Reference{Version: formatVersion, ObjectID: source.ObjectID, EntryID: entry, Revision: revision, Operation: op}, nil
+}
+
 // MarkPublished records that the caller's encrypted owner catalog contains this operation.
 func (s *Store) MarkPublished(ctx context.Context, op string) error {
 	result, err := s.db.ExecContext(ctx, "UPDATE operations SET state='published' WHERE op_id=? AND state IN ('prepared','published','committed')", op)
@@ -89,11 +147,18 @@ func (s *Store) Recover(ctx context.Context, op string, published bool) error {
 	if state != "prepared" && state != "published" {
 		return ErrState
 	}
-	_, err := s.db.ExecContext(ctx, "UPDATE operations SET state='aborted' WHERE op_id=? AND state IN ('prepared','published')", op)
-	if err == nil {
-		_, err = s.db.ExecContext(ctx, "UPDATE owners SET state='aborted' WHERE op_id=? AND state IN ('prepared','published')", op)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "UPDATE operations SET state='aborted' WHERE op_id=? AND state IN ('prepared','published')", op); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM owners WHERE op_id=? AND state IN ('prepared','published')", op); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Read requires the exact live owner/entry/revision tuple and an unlocked owner vault.
@@ -104,11 +169,11 @@ func (s *Store) Read(ctx context.Context, owner string, v *vault.Vault, ref Refe
 	var objectID, op, state, opState string
 	var wrapper, nodeWrapped []byte
 	var size int64
-	err := s.db.QueryRowContext(ctx, `SELECT o.object_id,o.op_id,o.state,p.state,o.wrapped_key,x.node_key,x.plain_len FROM owners o JOIN operations p ON p.op_id=o.op_id JOIN objects x ON x.object_id=o.object_id WHERE o.owner_id=? AND o.entry_id=? AND o.revision=?`, s.keys.ownerToken(owner), ref.EntryID, ref.Revision).Scan(&objectID, &op, &state, &opState, &wrapper, &nodeWrapped, &size)
+	err := s.db.QueryRowContext(ctx, `SELECT o.object_id,o.op_id,o.state,p.state,o.wrapped_key,x.node_key,x.plain_len FROM owners o JOIN operations p ON p.op_id=o.op_id JOIN objects x ON x.object_id=o.object_id WHERE o.owner_id=? AND o.entry_id=? AND o.revision=? AND (o.state='live' OR (o.state='retired' AND EXISTS(SELECT 1 FROM holds h WHERE h.owner_id=o.owner_id AND h.entry_id=o.entry_id AND h.revision=o.revision AND h.operation=o.op_id)))`, s.keys.ownerToken(owner), ref.EntryID, ref.Revision).Scan(&objectID, &op, &state, &opState, &wrapper, &nodeWrapped, &size)
 	if err != nil {
 		return ErrDenied
 	}
-	if state != "live" || opState != "committed" || objectID != ref.ObjectID || op != ref.Operation {
+	if !((state == "live" && opState == "committed") || (state == "retired" && opState == "released")) || objectID != ref.ObjectID || op != ref.Operation {
 		return ErrDenied
 	}
 	plain, err := v.Unwrap(wrapper)
@@ -158,12 +223,21 @@ func (s *Store) Read(ctx context.Context, owner string, v *vault.Vault, ref Refe
 // Release removes only one owner's reference. Shared payload collection is a later phase.
 func (s *Store) Release(ctx context.Context, owner, entry string, revision uint64) error {
 	token := s.keys.ownerToken(owner)
-	_, err := s.db.ExecContext(ctx, "DELETE FROM owners WHERE owner_id=? AND entry_id=? AND revision=?", token, entry, revision)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "UPDATE operations SET state='released' WHERE owner_id=? AND entry_id=? AND revision=? AND state='committed'", token, entry, revision)
-	return err
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "UPDATE owners SET state='retired' WHERE owner_id=? AND entry_id=? AND revision=? AND EXISTS(SELECT 1 FROM holds h WHERE h.owner_id=owners.owner_id AND h.entry_id=owners.entry_id AND h.revision=owners.revision)", token, entry, revision); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM owners WHERE owner_id=? AND entry_id=? AND revision=? AND state!='retired'", token, entry, revision); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE operations SET state='released' WHERE owner_id=? AND entry_id=? AND revision=? AND state='committed'", token, entry, revision); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ObjectCount(ctx context.Context) (int, error) {
@@ -187,17 +261,6 @@ func (s *Store) Pending(ctx context.Context) ([]string, error) {
 		out = append(out, id)
 	}
 	return out, rows.Err()
-}
-
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	var n byte
-	for i := range a {
-		n |= a[i] ^ b[i]
-	}
-	return n == 0
 }
 
 type contextWriter struct {

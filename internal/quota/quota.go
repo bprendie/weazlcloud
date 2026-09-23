@@ -139,11 +139,20 @@ func (r *Reservation) Release() {
 // request without Content-Length it reserves each chunk after it is read and
 // holds those reservations until the write finishes.
 func (m *Manager) GuardReader(userID string, users int, userUsed, current, expected int64, src io.Reader) (io.Reader, func(), error) {
+	return m.GuardReaderMultiplier(userID, users, userUsed, current, expected, 1, src)
+}
+
+// GuardReaderMultiplier reserves a conservative multiple of incoming bytes
+// when a backend temporarily keeps source and encrypted destination copies.
+func (m *Manager) GuardReaderMultiplier(userID string, users int, userUsed, current, expected, multiplier int64, src io.Reader) (io.Reader, func(), error) {
+	if multiplier < 1 || (expected >= 0 && expected > math.MaxInt64/multiplier) {
+		return nil, nil, ErrExceeded
+	}
 	if expected >= 0 {
-		release, err := m.Reserve(userID, users, userUsed, current, expected)
+		release, err := m.Reserve(userID, users, userUsed, current, expected*multiplier)
 		return src, release, err
 	}
-	g := &guardedReader{manager: m, userID: userID, users: users, userUsed: userUsed, current: current, src: src}
+	g := &guardedReader{manager: m, userID: userID, users: users, userUsed: userUsed, current: current, multiplier: multiplier, src: src}
 	return g, g.release, nil
 }
 
@@ -152,6 +161,7 @@ type guardedReader struct {
 	userID            string
 	users             int
 	userUsed, current int64
+	multiplier        int64
 	src               io.Reader
 	mu                sync.Mutex
 	releases          []func()
@@ -161,7 +171,10 @@ type guardedReader struct {
 func (g *guardedReader) Read(p []byte) (int, error) {
 	n, err := g.src.Read(p)
 	if n > 0 {
-		release, reserveErr := g.manager.Reserve(g.userID, g.users, g.userUsed, g.current, int64(n))
+		if int64(n) > math.MaxInt64/g.multiplier {
+			return 0, ErrExceeded
+		}
+		release, reserveErr := g.manager.Reserve(g.userID, g.users, g.userUsed, g.current, int64(n)*g.multiplier)
 		if reserveErr != nil {
 			return 0, reserveErr
 		}

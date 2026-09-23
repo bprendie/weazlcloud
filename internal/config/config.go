@@ -27,6 +27,7 @@ type Config struct {
 	DriveBase        string
 	SecureCookies    bool
 	MaintenanceQuiet time.Duration
+	StorageBackend   string
 }
 
 func Load() (Config, error) {
@@ -42,6 +43,7 @@ func Load() (Config, error) {
 		DriveBase:        strings.TrimSpace(os.Getenv("WEAZLCLOUD_DRIVE_BASE")),
 		SecureCookies:    strings.EqualFold(strings.TrimSpace(os.Getenv("WEAZLCLOUD_SECURE_COOKIES")), "true"),
 		MaintenanceQuiet: 5 * time.Minute,
+		StorageBackend:   env("WEAZLCLOUD_STORAGE_BACKEND", "restic"),
 	}
 	if raw := strings.TrimSpace(os.Getenv("WEAZLCLOUD_MAINTENANCE_QUIET")); raw != "" {
 		quiet, err := time.ParseDuration(raw)
@@ -56,6 +58,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.DataDir) == "" {
 		return errors.New("data directory is empty")
+	}
+	if c.StorageBackend != "" && c.StorageBackend != "restic" && c.StorageBackend != "shared-experimental" {
+		return errors.New("storage backend must be restic or shared-experimental")
 	}
 	for _, addr := range []string{c.DeskAddr, c.ShareAddr, c.DriveAddr} {
 		if _, err := net.ResolveTCPAddr("tcp", addr); err != nil {

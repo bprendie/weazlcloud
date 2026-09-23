@@ -54,6 +54,9 @@ func TestPreparedAndPublishedOperationsRecoverIdempotently(t *testing.T) {
 	if got, _ := s.Pending(ctx); len(got) != 0 {
 		t.Fatalf("aborted operation remains pending: %v", got)
 	}
+	if freed, collectErr := s.Collect(ctx); collectErr != nil || freed == 0 {
+		t.Fatalf("aborted write object was not collectible: bytes=%d err=%v", freed, collectErr)
+	}
 
 	stopAt = ""
 	p, err := s.Prepare(ctx, "owner", v, "second", 1, bytes.NewReader(data), int64(len(data)))

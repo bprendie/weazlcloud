@@ -43,7 +43,9 @@ smoke-browser: desk-assets
 	bash scripts/smoke-browser.sh
 
 smoke-container:
-	bash scripts/container-smoke.sh
+	docker build -f deploy/Dockerfile -t weazlcloud:smoke .
+	WEAZLCLOUD_IMAGE=weazlcloud:smoke bash scripts/container-smoke.sh
+	WEAZLCLOUD_IMAGE=weazlcloud:smoke WEAZLCLOUD_SMOKE_STORAGE_BACKEND=shared-experimental bash scripts/container-smoke.sh
 
 smoke-sharedstore:
 	bash scripts/sharedstore-smoke.sh

@@ -9,7 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 3
 
 func openIndex(root string) (*sql.DB, error) {
 	dir := filepath.Join(root, "shared-index")
@@ -63,6 +63,21 @@ func migrate(db *sql.DB) error {
 	if version == schemaVersion {
 		return nil
 	}
+	if version == 1 {
+		if _, err = db.Exec(`CREATE TABLE holds (hold_id TEXT PRIMARY KEY, object_id TEXT NOT NULL REFERENCES objects(object_id), created_at INTEGER NOT NULL)`); err != nil {
+			return err
+		}
+		version = 2
+	}
+	if version == 2 {
+		for _, q := range []string{`ALTER TABLE holds ADD COLUMN owner_id BLOB NOT NULL DEFAULT X''`, `ALTER TABLE holds ADD COLUMN entry_id TEXT NOT NULL DEFAULT ''`, `ALTER TABLE holds ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`, `ALTER TABLE holds ADD COLUMN operation TEXT NOT NULL DEFAULT ''`} {
+			if _, err = db.Exec(q); err != nil {
+				return err
+			}
+		}
+		_, err = db.Exec("PRAGMA user_version=3")
+		return err
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -73,13 +88,14 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE operations (op_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, entry_id TEXT NOT NULL, revision INTEGER NOT NULL, object_id TEXT NOT NULL, state TEXT NOT NULL, UNIQUE(owner_id,entry_id,revision))`,
 		`CREATE TABLE owners (owner_id TEXT NOT NULL, entry_id TEXT NOT NULL, revision INTEGER NOT NULL, object_id TEXT NOT NULL REFERENCES objects(object_id), wrapped_key BLOB NOT NULL, op_id TEXT NOT NULL, state TEXT NOT NULL, PRIMARY KEY(owner_id,entry_id,revision))`,
 		`CREATE INDEX owners_object ON owners(object_id,state)`,
+		`CREATE TABLE holds (hold_id TEXT PRIMARY KEY, object_id TEXT NOT NULL REFERENCES objects(object_id), owner_id BLOB NOT NULL, entry_id TEXT NOT NULL, revision INTEGER NOT NULL, operation TEXT NOT NULL, created_at INTEGER NOT NULL)`,
 	}
 	for _, q := range queries {
 		if _, err = tx.Exec(q); err != nil {
 			return err
 		}
 	}
-	if _, err = tx.Exec("PRAGMA user_version=1"); err != nil {
+	if _, err = tx.Exec("PRAGMA user_version=3"); err != nil {
 		return err
 	}
 	return tx.Commit()
