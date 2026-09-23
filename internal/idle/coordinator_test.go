@@ -2,7 +2,13 @@ package idle
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -27,6 +33,49 @@ func TestCoordinatorWaitsForQuietAndIgnoresProbesAndSSE(t *testing.T) {
 	now = now.Add(time.Second)
 	if !c.RunOnce(context.Background()) || runs != 1 {
 		t.Fatal("maintenance did not start after the quiet interval")
+	}
+}
+
+func TestMaintenanceStatusPersistsSafeResultAndReloads(t *testing.T) {
+	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
+	statusPath := filepath.Join(t.TempDir(), "maintenance.json")
+	c := New(time.Second, func() time.Time { return now })
+	if err := c.SetStatusPath(statusPath); err != nil {
+		t.Fatal(err)
+	}
+	c.RegisterTask("cache-cleanup", func(context.Context) (int64, error) { return 4321, syscall.ENOSPC })
+	now = now.Add(2 * time.Second)
+	if !c.RunOnce(context.Background()) {
+		t.Fatal("maintenance did not run")
+	}
+	jobs := c.Status()
+	if len(jobs) != 1 || jobs[0].LastResult != "failed" || jobs[0].ErrorCategory != "no_space" || jobs[0].ReclaimedBytes != 4321 {
+		t.Fatalf("unexpected status: %+v", jobs)
+	}
+	b, err := os.ReadFile(statusPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "no space left") || strings.Contains(string(b), statusPath) {
+		t.Fatalf("status leaked raw error details: %s", b)
+	}
+	var saved []JobStatus
+	if err := json.Unmarshal(b, &saved); err != nil || len(saved) != 1 {
+		t.Fatalf("saved status=%s err=%v", b, err)
+	}
+	reloaded := New(time.Second, func() time.Time { return now })
+	reloaded.RegisterTask("cache-cleanup", func(context.Context) (int64, error) { return 0, nil })
+	if err := reloaded.SetStatusPath(statusPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Status()[0]; got.LastResult != "failed" || got.ErrorCategory != "no_space" || got.ReclaimedBytes != 4321 {
+		t.Fatalf("reloaded status: %+v", got)
+	}
+}
+
+func TestErrorCategoryHidesRawPermissionDetails(t *testing.T) {
+	if got := ErrorCategory(errors.Join(os.ErrPermission, errors.New("/srv/private/file"))); got != "permission" {
+		t.Fatalf("permission category=%q", got)
 	}
 }
 

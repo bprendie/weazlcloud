@@ -112,8 +112,13 @@ func TestChunkHashMismatchAndExpiryCleanup(t *testing.T) {
 	if err := os.WriteFile(manager.manifestPath(owner.ID, created.ID), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if removed := manager.SweepExpired(time.Now()); removed != 1 {
-		t.Fatalf("expired sessions removed=%d, want 1", removed)
+	manager = New(root, nil, nil, nil)
+	if _, err := os.Stat(manager.partPath(owner.ID, created.ID)); err != nil {
+		t.Fatalf("restart eagerly removed expired upload before idle maintenance: %v", err)
+	}
+	removed, reclaimed, err := manager.SweepExpiredDetailed(context.Background(), time.Now())
+	if err != nil || removed != 1 || reclaimed <= 0 {
+		t.Fatalf("expired sessions removed=%d reclaimed=%d err=%v", removed, reclaimed, err)
 	}
 	if _, err := os.Stat(manager.partPath(owner.ID, created.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expired spool remains: %v", err)

@@ -264,6 +264,8 @@ func evictThumbnailCache(dir string) error {
 		if err := os.Remove(filepath.Join(dir, f.name)); err == nil {
 			total -= f.size
 			files = files[1:]
+		} else if !os.IsNotExist(err) {
+			return err
 		}
 	}
 	return nil

@@ -53,6 +53,26 @@ func (m *Manager) chunkPath(owner, id string) string {
 func validComponent(value string) bool { return componentRE.MatchString(value) }
 
 func (m *Manager) loadLocked(owner, id string) (session, error) {
+	s, err := m.readSessionLocked(owner, id)
+	if err != nil {
+		return session{}, err
+	}
+	if s.Status != "complete" && time.Since(s.UpdatedAt) >= SessionLifetime {
+		return session{}, ErrExpired
+	}
+	changed, err := m.reconcileLocked(&s)
+	if err != nil {
+		return session{}, err
+	}
+	if changed {
+		if err := m.writeLocked(s); err != nil {
+			return session{}, err
+		}
+	}
+	return s, nil
+}
+
+func (m *Manager) readSessionLocked(owner, id string) (session, error) {
 	if !validComponent(owner) || !validComponent(id) {
 		return session{}, ErrNotFound
 	}
@@ -69,22 +89,6 @@ func (m *Manager) loadLocked(owner, id string) (session, error) {
 	}
 	if s.ID != id || s.OwnerID != owner || s.Size < 0 || s.Offset < 0 || s.Offset > s.Size {
 		return session{}, ErrCorrupt
-	}
-	if s.Status != "complete" && time.Since(s.UpdatedAt) >= SessionLifetime {
-		if err := m.removeLocked(s); err != nil {
-			return session{}, err
-		}
-		m.releaseReservationLocked(id)
-		return session{}, ErrExpired
-	}
-	changed, err := m.reconcileLocked(&s)
-	if err != nil {
-		return session{}, err
-	}
-	if changed {
-		if err := m.writeLocked(s); err != nil {
-			return session{}, err
-		}
 	}
 	return s, nil
 }

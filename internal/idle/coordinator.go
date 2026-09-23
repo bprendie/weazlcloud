@@ -2,6 +2,8 @@ package idle
 
 import (
 	"context"
+	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -10,6 +12,13 @@ const DefaultQuietPeriod = 5 * time.Minute
 const PollInterval = time.Second
 
 type Job func(context.Context) error
+type Task func(context.Context) (int64, error)
+
+type registeredTask struct {
+	name   string
+	run    Task
+	status JobStatus
+}
 
 type Coordinator struct {
 	mu           sync.Mutex
@@ -20,7 +29,9 @@ type Coordinator struct {
 	running      bool
 	stopJob      context.CancelFunc
 	jobDone      chan struct{}
-	jobs         []Job
+	jobs         []registeredTask
+	statusPath   string
+	history      map[string]JobStatus
 }
 
 func New(quiet time.Duration, now func() time.Time) *Coordinator {
@@ -30,7 +41,7 @@ func New(quiet time.Duration, now func() time.Time) *Coordinator {
 	if now == nil {
 		now = time.Now
 	}
-	return &Coordinator{quiet: quiet, now: now, lastActivity: now()}
+	return &Coordinator{quiet: quiet, now: now, lastActivity: now(), history: make(map[string]JobStatus)}
 }
 
 func (c *Coordinator) Register(job Job) {
@@ -38,8 +49,39 @@ func (c *Coordinator) Register(job Job) {
 		return
 	}
 	c.mu.Lock()
-	c.jobs = append(c.jobs, job)
+	name := "maintenance-" + strconv.Itoa(len(c.jobs)+1)
+	c.addLocked(name, func(ctx context.Context) (int64, error) { return 0, job(ctx) })
 	c.mu.Unlock()
+}
+
+func (c *Coordinator) RegisterNamed(name string, job Job) {
+	if job != nil {
+		c.RegisterTask(name, func(ctx context.Context) (int64, error) { return 0, job(ctx) })
+	}
+}
+
+func (c *Coordinator) RegisterTask(name string, task Task) {
+	if task == nil {
+		return
+	}
+	c.mu.Lock()
+	c.addLocked(name, task)
+	c.mu.Unlock()
+}
+
+func (c *Coordinator) addLocked(name string, task Task) {
+	if name == "" {
+		name = "maintenance"
+	}
+	status := c.history[name]
+	for _, existing := range c.jobs {
+		if existing.name == name {
+			name += "-" + strconv.Itoa(len(c.jobs)+1)
+			status = c.history[name]
+			break
+		}
+	}
+	c.jobs = append(c.jobs, registeredTask{name: name, run: task, status: status})
 }
 
 func (c *Coordinator) Track() func() {
@@ -82,14 +124,36 @@ func (c *Coordinator) RunOnce(parent context.Context) bool {
 	c.stopJob = cancel
 	c.jobDone = done
 	c.running = true
-	jobs := append([]Job(nil), c.jobs...)
+	jobs := append([]registeredTask(nil), c.jobs...)
 	c.mu.Unlock()
 
-	for _, job := range jobs {
+	for i, job := range jobs {
 		if ctx.Err() != nil {
 			break
 		}
-		_ = job(ctx)
+		started := c.now()
+		c.updateStatus(i, func(s *JobStatus) { s.LastAttempt = &started; s.LastResult = "running"; s.ErrorCategory = "" })
+		c.persistStatus()
+		bytes, err := job.run(ctx)
+		finished := c.now()
+		result, category := "success", ""
+		if err != nil {
+			result, category = "failed", ErrorCategory(err)
+		}
+		if ctx.Err() != nil {
+			result, category = "cancelled", "cancelled"
+		}
+		c.updateStatus(i, func(s *JobStatus) {
+			s.LastDurationMS = finished.Sub(started).Milliseconds()
+			s.ReclaimedBytes = bytes
+			s.LastResult = result
+			s.ErrorCategory = category
+			if result == "success" {
+				s.LastSuccess = &finished
+			}
+		})
+		log.Printf("maintenance job=%s result=%s category=%s duration_ms=%d reclaimed_bytes=%d", job.name, result, category, finished.Sub(started).Milliseconds(), bytes)
+		c.persistStatus()
 	}
 	c.mu.Lock()
 	c.running = false
@@ -111,10 +175,15 @@ func (c *Coordinator) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			c.mu.Lock()
+			var done <-chan struct{}
 			if c.stopJob != nil {
 				c.stopJob()
+				done = c.jobDone
 			}
 			c.mu.Unlock()
+			if done != nil {
+				<-done
+			}
 			return
 		case <-ticker.C:
 			c.RunOnce(ctx)

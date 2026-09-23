@@ -119,9 +119,11 @@ func (s *Store) Revoke(id string) error {
 
 func (s *Store) revokeDir(dir string, rec Record) error {
 	rec.Revoked = true
-	_ = os.Remove(filepath.Join(dir, "open.key"))
-	_ = os.Remove(filepath.Join(dir, "pass.wrap"))
-	_ = os.Remove(filepath.Join(dir, "payload"))
+	for _, name := range []string{"open.key", "pass.wrap", "payload"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
 	return writeMeta(dir, rec)
 }
 
@@ -146,31 +148,67 @@ func (s *Store) List() []Record {
 }
 
 func (s *Store) CleanupExpired(now time.Time) (int, error) {
+	cleaned, _, err := s.CleanupExpiredBytes(now)
+	return cleaned, err
+}
+
+func (s *Store) CleanupExpiredBytes(now time.Time) (int, int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ents, err := os.ReadDir(s.root)
 	if os.IsNotExist(err) {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	cleaned := 0
+	var reclaimed int64
 	for _, entry := range ents {
 		if !entry.IsDir() {
 			continue
 		}
 		dir := filepath.Join(s.root, entry.Name())
 		rec, err := readMeta(dir)
-		if err != nil || rec.Revoked || now.Before(rec.Expires) {
+		if os.IsNotExist(err) {
 			continue
 		}
-		if err := s.revokeDir(dir, rec); err != nil {
-			return cleaned, err
+		if err != nil {
+			return cleaned, reclaimed, err
 		}
+		if rec.Revoked || now.Before(rec.Expires) {
+			continue
+		}
+		bytes, err := capsulePayloadBytes(dir)
+		if err != nil {
+			return cleaned, reclaimed, err
+		}
+		if err := s.revokeDir(dir, rec); err != nil {
+			after, statErr := capsulePayloadBytes(dir)
+			if statErr == nil && bytes > after {
+				reclaimed += bytes - after
+			}
+			return cleaned, reclaimed, err
+		}
+		reclaimed += bytes
 		cleaned++
 	}
-	return cleaned, nil
+	return cleaned, reclaimed, nil
+}
+
+func capsulePayloadBytes(dir string) (int64, error) {
+	var total int64
+	for _, name := range []string{"open.key", "pass.wrap", "payload"} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return total, err
+		}
+		total += info.Size()
+	}
+	return total, nil
 }
 
 func loadKey(dir, gate, phrase string) ([]byte, error) {

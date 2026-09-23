@@ -108,9 +108,9 @@ func TestCleanupExpiredRemovesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned, err := s.CleanupExpired(time.Now())
-	if err != nil || cleaned != 1 {
-		t.Fatalf("cleaned=%d err=%v", cleaned, err)
+	cleaned, reclaimed, err := s.CleanupExpiredBytes(time.Now())
+	if err != nil || cleaned != 1 || reclaimed <= 0 {
+		t.Fatalf("cleaned=%d reclaimed=%d err=%v", cleaned, reclaimed, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, rec.ID, "payload")); !os.IsNotExist(err) {
 		t.Fatalf("expired payload still exists: %v", err)

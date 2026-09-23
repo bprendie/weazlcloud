@@ -213,9 +213,9 @@ Keep legacy source data until verified switching and retirement checks finish. T
 ## Relationship to the September 22 workbook
 
 - G2 remains deliberately skipped; this plan does not resume mounted-drive performance work.
-- Reuse G1 uploads, G3 Trash semantics, and G5.1 idle coordination. Adapt their storage references and cleanup boundaries; do not silently replace their policies.
+- Reuse G1 uploads, G3 Trash semantics, and the completed G5.1–G5.3 idle cleanup/status infrastructure. Adapt storage references and cleanup boundaries; do not silently replace their policies.
 - G4 account lifecycle must understand shared ownership before shared writes go live. D4.3 depends on delivering the relevant G4 controls and worker cancellation, not merely adding a refcount decrement.
-- G5.2/G5.3 can share collection/status infrastructure; capsule/ZIP/preview retention decisions remain as previously recorded.
+- Capsule, ZIP, preview, Trash, and upload cleanup policies are implemented in G5.2; status persistence and the admin-only read API are implemented in G5.3. Dedupe integration must preserve these lifecycle boundaries.
 - G6 photo rendering and G7 Takeout are separate workstreams. Their future reads/writes must use the storage interface.
 
 ## Evidence to record after each task

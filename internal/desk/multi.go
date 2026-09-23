@@ -36,6 +36,8 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.createUser)
 	case r.URL.Path == "/api/admin/users" && r.Method == http.MethodGet:
 		h.adminGuard(w, r, h.adminUsers)
+	case r.URL.Path == "/api/admin/maintenance" && r.Method == http.MethodGet:
+		h.adminGuard(w, r, h.adminMaintenance)
 	case r.URL.Path == "/api/admin/users/disable" && r.Method == http.MethodPost:
 		h.adminGuard(w, r, h.adminDisableUser)
 	case r.URL.Path == "/api/admin/users/delete" && r.Method == http.MethodPost:

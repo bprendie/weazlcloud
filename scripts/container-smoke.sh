@@ -41,6 +41,9 @@ curl -fsS -c "$jar" -H 'X-Weazl-Desk: 1' -H 'Content-Type: application/json' \
   "http://127.0.0.1:$desk_port/api/bootstrap" >/dev/null
 curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' -H 'Content-Type: application/json' \
   -d '{"passphrase":"container-vault"}' "http://127.0.0.1:$desk_port/api/unlock" >/dev/null
+maintenance="$(curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' \
+  "http://127.0.0.1:$desk_port/api/admin/maintenance")"
+grep -Fq 'expired-upload-sessions' <<<"$maintenance"
 curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' --upload-file "$payload" \
   "http://127.0.0.1:$desk_port/api/library?path=sample.svg" >/dev/null
 curl -fsS -b "$jar" -H 'X-Weazl-Desk: 1' \
@@ -55,4 +58,4 @@ id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$grab"
 curl -fsS "http://127.0.0.1:$share_port/g/$id/meta" >/dev/null
 curl -fsS "http://127.0.0.1:$share_port/g/$id/file" -o "$root/grab.svg"
 [[ "$(sha256sum "$root/grab.svg" | awk '{print $1}')" == "$expected" ]]
-echo "container smoke: readiness, login, unlock, upload, download, preview, and disposable grab passed"
+echo "container smoke: readiness, login, unlock, admin maintenance status, upload, download, preview, and disposable grab passed"

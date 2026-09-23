@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/buildinfo"
@@ -26,18 +27,17 @@ import (
 )
 
 type Node struct {
-	cfg          config.Config
-	desk         net.Listener
-	share        net.Listener
-	drive        net.Listener
-	svcs         []*http.Server
-	vault        *vault.Vault
-	lib          *library.Library
-	caps         *capsule.Store
-	uploads      func(context.Context)
-	uploadCancel context.CancelFunc
-	activity     *idle.Coordinator
-	idleCancel   context.CancelFunc
+	cfg        config.Config
+	desk       net.Listener
+	share      net.Listener
+	drive      net.Listener
+	svcs       []*http.Server
+	vault      *vault.Vault
+	lib        *library.Library
+	caps       *capsule.Store
+	activity   *idle.Coordinator
+	idleCancel context.CancelFunc
+	idleDone   chan struct{}
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -110,7 +110,6 @@ func Start(cfg config.Config) (*Node, error) {
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
 		go n.svcs[i].Serve(ln)
 	}
-	n.startUploadExpiry(context.Background())
 	n.startIdleMaintenance(context.Background())
 	return n, nil
 }
@@ -140,7 +139,6 @@ func (n *Node) serve(ctx context.Context) error {
 	if err := n.bind(); err != nil {
 		return err
 	}
-	n.startUploadExpiry(ctx)
 	n.startIdleMaintenance(ctx)
 	errc := make(chan error, 3)
 	for i, ln := range []net.Listener{n.desk, n.share, n.drive} {
@@ -173,12 +171,24 @@ func (n *Node) bind() error {
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
 	n.activity = idle.New(n.cfg.MaintenanceQuiet, nil)
+	if err := n.activity.SetStatusPath(filepath.Join(n.cfg.DataDir, "maintenance-status.json")); err != nil {
+		return err
+	}
 	registry.SetActivityTracker(n.activity.Track)
-	n.activity.Register(registry.CleanupExpiredTrash)
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
-	_ = deskHandler.ResumeDeletes(context.Background())
-	n.activity.Register(deskHandler.ResumeDeletes)
-	n.uploads = deskHandler.RunUploads
+	deskHandler.SetMaintenanceStatus(n.activity)
+	n.activity.RegisterNamed("pending-account-cleanup", func(ctx context.Context) error {
+		return deskHandler.ResumeDeletes(ctx)
+	})
+	n.activity.RegisterTask("expired-grab-payloads", func(_ context.Context) (int64, error) {
+		_, reclaimed, err := n.caps.CleanupExpiredBytes(time.Now().UTC())
+		return int64(reclaimed), err
+	})
+	n.activity.RegisterTask("on-demand-zip-cleanup", registry.CleanupExpiredArchives)
+	n.activity.RegisterTask("staging-recovery", registry.RecoverStaging)
+	n.activity.RegisterTask("preview-cache-eviction", registry.CleanupPreviewCaches)
+	n.activity.RegisterTask("expired-trash-cleanup", registry.CleanupExpiredTrashBytes)
+	n.activity.RegisterTask("expired-upload-sessions", deskHandler.CleanupExpiredUploads)
 	n.svcs = []*http.Server{
 		server(n.desk, deskHandler, n.cfg.DataDir, n.activity),
 		server(n.share, share.New(n.caps), n.cfg.DataDir, n.activity),
@@ -197,14 +207,17 @@ func server(ln net.Listener, h http.Handler, dataDir string, activity *idle.Coor
 }
 
 func (n *Node) shutdown() error {
-	if n.uploadCancel != nil {
-		n.uploadCancel()
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if n.idleCancel != nil {
 		n.idleCancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	if n.idleDone != nil {
+		select {
+		case <-n.idleDone:
+		case <-ctx.Done():
+		}
+	}
 	var first error
 	for _, srv := range n.svcs {
 		if err := srv.Shutdown(ctx); err != nil && first == nil {
@@ -220,16 +233,11 @@ func (n *Node) startIdleMaintenance(parent context.Context) {
 	}
 	ctx, cancel := context.WithCancel(parent)
 	n.idleCancel = cancel
-	go n.activity.Run(ctx)
-}
-
-func (n *Node) startUploadExpiry(parent context.Context) {
-	if n.uploads == nil || n.uploadCancel != nil {
-		return
-	}
-	ctx, cancel := context.WithCancel(parent)
-	n.uploadCancel = cancel
-	go n.uploads(ctx)
+	n.idleDone = make(chan struct{})
+	go func() {
+		defer close(n.idleDone)
+		n.activity.Run(ctx)
+	}()
 }
 
 func probeReady(addr string) error {

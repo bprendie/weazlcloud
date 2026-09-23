@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/upload"
@@ -102,6 +103,11 @@ func (h *Handler) multiUploadRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RunUploads(ctx context.Context) { h.uploads.Run(ctx) }
+
+func (h *Handler) CleanupExpiredUploads(ctx context.Context) (int64, error) {
+	_, bytes, err := h.uploads.SweepExpiredDetailed(ctx, time.Now().UTC())
+	return bytes, err
+}
 
 func (h *Handler) multiAppendUpload(w http.ResponseWriter, r *http.Request, user users.User, id string) {
 	offset, err := parseUploadOffset(r.Header.Get("Upload-Offset"))

@@ -2,7 +2,6 @@ package upload
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,46 +134,7 @@ func (m *Manager) Run(ctx context.Context) {
 }
 
 func (m *Manager) SweepExpired(now time.Time) int {
-	entries, err := os.ReadDir(m.root)
-	if err != nil {
-		return 0
-	}
-	removed := 0
-	for _, owner := range entries {
-		if !owner.IsDir() || !validComponent(owner.Name()) {
-			continue
-		}
-		files, readErr := os.ReadDir(m.ownerDir(owner.Name()))
-		if readErr != nil {
-			continue
-		}
-		for _, file := range files {
-			if file.IsDir() || !strings.HasSuffix(file.Name(), ".json") {
-				continue
-			}
-			id := strings.TrimSuffix(file.Name(), ".json")
-			unlock := m.lockSession(id)
-			m.mu.Lock()
-			s, loadErr := m.loadLocked(owner.Name(), id)
-			if errors.Is(loadErr, ErrExpired) {
-				removed++
-				m.mu.Unlock()
-				unlock()
-				continue
-			}
-			if loadErr != nil || s.Status == "complete" || now.Sub(s.UpdatedAt) < SessionLifetime {
-				m.mu.Unlock()
-				unlock()
-				continue
-			}
-			if m.removeLocked(s) == nil {
-				m.releaseReservationLocked(id)
-				removed++
-			}
-			m.mu.Unlock()
-			unlock()
-		}
-	}
+	removed, _, _ := m.SweepExpiredDetailed(context.Background(), now)
 	return removed
 }
 

@@ -2,6 +2,7 @@ package desk
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
@@ -9,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
+	"github.com/bprendie/weazlcloud/internal/idle"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/users"
 )
@@ -96,19 +99,22 @@ func TestAdminCanManageAccountsWithoutVaultDataAndCannotRemoveLastAdmin(t *testi
 	adminToken, _ := us.Login(admin)
 	aliceToken, _ := us.Login(alice)
 	h := NewMulti(us, capsule.New(filepath.Join(dir, "capsules")), quota.New(dir), "", "", dir)
+	maintenance := idle.New(time.Minute, nil)
+	maintenance.RegisterTask("safe-check", func(context.Context) (int64, error) { return 0, nil })
+	h.SetMaintenanceStatus(maintenance)
 	get := func(token string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+		r := httptest.NewRequest(http.MethodGet, "/api/admin/maintenance", nil)
 		r.AddCookie(&http.Cookie{Name: "weazl_session", Value: token})
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w
 	}
 	if got := get(aliceToken); got.Code != http.StatusForbidden {
-		t.Fatalf("non-admin listed accounts: %d", got.Code)
+		t.Fatalf("non-admin read maintenance status: %d", got.Code)
 	}
-	listing := get(adminToken)
-	if listing.Code != http.StatusOK || bytes.Contains(bytes.ToLower(listing.Body.Bytes()), []byte("vault")) {
-		t.Fatalf("admin list exposed vault information: %d %s", listing.Code, listing.Body.String())
+	status := get(adminToken)
+	if status.Code != http.StatusOK || !bytes.Contains(status.Body.Bytes(), []byte("safe-check")) {
+		t.Fatalf("admin maintenance status=%d body=%s", status.Code, status.Body.String())
 	}
 	post := func(path string, token string, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))

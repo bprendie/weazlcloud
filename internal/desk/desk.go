@@ -13,6 +13,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/headers"
+	"github.com/bprendie/weazlcloud/internal/idle"
 	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ratelimit"
@@ -26,22 +27,27 @@ import (
 var ui embed.FS
 
 type Handler struct {
-	files      http.Handler
-	vault      *vault.Vault
-	lib        *library.Library
-	caps       *capsule.Store
-	publicBase string
-	driveBase  string
-	placesPath string
-	nodePath   string
-	nodeMu     sync.RWMutex
-	users      *users.Store
-	quota      *quota.Manager
-	registry   *filesvc.Registry
-	authLimit  *ratelimit.Limiter
-	changes    *filesvc.Hub
-	uploads    *upload.Manager
-	accounts   *accountlifecycle.Manager
+	files             http.Handler
+	vault             *vault.Vault
+	lib               *library.Library
+	caps              *capsule.Store
+	publicBase        string
+	driveBase         string
+	placesPath        string
+	nodePath          string
+	nodeMu            sync.RWMutex
+	users             *users.Store
+	quota             *quota.Manager
+	registry          *filesvc.Registry
+	authLimit         *ratelimit.Limiter
+	changes           *filesvc.Hub
+	uploads           *upload.Manager
+	accounts          *accountlifecycle.Manager
+	maintenanceStatus interface{ Status() []idle.JobStatus }
+}
+
+func (h *Handler) SetMaintenanceStatus(status interface{ Status() []idle.JobStatus }) {
+	h.maintenanceStatus = status
 }
 
 func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, driveBase, placesPath string) *Handler {

@@ -70,9 +70,6 @@ func NewArchiveManager(lib *library.Library, reserve ...func(int64) (func(), err
 	if len(reserve) > 0 {
 		m.reserve = reserve[0]
 	}
-	_ = os.MkdirAll(m.root, 0o700)
-	m.cleanupStaleTemps()
-	m.cleanupLocked(time.Now().UTC())
 	return m
 }
 
@@ -127,7 +124,6 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 		return ArchiveJobView{}, errors.New("archive manager is closing")
 	}
 	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip"), done: make(chan struct{})}
-	m.cleanupLocked(created)
 	m.jobs[id] = job
 	m.workers.Add(1)
 	m.mu.Unlock()
@@ -200,6 +196,7 @@ func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
 		return
 	}
 	job.Status = "ready"
+	job.ExpiresAt = time.Now().UTC().Add(archiveLifetime)
 	logArchive(job)
 }
 
@@ -229,9 +226,12 @@ func logArchive(job *archiveJob) {
 func (m *ArchiveManager) Get(id string) (ArchiveJobView, string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.cleanupLocked(time.Now().UTC())
 	job := m.jobs[id]
 	if job == nil {
+		return ArchiveJobView{}, "", false
+	}
+	if !time.Now().UTC().Before(job.ExpiresAt) {
+		job.cancel()
 		return ArchiveJobView{}, "", false
 	}
 	return job.ArchiveJobView, job.path, true
