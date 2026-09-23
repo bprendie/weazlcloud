@@ -18,6 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install pinned Restic for legacy-backend tests
+        run: bash scripts/ci-install-restic.sh
       - run: make check
       - run: make build VERSION=ci-${GITHUB_SHA::12}
 
@@ -29,6 +31,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Install pinned Restic for legacy-backend smoke
+        run: bash scripts/ci-install-restic.sh
       - run: make desk-assets
       - run: bash scripts/smoke-browser.sh
 

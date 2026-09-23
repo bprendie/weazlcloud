@@ -13,22 +13,32 @@ var migrationStates = map[string]bool{
 }
 
 type MigrationTally struct {
-	State string `json:"state"`
-	Items int64  `json:"items"`
-	Bytes int64  `json:"bytes"`
+	State         string `json:"state"`
+	ErrorCategory string `json:"error_category,omitempty"`
+	Items         int64  `json:"items"`
+	Bytes         int64  `json:"bytes"`
 }
 
 // RecordMigration stores progress without exposing names or raw account IDs.
 func (s *Store) RecordMigration(ctx context.Context, owner, entry string, revision uint64, state string, bytes int64, category string) error {
-	if owner == "" || entry == "" || revision == 0 || !migrationStates[state] || bytes < 0 || len(category) > 48 {
+	if owner == "" || entry == "" || revision == 0 || !migrationStates[state] || bytes < 0 || !validMigrationCategory(category) {
 		return errors.New("invalid migration progress")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO migration_items(owner_id,entry_id,revision,state,copied_bytes,error_category,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner_id,entry_id,revision) DO UPDATE SET state=excluded.state,copied_bytes=excluded.copied_bytes,error_category=excluded.error_category,updated_at=excluded.updated_at`, s.keys.ownerToken(owner), entry, revision, state, bytes, category, time.Now().UTC().Unix())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO migration_items(owner_id,entry_id,revision,state,copied_bytes,error_category,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(owner_id,entry_id,revision) DO UPDATE SET state=excluded.state,copied_bytes=CASE WHEN excluded.state='blocked' AND excluded.copied_bytes=0 THEN migration_items.copied_bytes ELSE excluded.copied_bytes END,error_category=excluded.error_category,updated_at=excluded.updated_at`, s.keys.ownerToken(owner), entry, revision, state, bytes, category, time.Now().UTC().Unix())
 	return err
 }
 
+func validMigrationCategory(category string) bool {
+	switch category {
+	case "", "workspace", "catalog-changed", "source-metadata", "copy-or-verify":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Store) MigrationStatus(ctx context.Context) ([]MigrationTally, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT state,count(*),coalesce(sum(copied_bytes),0) FROM migration_items GROUP BY state ORDER BY state`)
+	rows, err := s.db.QueryContext(ctx, `SELECT state,error_category,count(*),coalesce(sum(copied_bytes),0) FROM migration_items GROUP BY state,error_category ORDER BY state,error_category`)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +46,7 @@ func (s *Store) MigrationStatus(ctx context.Context) ([]MigrationTally, error) {
 	var out []MigrationTally
 	for rows.Next() {
 		var item MigrationTally
-		if err = rows.Scan(&item.State, &item.Items, &item.Bytes); err != nil {
+		if err = rows.Scan(&item.State, &item.ErrorCategory, &item.Items, &item.Bytes); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

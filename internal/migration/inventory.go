@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,10 +34,13 @@ func inventoryAll(ctx context.Context, dataDir string, store *users.Store, actio
 		}
 		pending, pendingErr := pendingUploads(dataDir, store, user)
 		report.PendingUploads += pending
-		if pendingErr != nil {
+		staged, stagedErr := pendingStaging(store, user)
+		report.StagedRecords += staged
+		if pendingErr != nil || stagedErr != nil {
 			report.BlockedUsers++
 			continue
 		}
+		blockedByUploads := pending != 0 || staged != 0
 		v := vault.New(store.VaultPath(user), store.NodeKeyPath(user))
 		if !v.Exists() || v.UnlockNode() != nil {
 			report.BlockedUsers++
@@ -49,11 +53,11 @@ func inventoryAll(ctx context.Context, dataDir string, store *users.Store, actio
 			report.BlockedUsers++
 			continue
 		}
+		if blockedByUploads {
+			report.BlockedUsers++
+		}
 		repo := store.LibraryPath(user)
 		report.SourceAllocatedBytes += allocated(repo)
-		if entries, e := os.ReadDir(filepath.Join(repo, ".staging")); e == nil {
-			report.StagedRecords += len(entries)
-		}
 		for _, file := range c.All() {
 			if file.Folder {
 				report.Folders++
@@ -76,6 +80,10 @@ func inventoryAll(ctx context.Context, dataDir string, store *users.Store, actio
 				report.SharedFiles++
 				continue
 			}
+			if user.Disabled || user.DisablePending {
+				continue
+			}
+			report.RemainingFiles++
 			if !user.Disabled && !user.DisablePending && validSource(file) {
 				report.EligibleFiles++
 				if file.Reference != nil && file.Reference.Backend == catalog.ResticBackend {
@@ -98,6 +106,17 @@ func inventoryAll(ctx context.Context, dataDir string, store *users.Store, actio
 	}
 	report.LegacySnapshots = len(seenSnapshots)
 	return report, nil
+}
+
+func pendingStaging(store *users.Store, user users.User) (int, error) {
+	entries, err := os.ReadDir(filepath.Join(store.LibraryPath(user), ".staging"))
+	if os.IsNotExist(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return len(entries), nil
 }
 
 func validSource(file catalog.File) bool {
@@ -142,7 +161,19 @@ func pendingUploads(dataDir string, store *users.Store, user users.User) (int, e
 	count := 0
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
-			count++
+			manifest, readErr := os.ReadFile(filepath.Join(root, entry.Name()))
+			if readErr != nil {
+				return count, readErr
+			}
+			var session struct {
+				Status string `json:"status"`
+			}
+			if readErr = json.Unmarshal(manifest, &session); readErr != nil {
+				return count, readErr
+			}
+			if session.Status != "complete" {
+				count++
+			}
 		}
 	}
 	return count, nil

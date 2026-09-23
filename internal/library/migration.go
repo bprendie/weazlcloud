@@ -35,6 +35,9 @@ func (l *Library) MigrationFiles(ctx context.Context, readOnly bool) ([]catalog.
 func (l *Library) MigrateToShared(ctx context.Context, target catalog.File, reserve func(int64) (func(), error), progress func(string, int64) error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if progress == nil {
+		progress = func(string, int64) error { return nil }
+	}
 	if l.sharedStore == nil || l.ownerID == "" || !l.vault.Unlocked() {
 		return errors.New("shared migration is not configured")
 	}

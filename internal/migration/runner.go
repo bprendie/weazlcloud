@@ -33,7 +33,11 @@ type Report struct {
 	Folders              int                          `json:"folders"`
 	SharedFiles          int                          `json:"shared_files"`
 	EligibleFiles        int                          `json:"eligible_files"`
+	RemainingFiles       int                          `json:"remaining_files"`
 	MigratedFiles        int                          `json:"migrated_files"`
+	CompletedFiles       int                          `json:"completed_files"`
+	FailedFiles          int                          `json:"failed_files"`
+	CompletedBytes       int64                        `json:"completed_bytes"`
 	BlockedFiles         int                          `json:"blocked_files"`
 	StagedRecords        int                          `json:"staged_records"`
 	PendingUploads       int                          `json:"pending_uploads"`
@@ -61,6 +65,10 @@ func Run(ctx context.Context, dataDir, action string, out io.Writer) error {
 		if err := requireOffline("127.0.0.1:7272", "127.0.0.1:7273", "127.0.0.1:7274"); err != nil {
 			return err
 		}
+	}
+	if (action == "start" || action == "resume") && exists(filepath.Join(dataDir, "catalog.enc")) {
+		report := Report{Action: action, UnassignedLegacy: true}
+		return writeReport(out, report, errors.New("legacy root catalog must be assigned to an account before migration"))
 	}
 	if action == "start" || action == "resume" || action == "verify" {
 		lock, err := acquireLock(dataDir)
@@ -90,6 +98,7 @@ func Run(ctx context.Context, dataDir, action string, out io.Writer) error {
 	report, err := inventoryAll(ctx, dataDir, storeUsers, action)
 	if action == "status" {
 		report.Journal, _ = readJournal(dataDir)
+		summarizeJournal(&report)
 	}
 	return writeReport(out, report, err)
 }
@@ -107,7 +116,20 @@ func runSharedAction(ctx context.Context, dataDir, action string, storeUsers *us
 		report, err = migrateAll(ctx, dataDir, storeUsers, shared)
 	}
 	report.Journal, _ = shared.MigrationStatus(ctx)
+	summarizeJournal(&report)
 	return writeReport(out, report, err)
+}
+
+func summarizeJournal(report *Report) {
+	for _, item := range report.Journal {
+		switch item.State {
+		case "complete":
+			report.CompletedFiles += int(item.Items)
+			report.CompletedBytes += item.Bytes
+		case "blocked":
+			report.FailedFiles += int(item.Items)
+		}
+	}
 }
 
 func validAction(action string) bool {
@@ -130,7 +152,7 @@ func readJournal(dataDir string) ([]sharedstore.MigrationTally, error) {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT state,count(*),coalesce(sum(copied_bytes),0) FROM migration_items GROUP BY state ORDER BY state`)
+	rows, err := db.Query(`SELECT state,error_category,count(*),coalesce(sum(copied_bytes),0) FROM migration_items GROUP BY state,error_category ORDER BY state,error_category`)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +160,7 @@ func readJournal(dataDir string) ([]sharedstore.MigrationTally, error) {
 	var out []sharedstore.MigrationTally
 	for rows.Next() {
 		var row sharedstore.MigrationTally
-		if err = rows.Scan(&row.State, &row.Items, &row.Bytes); err != nil {
+		if err = rows.Scan(&row.State, &row.ErrorCategory, &row.Items, &row.Bytes); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

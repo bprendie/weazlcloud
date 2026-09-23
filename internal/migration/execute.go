@@ -34,7 +34,8 @@ func migrateAll(ctx context.Context, dataDir string, store *users.Store, shared 
 			continue
 		}
 		pending, pendingErr := pendingUploads(dataDir, store, user)
-		if pendingErr != nil || pending != 0 {
+		staged, stagedErr := pendingStaging(store, user)
+		if pendingErr != nil || stagedErr != nil || pending != 0 || staged != 0 {
 			report.BlockedUsers++
 			continue
 		}
@@ -106,6 +107,7 @@ func migrateAll(ctx context.Context, dataDir string, store *users.Store, shared 
 				continue
 			}
 			report.MigratedFiles++
+			report.RemainingFiles--
 		}
 		v.Lock()
 		if report.Paused {
@@ -119,7 +121,7 @@ func migrateAll(ctx context.Context, dataDir string, store *users.Store, shared 
 func verifyAll(ctx context.Context, store *users.Store, shared *sharedstore.Store) (Report, error) {
 	report := Report{Action: "verify"}
 	for _, user := range store.Users() {
-		if user.Deleting {
+		if user.Deleting || user.Disabled || user.DisablePending {
 			continue
 		}
 		v := vault.New(store.VaultPath(user), store.NodeKeyPath(user))
@@ -136,7 +138,11 @@ func verifyAll(ctx context.Context, store *users.Store, shared *sharedstore.Stor
 			continue
 		}
 		for _, file := range files {
-			if file.Folder || file.Reference == nil || file.Reference.Backend != catalog.SharedBackend {
+			if file.Folder || (!file.Present && (file.DeletedAt == nil || file.DeletedAt.Before(time.Now().UTC().Add(-trashLifetime)))) {
+				continue
+			}
+			if file.Reference == nil || file.Reference.Backend != catalog.SharedBackend {
+				report.RemainingFiles++
 				continue
 			}
 			if err = lib.VerifyMigratedFile(ctx, file); err != nil {
@@ -146,6 +152,9 @@ func verifyAll(ctx context.Context, store *users.Store, shared *sharedstore.Stor
 			}
 		}
 		v.Lock()
+	}
+	if report.RemainingFiles > 0 || report.BlockedUsers > 0 || report.BlockedFiles > 0 {
+		return report, errors.New("migration verification found remaining or unreadable legacy files")
 	}
 	return report, nil
 }
