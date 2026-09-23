@@ -1,0 +1,225 @@
+package sharedstore
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/bprendie/weazlcloud/internal/cryptox"
+	"github.com/bprendie/weazlcloud/internal/vault"
+)
+
+type Store struct {
+	root    string
+	db      *sql.DB
+	keys    nodeKeys
+	options Options
+}
+
+func Open(root string, options Options) (*Store, error) {
+	for _, dir := range []string{root, filepath.Join(root, "shared-objects"), filepath.Join(root, "shared-staging")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return nil, err
+		}
+	}
+	keys, err := loadKeys(filepath.Join(root, "shared-index"))
+	if err != nil {
+		return nil, err
+	}
+	db, err := openIndex(root)
+	if err != nil {
+		cryptox.Zero(keys.fingerprint)
+		cryptox.Zero(keys.wrapping)
+		return nil, err
+	}
+	s := &Store{root: root, db: db, keys: keys, options: options}
+	if err := s.cleanupStages(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := s.reconcileObjects(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *Store) Close() error {
+	cryptox.Zero(s.keys.fingerprint)
+	cryptox.Zero(s.keys.wrapping)
+	return s.db.Close()
+}
+
+// Prepare verifies source bytes and persists a private pending reference.
+func (s *Store) Prepare(ctx context.Context, owner string, v *vault.Vault, entry string, revision uint64, input io.Reader, expected int64) (Prepared, error) {
+	if owner == "" || entry == "" || revision == 0 || v == nil || !v.Unlocked() || expected < -1 {
+		return Prepared{}, ErrDenied
+	}
+	opRaw, err := cryptox.Random(16)
+	if err != nil {
+		return Prepared{}, err
+	}
+	op := opaqueID(opRaw)
+	stage, err := os.CreateTemp(filepath.Join(s.root, "shared-staging"), "source-")
+	if err != nil {
+		return Prepared{}, err
+	}
+	stagePath := stage.Name()
+	defer os.Remove(stagePath)
+	if err = stage.Chmod(0o600); err != nil {
+		stage.Close()
+		return Prepared{}, err
+	}
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(stage, h), contextReader{ctx, input})
+	if err != nil {
+		stage.Close()
+		return Prepared{}, err
+	}
+	if expected >= 0 && n != expected {
+		stage.Close()
+		return Prepared{}, fmt.Errorf("source length mismatch: got %d", n)
+	}
+	if err = stage.Sync(); err != nil {
+		stage.Close()
+		return Prepared{}, err
+	}
+	if _, err = stage.Seek(0, io.SeekStart); err != nil {
+		stage.Close()
+		return Prepared{}, err
+	}
+	fingerprint := s.keys.fingerprintFor(n, h.Sum(nil))
+	objectID, key, err := s.getOrWriteObject(ctx, stage, fingerprint, n)
+	if err != nil {
+		stage.Close()
+		return Prepared{}, err
+	}
+	stage.Close()
+	if err = fail(s.options, "object_ready"); err != nil {
+		return Prepared{}, err
+	}
+	ownerKey := map[string]any{"version": formatVersion, "owner": owner, "entry": entry, "revision": revision, "object": objectID, "key": cryptox.B64(key)}
+	plain, err := json.Marshal(ownerKey)
+	cryptox.Zero(key)
+	if err != nil {
+		return Prepared{}, err
+	}
+	wrapper, err := v.Wrap(plain)
+	cryptox.Zero(plain)
+	if err != nil {
+		return Prepared{}, err
+	}
+	ownerToken := s.keys.ownerToken(owner)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Prepared{}, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, "INSERT INTO operations(op_id,owner_id,entry_id,revision,object_id,state) VALUES(?,?,?,?,?,'prepared')", op, ownerToken, entry, revision, objectID)
+	if err != nil {
+		return Prepared{}, err
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO owners(owner_id,entry_id,revision,object_id,wrapped_key,op_id,state) VALUES(?,?,?,?,?,?,'prepared')", ownerToken, entry, revision, objectID, wrapper, op)
+	if err != nil {
+		return Prepared{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Prepared{}, err
+	}
+	if err = fail(s.options, "prepared"); err != nil {
+		return Prepared{}, err
+	}
+	return Prepared{Reference: Reference{Version: formatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
+}
+
+func (s *Store) cleanupStages() error {
+	entries, err := os.ReadDir(filepath.Join(s.root, "shared-staging"))
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err = os.Remove(filepath.Join(s.root, "shared-staging", e.Name())); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) reconcileObjects() error {
+	rows, err := s.db.Query("SELECT object_id FROM objects WHERE state='ready'")
+	if err != nil {
+		return err
+	}
+	known := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if !validObjectID(id) {
+			rows.Close()
+			return ErrState
+		}
+		known[id+".wobj"] = true
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	dir := filepath.Join(s.root, "shared-objects")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".wobj" {
+			continue
+		}
+		if !known[entry.Name()] {
+			if err = os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	for name := range known {
+		if _, err = os.Stat(filepath.Join(dir, name)); err != nil {
+			return fmt.Errorf("indexed shared object missing: %w", err)
+		}
+	}
+	return nil
+}
+
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c contextReader) Read(p []byte) (int, error) {
+	select {
+	case <-c.ctx.Done():
+		return 0, c.ctx.Err()
+	default:
+		return c.r.Read(p)
+	}
+}

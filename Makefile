@@ -1,4 +1,4 @@
-.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container
+.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container smoke-sharedstore
 
 VERSION ?= dev
 LDFLAGS := -s -w -X github.com/bprendie/weazlcloud/internal/buildinfo.Version=$(VERSION)
@@ -44,6 +44,9 @@ smoke-browser: desk-assets
 
 smoke-container:
 	bash scripts/container-smoke.sh
+
+smoke-sharedstore:
+	bash scripts/sharedstore-smoke.sh
 
 compose:
 	docker compose -f deploy/compose.yaml up --build -d
