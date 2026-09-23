@@ -92,9 +92,12 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 			out["dedupe_percent"] = dedupe
 			out["logical_bytes"] = logical
 			out["unique_bytes"] = unique
-			if shared, allocated, metricsErr := res.Lib.SharedMetrics(r.Context()); metricsErr == nil && shared {
+			if shared, allocated, manifests, index, staging, metricsErr := res.Lib.SharedMetrics(r.Context()); metricsErr == nil && shared {
 				out["dedupe_scope"] = "all live and Trash references using shared storage"
 				out["shared_allocated_bytes"] = allocated
+				out["shared_manifest_allocated_bytes"] = manifests
+				out["shared_index_allocated_bytes"] = index
+				out["shared_staging_allocated_bytes"] = staging
 			}
 		}
 		if trash, e := res.Lib.Trash(r.Context()); e == nil {

@@ -50,6 +50,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	check := fs.Bool("check", false, "validate configuration")
 	ready := fs.Bool("ready", false, "probe local desk /ready")
 	data := fs.String("data", "", "data directory")
+	migrate := fs.String("migrate", "", "run storage migration control: dry-run, status, start, pause, resume, verify, retire")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -66,6 +67,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
+	}
+	if *migrate != "" {
+		return runMigration(ctx, cfg.DataDir, *migrate, stdout)
 	}
 	if err := cfg.EnsureData(); err != nil {
 		return err

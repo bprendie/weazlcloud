@@ -67,6 +67,14 @@ func New(path string, v *vault.Vault) *Catalog {
 }
 
 func (c *Catalog) Load() error {
+	return c.load(true)
+}
+
+// LoadReadOnly upgrades legacy entries in memory without writing the catalog.
+// Maintenance inventory uses it so a dry run never changes user data.
+func (c *Catalog) LoadReadOnly() error { return c.load(false) }
+
+func (c *Catalog) load(persistUpgrade bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = nil
@@ -91,7 +99,7 @@ func (c *Catalog) Load() error {
 	if err != nil {
 		return err
 	}
-	if changed {
+	if changed && persistUpgrade {
 		if err := c.saveFilesLocked(files); err != nil {
 			return err
 		}

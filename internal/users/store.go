@@ -76,15 +76,7 @@ type Store struct {
 	secureCookies bool
 }
 
-func New(path, userRoot string) (*Store, error) {
-	s := &Store{path: path, userRoot: userRoot, sessions: make(map[string]session)}
-	if err := s.load(); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-func (s *Store) load() error {
+func (s *Store) load(persistUpgrade bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	b, err := os.ReadFile(s.path)
@@ -109,7 +101,7 @@ func (s *Store) load() error {
 		}
 		changed = true
 	}
-	if changed {
+	if changed && persistUpgrade {
 		return s.saveLocked()
 	}
 	return nil

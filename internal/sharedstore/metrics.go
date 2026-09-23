@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 func (s *Store) Metrics(ctx context.Context) (Stats, error) {
@@ -17,19 +18,81 @@ func (s *Store) Metrics(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return out, err
 	}
+	rows, err := s.db.QueryContext(ctx, `SELECT object_id,kind FROM objects`)
+	if err != nil {
+		return out, err
+	}
+	kinds := make(map[string]string)
+	for rows.Next() {
+		var id, kind string
+		if err = rows.Scan(&id, &kind); err != nil {
+			rows.Close()
+			return out, err
+		}
+		if !validObjectID(id) {
+			rows.Close()
+			return out, ErrState
+		}
+		kinds[id] = kind
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	if err = rows.Close(); err != nil {
+		return out, err
+	}
 	entries, err := os.ReadDir(filepath.Join(s.root, "shared-objects"))
 	if err != nil {
 		return out, err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".wobj") || !validObjectID(strings.TrimSuffix(entry.Name(), ".wobj")) {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".wobj") {
 			continue
 		}
-		info, e := entry.Info()
-		if e != nil {
-			return out, e
+		id := strings.TrimSuffix(entry.Name(), ".wobj")
+		if !validObjectID(id) {
+			return out, ErrState
 		}
-		out.AllocatedBytes += info.Size()
+		info, statErr := entry.Info()
+		if statErr != nil {
+			return out, statErr
+		}
+		bytes := allocated(info)
+		out.AllocatedBytes += bytes
+		if kinds[id] == "manifest" {
+			out.ManifestAllocated += bytes
+		}
 	}
+	for _, name := range []string{"index.db", "index.db-wal", "index.db-shm"} {
+		info, statErr := os.Stat(filepath.Join(s.root, "shared-index", name))
+		if os.IsNotExist(statErr) {
+			continue
+		}
+		if statErr != nil {
+			return out, statErr
+		}
+		out.IndexAllocatedBytes += allocated(info)
+	}
+	out.AllocatedBytes += out.IndexAllocatedBytes
+	if err = filepath.Walk(filepath.Join(s.root, "shared-staging"), func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() {
+			out.StagingAllocated += allocated(info)
+		}
+		return nil
+	}); err != nil {
+		return out, err
+	}
+	out.AllocatedBytes += out.StagingAllocated
 	return out, nil
+}
+
+func allocated(info os.FileInfo) int64 {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return stat.Blocks * 512
+	}
+	return info.Size()
 }

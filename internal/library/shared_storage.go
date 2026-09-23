@@ -22,14 +22,14 @@ func (l *Library) SharedWritesEnabled() bool {
 	return l.sharedStore != nil && l.sharedWrites
 }
 
-func (l *Library) SharedMetrics(ctx context.Context) (shared bool, allocated int64, err error) {
+func (l *Library) SharedMetrics(ctx context.Context) (shared bool, allocated, manifests, index, staging int64, err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.sharedStore == nil {
-		return false, 0, nil
+		return false, 0, 0, 0, 0, nil
 	}
 	stats, err := l.sharedStore.Metrics(ctx)
-	return true, stats.AllocatedBytes, err
+	return true, stats.AllocatedBytes, stats.ManifestAllocated, stats.IndexAllocatedBytes, stats.StagingAllocated, err
 }
 
 func (l *Library) capture(file catalog.File) (catalog.Reference, error) {

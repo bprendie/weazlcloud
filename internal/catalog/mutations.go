@@ -1,9 +1,43 @@
 package catalog
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
+
+// SwitchReference changes one exact catalog version after its replacement has
+// been copied and verified. It preserves path, metadata, and Trash timestamps.
+func (c *Catalog) SwitchReference(entryID string, revision uint64, previous, next Reference) (File, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	files := append([]File(nil), c.files...)
+	for i := range files {
+		f := &files[i]
+		if f.EntryID != entryID || f.Revision != revision {
+			continue
+		}
+		if f.Folder || f.Reference == nil || *f.Reference != previous || f.Revision == ^uint64(0) {
+			return File{}, ErrRevisionMismatch
+		}
+		if next.Backend != SharedBackend || next.Version == 0 || next.Object == "" || next.Operation == "" || next.OwnerEntryID != entryID || next.OwnerRevision != revision+1 || next.Snapshot != "" {
+			return File{}, ErrUnknownReference
+		}
+		f.Revision++
+		f.Reference = &next
+		f.Snap = ""
+		f.Object = next.Object
+		if err := validateReference(*f); err != nil {
+			return File{}, err
+		}
+		if err := c.saveFilesLocked(files); err != nil {
+			return File{}, err
+		}
+		c.files = files
+		return cloneFile(*f), nil
+	}
+	return File{}, errors.New("catalog version changed before migration switch")
+}
 
 func (c *Catalog) Put(f File) error {
 	c.mu.Lock()

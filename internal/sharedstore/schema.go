@@ -9,7 +9,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 func openIndex(root string) (*sql.DB, error) {
 	dir := filepath.Join(root, "shared-index")
@@ -109,7 +109,14 @@ func migrate(db *sql.DB) error {
 				return err
 			}
 		}
-		return nil
+		version = 5
+	}
+	if version == 5 {
+		if _, err = db.Exec(`CREATE TABLE migration_items (owner_id BLOB NOT NULL, entry_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, copied_bytes INTEGER NOT NULL DEFAULT 0, error_category TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, PRIMARY KEY(owner_id,entry_id,revision))`); err != nil {
+			return err
+		}
+		_, err = db.Exec("PRAGMA user_version=6")
+		return err
 	}
 	tx, err := db.Begin()
 	if err != nil {
@@ -125,13 +132,14 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE object_dependencies(parent_id TEXT NOT NULL REFERENCES objects(object_id) ON DELETE CASCADE, child_id TEXT NOT NULL REFERENCES objects(object_id) ON DELETE CASCADE, PRIMARY KEY(parent_id,child_id))`,
 		`CREATE INDEX object_dependencies_child ON object_dependencies(child_id)`,
 		`CREATE TABLE format_settings(setting TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE migration_items (owner_id BLOB NOT NULL, entry_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, copied_bytes INTEGER NOT NULL DEFAULT 0, error_category TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, PRIMARY KEY(owner_id,entry_id,revision))`,
 	}
 	for _, q := range queries {
 		if _, err = tx.Exec(q); err != nil {
 			return err
 		}
 	}
-	if _, err = tx.Exec("PRAGMA user_version=5"); err != nil {
+	if _, err = tx.Exec("PRAGMA user_version=6"); err != nil {
 		return err
 	}
 	return tx.Commit()

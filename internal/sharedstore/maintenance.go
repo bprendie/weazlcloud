@@ -12,10 +12,13 @@ import (
 )
 
 type Stats struct {
-	Objects        int64
-	UniqueBytes    int64
-	LogicalBytes   int64
-	AllocatedBytes int64
+	Objects             int64
+	UniqueBytes         int64
+	LogicalBytes        int64
+	AllocatedBytes      int64
+	ManifestAllocated   int64
+	IndexAllocatedBytes int64
+	StagingAllocated    int64
 }
 
 // Hold pins one authorized live owner reference until the returned release is called.
