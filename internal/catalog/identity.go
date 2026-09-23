@@ -109,7 +109,7 @@ func validateReference(f File) error {
 	if ref.Backend == ResticBackend && ref.Version == 1 && ref.Snapshot == f.Snap {
 		return nil
 	}
-	if ref.Backend == SharedBackend && ref.Version == 1 && ref.Snapshot == "" && ref.Object != "" && ref.Operation != "" && f.Snap == "" {
+	if ref.Backend == SharedBackend && (ref.Version == 1 || ref.Version == 2) && ref.Snapshot == "" && ref.Object != "" && ref.Operation != "" && f.Snap == "" {
 		return nil
 	}
 	return ErrUnknownReference

@@ -47,7 +47,7 @@ func (l *Library) commitSharedStaged(ctx context.Context, stage stagedUpload) (c
 	if prepErr != nil {
 		return catalog.File{}, prepErr
 	}
-	ref := catalog.Reference{Backend: catalog.SharedBackend, Version: 1, Object: prepared.Reference.ObjectID, Operation: prepared.Operation, OwnerEntryID: prepared.Reference.EntryID, OwnerRevision: prepared.Reference.Revision}
+	ref := catalog.Reference{Backend: catalog.SharedBackend, Version: uint16(prepared.Reference.Version), Object: prepared.Reference.ObjectID, Operation: prepared.Operation, OwnerEntryID: prepared.Reference.EntryID, OwnerRevision: prepared.Reference.Revision}
 	if stage.Reference != nil && *stage.Reference != ref {
 		return catalog.File{}, catalog.ErrUnknownReference
 	}

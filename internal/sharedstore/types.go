@@ -10,8 +10,9 @@ var (
 )
 
 const (
-	formatVersion = 1
-	frameSize     = 1 << 20
+	formatVersion      = 1
+	frameSize          = 1 << 20
+	chunkFormatVersion = 2
 )
 
 // Reference is owner-scoped metadata intended to live inside an encrypted catalog.

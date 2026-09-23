@@ -42,6 +42,14 @@ func Open(root string, options Options) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{root: root, db: db, keys: keys, options: options}
+	if err := ensureChunkSettings(db); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE objects SET state='deleting' WHERE state='building'`); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if err := s.cleanupStages(); err != nil {
 		s.Close()
 		return nil, err
@@ -80,10 +88,10 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 	if !validOperationID(op) {
 		return Prepared{}, ErrDenied
 	}
-	var existingOwner []byte
-	var existingEntry, objectID, state string
+	var existingOwner, existingHash []byte
+	var existingEntry, objectID, state, objectKind string
 	var existingRevision uint64
-	err := s.db.QueryRowContext(ctx, "SELECT owner_id,entry_id,revision,object_id,state FROM operations WHERE op_id=?", op).Scan(&existingOwner, &existingEntry, &existingRevision, &objectID, &state)
+	err := s.db.QueryRowContext(ctx, "SELECT owner_id,entry_id,revision,object_id,state,content_hash FROM operations WHERE op_id=?", op).Scan(&existingOwner, &existingEntry, &existingRevision, &objectID, &state, &existingHash)
 	if err == nil {
 		if !equalBytes(existingOwner, s.keys.ownerToken(owner)) || existingEntry != entry || existingRevision != revision || state == "aborted" || state == "released" {
 			return Prepared{}, ErrState
@@ -96,16 +104,25 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 		if expected >= 0 && n != expected {
 			return Prepared{}, ErrState
 		}
-		fingerprint := s.keys.fingerprintFor(n, h.Sum(nil))
 		var storedFingerprint []byte
 		var objectState string
-		if hashErr = s.db.QueryRowContext(ctx, "SELECT fingerprint,state FROM objects WHERE object_id=?", objectID).Scan(&storedFingerprint, &objectState); hashErr != nil {
+		if hashErr = s.db.QueryRowContext(ctx, "SELECT fingerprint,state,kind FROM objects WHERE object_id=?", objectID).Scan(&storedFingerprint, &objectState, &objectKind); hashErr != nil {
 			return Prepared{}, hashErr
 		}
-		if objectState != "ready" || !equalBytes(fingerprint, storedFingerprint) {
+		matched := false
+		if objectKind == "manifest" {
+			matched = len(existingHash) == sha256.Size && equalBytes(existingHash, h.Sum(nil))
+		} else {
+			matched = equalBytes(s.keys.fingerprintFor(n, h.Sum(nil)), storedFingerprint)
+		}
+		if objectState != "ready" || !matched {
 			return Prepared{}, ErrState
 		}
-		return Prepared{Reference: Reference{Version: formatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
+		version := formatVersion
+		if objectKind == "manifest" {
+			version = chunkFormatVersion
+		}
+		return Prepared{Reference: Reference{Version: version, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Prepared{}, err
@@ -141,8 +158,8 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 		stage.Close()
 		return Prepared{}, err
 	}
-	fingerprint := s.keys.fingerprintFor(n, h.Sum(nil))
-	objectID, key, err := s.getOrWriteObject(ctx, stage, fingerprint, n)
+	contentHash := h.Sum(nil)
+	objectID, key, err := s.writeChunkedManifest(ctx, op, stage, n)
 	if err != nil {
 		stage.Close()
 		return Prepared{}, err
@@ -151,7 +168,7 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 	if err = fail(s.options, "object_ready"); err != nil {
 		return Prepared{}, err
 	}
-	ownerKey := map[string]any{"version": formatVersion, "owner": owner, "entry": entry, "revision": revision, "object": objectID, "key": cryptox.B64(key)}
+	ownerKey := map[string]any{"version": chunkFormatVersion, "owner": owner, "entry": entry, "revision": revision, "object": objectID, "key": cryptox.B64(key)}
 	plain, err := json.Marshal(ownerKey)
 	cryptox.Zero(key)
 	if err != nil {
@@ -168,7 +185,7 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 		return Prepared{}, err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, "INSERT INTO operations(op_id,owner_id,entry_id,revision,object_id,state) VALUES(?,?,?,?,?,'prepared')", op, ownerToken, entry, revision, objectID)
+	_, err = tx.ExecContext(ctx, "INSERT INTO operations(op_id,owner_id,entry_id,revision,object_id,state,content_hash) VALUES(?,?,?,?,?,'prepared',?)", op, ownerToken, entry, revision, objectID, contentHash)
 	if err != nil {
 		return Prepared{}, err
 	}
@@ -182,7 +199,7 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 	if err = fail(s.options, "prepared"); err != nil {
 		return Prepared{}, err
 	}
-	return Prepared{Reference: Reference{Version: formatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
+	return Prepared{Reference: Reference{Version: chunkFormatVersion, ObjectID: objectID, EntryID: entry, Revision: revision, Operation: op}, Operation: op}, nil
 }
 
 func validOperationID(id string) bool {

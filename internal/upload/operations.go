@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/users"
 )
 
@@ -133,7 +134,11 @@ func (m *Manager) Append(ctx context.Context, owner users.User, id string, offse
 		return SessionView{}, err
 	}
 	if reservation := m.reservations[id]; reservation != nil {
-		if err := reservation.Resize(2*s.Size - s.Offset); err != nil {
+		bytes, reserveErr := quota.SharedWriteReservation(s.Size, s.Offset)
+		if reserveErr != nil {
+			return view(s), reserveErr
+		}
+		if err := reservation.Resize(bytes); err != nil {
 			return view(s), err
 		}
 	}

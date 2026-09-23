@@ -152,7 +152,7 @@ func (l *Library) Copy(ctx context.Context, oldName, newName string) error {
 		if e != nil {
 			return e
 		}
-		destination.Reference = &catalog.Reference{Backend: catalog.SharedBackend, Version: 1, Object: ref.ObjectID, Operation: ref.Operation, OwnerEntryID: ref.EntryID, OwnerRevision: ref.Revision}
+		destination.Reference = &catalog.Reference{Backend: catalog.SharedBackend, Version: uint16(ref.Version), Object: ref.ObjectID, Operation: ref.Operation, OwnerEntryID: ref.EntryID, OwnerRevision: ref.Revision}
 		destination.Object = ref.ObjectID
 		return nil
 	})

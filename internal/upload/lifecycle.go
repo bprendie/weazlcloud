@@ -62,6 +62,14 @@ func (m *Manager) reserveBytes(owner string, bytes int64) (*quota.Reservation, e
 	return m.quota.ReserveTracked(owner, count, 0, 0, bytes)
 }
 
+func (m *Manager) reserveUploadBytes(owner string, size, offset int64) (*quota.Reservation, error) {
+	bytes, err := quota.SharedWriteReservation(size, offset)
+	if err != nil {
+		return nil, err
+	}
+	return m.reserveBytes(owner, bytes)
+}
+
 func (m *Manager) releaseReservationLocked(id string) {
 	if reservation := m.reservations[id]; reservation != nil {
 		reservation.Release()
@@ -80,7 +88,7 @@ func (m *Manager) ensureReservationLocked(s session) error {
 	if m.reservations[s.ID] != nil {
 		return nil
 	}
-	reservation, err := m.reserveBytes(s.OwnerID, 2*s.Size-s.Offset)
+	reservation, err := m.reserveUploadBytes(s.OwnerID, s.Size, s.Offset)
 	if err != nil {
 		m.reservationErrors[s.ID] = err
 		return err

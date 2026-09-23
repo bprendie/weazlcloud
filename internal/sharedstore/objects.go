@@ -1,6 +1,7 @@
 package sharedstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -11,17 +12,23 @@ import (
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
-func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprint []byte, length int64) (string, []byte, error) {
+func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprint []byte, plainLength, storedLength int64, encoding, kind, parent, op string) (string, []byte, error) {
 	for {
-		var id, state string
+		var id, state, storedKind string
 		var wrapped []byte
-		var storedLen int64
-		err := s.db.QueryRowContext(ctx, "SELECT object_id,state,node_key,plain_len FROM objects WHERE fingerprint=?", fingerprint).Scan(&id, &state, &wrapped, &storedLen)
+		var plainLen, storedLen int64
+		var storedEncoding string
+		err := s.db.QueryRowContext(ctx, "SELECT object_id,state,node_key,plain_len,stored_len,kind,encoding FROM objects WHERE fingerprint=?", fingerprint).Scan(&id, &state, &wrapped, &plainLen, &storedLen, &storedKind, &storedEncoding)
 		if err == nil {
 			if state == "deleting" {
 				return "", nil, ErrState
 			}
-			return s.verifyExisting(id, state, wrapped, storedLen, length)
+			if parent != "" {
+				if err = s.addDependency(ctx, parent, id); err != nil {
+					return "", nil, err
+				}
+			}
+			return s.verifyExisting(id, state, wrapped, plainLen, storedLen, plainLength, storedLength, storedEncoding, encoding, storedKind, kind)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return "", nil, err
@@ -56,7 +63,11 @@ func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprin
 			var candidate *os.File
 			candidate, e = os.Open(tmpPath)
 			if e == nil {
-				e = decryptFile(candidate, io.Discard, id, key)
+				var stored bytes.Buffer
+				e = decryptFile(candidate, &stored, id, key)
+				if e == nil {
+					_, e = decodeChunk(encoding, stored.Bytes(), plainLength, io.Discard)
+				}
 				_ = candidate.Close()
 			}
 		}
@@ -94,7 +105,10 @@ func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprin
 			cryptox.Zero(key)
 			return "", nil, e
 		}
-		_, e = tx.ExecContext(ctx, "INSERT INTO objects(object_id,fingerprint,plain_len,node_key,state,write_op) VALUES(?,?,?,?,'ready','')", id, fingerprint, length, wrappedKey)
+		_, e = tx.ExecContext(ctx, "INSERT INTO objects(object_id,fingerprint,plain_len,stored_len,encoding,node_key,state,write_op,kind) VALUES(?,?,?,?,?,?,'ready',?,?)", id, fingerprint, plainLength, storedLength, encoding, wrappedKey, op, kind)
+		if e == nil && parent != "" {
+			_, e = tx.ExecContext(ctx, "INSERT INTO object_dependencies(parent_id,child_id) VALUES(?,?)", parent, id)
+		}
 		if e == nil {
 			e = tx.Commit()
 		} else {
@@ -117,8 +131,21 @@ func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprin
 	}
 }
 
-func (s *Store) verifyExisting(id, state string, wrapped []byte, storedLen, length int64) (string, []byte, error) {
-	if !validObjectID(id) || state != "ready" || storedLen != length {
+func (s *Store) addDependency(ctx context.Context, parent, child string) error {
+	if _, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO object_dependencies(parent_id,child_id)
+		SELECT ?,? WHERE EXISTS(SELECT 1 FROM objects WHERE object_id=? AND kind='manifest' AND state IN ('building','ready'))
+		AND EXISTS(SELECT 1 FROM objects WHERE object_id=? AND kind='chunk' AND state='ready')`, parent, child, parent, child); err != nil {
+		return err
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM object_dependencies WHERE parent_id=? AND child_id=?", parent, child).Scan(&exists); err != nil || exists != 1 {
+		return ErrState
+	}
+	return nil
+}
+
+func (s *Store) verifyExisting(id, state string, wrapped []byte, plainLength, storedLength, wantPlain, wantStored int64, encoding, wantEncoding, storedKind, wantKind string) (string, []byte, error) {
+	if !validObjectID(id) || state != "ready" || plainLength != wantPlain || storedLength != wantStored || encoding != wantEncoding || storedKind != wantKind {
 		return "", nil, ErrState
 	}
 	key, err := s.unwrapNodeKey(wrapped)
@@ -130,8 +157,12 @@ func (s *Store) verifyExisting(id, state string, wrapped []byte, storedLen, leng
 		cryptox.Zero(key)
 		return "", nil, ErrState
 	}
-	err = decryptFile(f, io.Discard, id, key)
+	var stored bytes.Buffer
+	err = decryptFile(f, &stored, id, key)
 	_ = f.Close()
+	if err == nil {
+		_, err = decodeChunk(encoding, stored.Bytes(), plainLength, io.Discard)
+	}
 	if err != nil {
 		cryptox.Zero(key)
 		return "", nil, ErrState

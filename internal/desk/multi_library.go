@@ -199,11 +199,13 @@ func (h *Handler) multiPutLibrary(w http.ResponseWriter, r *http.Request) {
 			apiError(w, e)
 			return
 		}
-		multiplier := int64(1)
+		var guarded io.Reader
+		var release func()
 		if res.Lib.SharedWritesEnabled() {
-			multiplier = 2
+			guarded, release, err = h.quota.GuardSharedWrite(u.ID, h.users.Count(), used, current, r.ContentLength, r.Body)
+		} else {
+			guarded, release, err = h.quota.GuardReader(u.ID, h.users.Count(), used, current, r.ContentLength, r.Body)
 		}
-		guarded, release, err := h.quota.GuardReaderMultiplier(u.ID, h.users.Count(), used, current, r.ContentLength, multiplier, r.Body)
 		if err != nil {
 			apiError(w, err)
 			return

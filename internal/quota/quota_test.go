@@ -57,3 +57,24 @@ func TestGuardReaderMultiplierReservesSharedWriteWorkspace(t *testing.T) {
 	}
 	releaseUnknown()
 }
+
+func TestSharedWorkspaceIncludesMetadataAndResumesFromOffset(t *testing.T) {
+	size, offset := int64(2<<20), int64(512<<10)
+	reserved, err := SharedWriteReservation(size, offset)
+	if err != nil || reserved != 2*size-offset+(1<<20)+4*(8<<10) {
+		t.Fatalf("resumed shared reservation=%d err=%v", reserved, err)
+	}
+	m := newWithStatfs("test", func(string) (uint64, uint64, error) {
+		return 32 << 20, 30 << 20, nil
+	})
+	_, release, err := m.GuardSharedWrite("alice", 1, 0, 0, (512<<10)+1, bytes.NewReader(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	status, err := m.Status(1)
+	want := uint64(2*((512<<10)+1) + (1 << 20) + 2*(8<<10))
+	if err != nil || status.Reserved != want {
+		t.Fatalf("direct shared reservation=%d want=%d err=%v", status.Reserved, want, err)
+	}
+}

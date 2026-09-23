@@ -144,12 +144,30 @@ Unknown, incomplete, or corrupt state is not equivalent to zero references. Reco
 
 ### Migration and rollout defaults
 
-Migration and shared writes are disabled by default in every release until their specific D4–D7 gates pass. D1 keeps current Restic repositories readable and writable behind an adapter. D2/D3 remain disposable experimental backends. Migration is a journaled copy, full destination readback/authentication, catalog switch, then later source retirement; it is never an in-place merge of Restic repositories. Preserve legacy Trash cleanup intents, upload stages, batch snapshots, ZIP captures, and account lifecycle work until explicitly reconciled. Do not switch a real user or production volume in D0.
+Migration and shared writes are disabled by default in every release until their specific D4–D7 gates pass. D1 keeps current Restic repositories readable and writable behind an adapter. D2/D3 are implemented but remain experimental and disabled by default. Migration is a journaled copy, full destination readback/authentication, catalog switch, then later source retirement; it is never an in-place merge of Restic repositories. Preserve legacy Trash cleanup intents, upload stages, batch snapshots, ZIP captures, and account lifecycle work until explicitly reconciled. Do not switch a real user or production volume in D0.
 
 Space preflight includes legacy plus shared coexistence, upload source/staging, encrypted candidates, ZIP/capsule work, manifests, SQLite WAL, and the silent system reserve. Do not assume available disk will stay constant or dedupe will save space. D0 changes no storage format, runtime setting, dependency file, or production configuration.
 
+### D3 chunking and comparison checkpoint — September 23, 2026
+
+Implementation uses `github.com/restic/chunker v0.5.0` with Rabin polynomial `0x3DA3358B4DC173`, a 512 KiB minimum, 1 MiB average, and 8 MiB maximum. These settings and codec format are persisted and checked when opening the node store. Private version-2 manifests are streamed into encrypted files; bounded records authenticate chunk order, offsets, lengths, keys, and the final logical size. Version-1 whole-file references remain readable. Chunks are compressed independently with Zstandard at the fastest encoder level; incompressible chunks remain raw when compression would save fewer than 64 bytes. This separates dedupe from compression and keeps memory bounded independently of file length.
+
+The disposable benchmark runs `scripts/dedupe-baseline.sh` against Restic 0.18.0 and the shared backend, verifies every fixture's readback hash, and measures actual allocated filesystem blocks. Workload: 20,447,232 logical bytes across the D0 repeated-content and changed disk-image fixtures, in a fresh Docker volume on Linux/amd64 with a 2 GiB cgroup limit. This is a small synthetic comparison, not a household forecast or large-ISO stress test.
+
+| Measurement | Shared chunk store | Restic 0.18.0 |
+|---|---:|---:|
+| Allocated data + metadata | 12,574,720 bytes | 11,780,096 bytes |
+| Write/backup elapsed | 434 ms | 6,260 ms |
+| Read/restore elapsed | 64 ms | 1,430 ms |
+| CPU reported by measurement | 357 ms | 6,982 ms child CPU |
+| Peak RSS reported | 146,296 KiB Go process | 146,296 KiB child max RSS |
+
+Shared-store accounting: 13,222,440 unique plaintext chunk bytes across 12 unique chunks, 7,224,792 bytes of logical dedupe savings, 12,472,320 allocated chunk bytes, and 102,400 allocated manifest/index bytes. Its total measured allocation is 794,624 bytes (about 6.7%) above Restic on this compressible fixture. Shared-store Go allocation delta was 483,739,072 bytes. The same RSS figure is reported for the test and child process in this run; these are separate measurements and should not be compared as if they shared one sampling method. Timing/CPU are one synthetic run, not a statistically stable performance claim.
+
+Conclusion: authenticated chunk reuse works, changed-region reuse is verified, and this run is substantially faster, but its disk allocation is worse than Restic's. Keep the format experimental and disabled by default. Before any recommendation to cut over, rerun larger representative incompressible and compressible fixtures with repeated trials and collect independent peak memory/CPU measurements. D5/D6 migration and rollback do not begin until D4.5 lifecycle accounting is complete.
+
 ### D4 integration checkpoint — September 23, 2026
 
-The application now has an opt-in shared whole-file backend (`WEAZLCLOUD_STORAGE_BACKEND=shared-experimental`); Restic remains the default. The mixed backend has restart coverage for resumable writes, authenticated mixed reads and previews, range reads, ZIP capture, WebDAV, sealed grabs, owner deletion, reconciliation, and collection. Browser and Docker smoke targets exercise both backends. Quota reporting exposes aggregate logical/unique/allocated values with the same scope to ordinary users and administrators; it does not expose filenames or duplicate-owner details.
+The application now has an opt-in shared chunked backend (`WEAZLCLOUD_STORAGE_BACKEND=shared-experimental`); Restic remains the default. The mixed backend has restart coverage for resumable writes, authenticated mixed reads and previews, range reads, ZIP capture, WebDAV, sealed grabs, owner deletion, reconciliation, and collection. Browser and Docker smoke targets exercise both backends. Quota reporting exposes aggregate logical/unique/allocated values with the same scope to ordinary users and administrators; it does not expose filenames or duplicate-owner details.
 
-This does not complete the design above or authorize production enablement. D3's content-defined chunk objects, encrypted paged manifests, and Restic comparison/benchmarks are still outstanding. Consequently, current savings are whole-file dedupe figures and do not establish chunk-level benefits; D4.5's complete worst-case workspace and chunk-scoped measurement gate remains open. Migration, rollback, and production rehearsal also remain disabled. The production/default backend is unchanged.
+This does not complete the design above or authorize production enablement. D3 content-defined chunk objects, encrypted manifests, and the Restic comparison are implemented and recorded above. D4.5's full lifecycle accounting gate remains open: replacement/Trash/migration scopes and reservation reconstruction need end-to-end evidence. Migration, rollback, and production rehearsal remain disabled. The production/default backend is unchanged.

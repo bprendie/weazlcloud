@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
@@ -189,7 +188,7 @@ func (s *Store) Collect(ctx context.Context) (int64, error) {
 			return freed, err
 		}
 		var id string
-		err = tx.QueryRowContext(ctx, `SELECT x.object_id FROM objects x WHERE x.state='ready' AND NOT EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id) AND NOT EXISTS(SELECT 1 FROM holds h WHERE h.object_id=x.object_id) LIMIT 1`).Scan(&id)
+		err = tx.QueryRowContext(ctx, `SELECT x.object_id FROM objects x WHERE x.state='ready' AND NOT EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id) AND NOT EXISTS(SELECT 1 FROM holds h WHERE h.object_id=x.object_id) AND NOT EXISTS(SELECT 1 FROM object_dependencies d JOIN objects p ON p.object_id=d.parent_id WHERE d.child_id=x.object_id AND p.state IN ('building','ready')) LIMIT 1`).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			_ = tx.Rollback()
 			return freed, nil
@@ -273,27 +272,4 @@ func (s *Store) resumeDeletes() error {
 		}
 	}
 	return nil
-}
-
-func (s *Store) Metrics(ctx context.Context) (Stats, error) {
-	var out Stats
-	err := s.db.QueryRowContext(ctx, `SELECT count(*),coalesce(sum(x.plain_len),0),coalesce(sum(x.plain_len*(SELECT count(*) FROM owners o WHERE o.object_id=x.object_id AND o.state='live')),0) FROM objects x WHERE x.state='ready' AND EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id AND o.state='live')`).Scan(&out.Objects, &out.UniqueBytes, &out.LogicalBytes)
-	if err != nil {
-		return out, err
-	}
-	entries, err := os.ReadDir(filepath.Join(s.root, "shared-objects"))
-	if err != nil {
-		return out, err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".wobj") || !validObjectID(strings.TrimSuffix(entry.Name(), ".wobj")) {
-			continue
-		}
-		info, e := entry.Info()
-		if e != nil {
-			return out, e
-		}
-		out.AllocatedBytes += info.Size()
-	}
-	return out, nil
 }

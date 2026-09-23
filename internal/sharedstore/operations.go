@@ -42,7 +42,7 @@ func (s *Store) Grant(ctx context.Context, owner string, v *vault.Vault, source 
 		return Reference{}, err
 	}
 	op := opaqueID(opRaw)
-	copyEnv := map[string]any{"version": formatVersion, "owner": owner, "entry": entry, "revision": revision, "object": source.ObjectID, "key": env.Key}
+	copyEnv := map[string]any{"version": source.Version, "owner": owner, "entry": entry, "revision": revision, "object": source.ObjectID, "key": env.Key}
 	newPlain, err := json.Marshal(copyEnv)
 	if err != nil {
 		return Reference{}, err
@@ -67,7 +67,7 @@ func (s *Store) Grant(ctx context.Context, owner string, v *vault.Vault, source 
 	if err = tx.Commit(); err != nil {
 		return Reference{}, err
 	}
-	return Reference{Version: formatVersion, ObjectID: source.ObjectID, EntryID: entry, Revision: revision, Operation: op}, nil
+	return Reference{Version: source.Version, ObjectID: source.ObjectID, EntryID: entry, Revision: revision, Operation: op}, nil
 }
 
 // MarkPublished records that the caller's encrypted owner catalog contains this operation.
@@ -163,13 +163,13 @@ func (s *Store) Recover(ctx context.Context, op string, published bool) error {
 
 // Read requires the exact live owner/entry/revision tuple and an unlocked owner vault.
 func (s *Store) Read(ctx context.Context, owner string, v *vault.Vault, ref Reference, dst io.Writer) error {
-	if owner == "" || v == nil || !v.Unlocked() || ref.Version != formatVersion || !validObjectID(ref.ObjectID) || ref.EntryID == "" || ref.Revision == 0 {
+	if owner == "" || v == nil || !v.Unlocked() || (ref.Version != formatVersion && ref.Version != chunkFormatVersion) || !validObjectID(ref.ObjectID) || ref.EntryID == "" || ref.Revision == 0 {
 		return ErrDenied
 	}
-	var objectID, op, state, opState string
+	var objectID, op, state, opState, objectKind string
 	var wrapper, nodeWrapped []byte
 	var size int64
-	err := s.db.QueryRowContext(ctx, `SELECT o.object_id,o.op_id,o.state,p.state,o.wrapped_key,x.node_key,x.plain_len FROM owners o JOIN operations p ON p.op_id=o.op_id JOIN objects x ON x.object_id=o.object_id WHERE o.owner_id=? AND o.entry_id=? AND o.revision=? AND (o.state='live' OR (o.state='retired' AND EXISTS(SELECT 1 FROM holds h WHERE h.owner_id=o.owner_id AND h.entry_id=o.entry_id AND h.revision=o.revision AND h.operation=o.op_id)))`, s.keys.ownerToken(owner), ref.EntryID, ref.Revision).Scan(&objectID, &op, &state, &opState, &wrapper, &nodeWrapped, &size)
+	err := s.db.QueryRowContext(ctx, `SELECT o.object_id,o.op_id,o.state,p.state,o.wrapped_key,x.node_key,x.plain_len,x.kind FROM owners o JOIN operations p ON p.op_id=o.op_id JOIN objects x ON x.object_id=o.object_id WHERE o.owner_id=? AND o.entry_id=? AND o.revision=? AND (o.state='live' OR (o.state='retired' AND EXISTS(SELECT 1 FROM holds h WHERE h.owner_id=o.owner_id AND h.entry_id=o.entry_id AND h.revision=o.revision AND h.operation=o.op_id)))`, s.keys.ownerToken(owner), ref.EntryID, ref.Revision).Scan(&objectID, &op, &state, &opState, &wrapper, &nodeWrapped, &size, &objectKind)
 	if err != nil {
 		return ErrDenied
 	}
@@ -189,7 +189,7 @@ func (s *Store) Read(ctx context.Context, owner string, v *vault.Vault, ref Refe
 		Object   string `json:"object"`
 		Key      string `json:"key"`
 	}
-	if err = json.Unmarshal(plain, &envelope); err != nil || envelope.Version != formatVersion || envelope.Owner != owner || envelope.Entry != ref.EntryID || envelope.Revision != ref.Revision || envelope.Object != objectID {
+	if err = json.Unmarshal(plain, &envelope); err != nil || envelope.Version != ref.Version || envelope.Owner != owner || envelope.Entry != ref.EntryID || envelope.Revision != ref.Revision || envelope.Object != objectID {
 		return ErrDenied
 	}
 	key, err := cryptox.B64d(envelope.Key)
@@ -204,6 +204,12 @@ func (s *Store) Read(ctx context.Context, owner string, v *vault.Vault, ref Refe
 	defer cryptox.Zero(nodeKey)
 	if !equalBytes(key, nodeKey) {
 		return ErrState
+	}
+	if ref.Version == chunkFormatVersion && objectKind == "manifest" {
+		return s.readManifest(ctx, objectID, key, size, dst)
+	}
+	if ref.Version != formatVersion || objectKind != "whole" {
+		return ErrFormat
 	}
 	file, err := os.Open(s.objectPath(objectID))
 	if err != nil {
@@ -242,7 +248,7 @@ func (s *Store) Release(ctx context.Context, owner, entry string, revision uint6
 
 func (s *Store) ObjectCount(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM objects WHERE state='ready'").Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM objects x WHERE x.state='ready' AND ((x.kind='chunk' AND EXISTS(SELECT 1 FROM object_dependencies d JOIN objects p ON p.object_id=d.parent_id JOIN owners o ON o.object_id=p.object_id WHERE d.child_id=x.object_id AND p.state='ready' AND o.state='live')) OR (x.kind='whole' AND EXISTS(SELECT 1 FROM owners o WHERE o.object_id=x.object_id AND o.state='live')))`).Scan(&n)
 	return n, err
 }
 

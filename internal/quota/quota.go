@@ -145,14 +145,34 @@ func (m *Manager) GuardReader(userID string, users int, userUsed, current, expec
 // GuardReaderMultiplier reserves a conservative multiple of incoming bytes
 // when a backend temporarily keeps source and encrypted destination copies.
 func (m *Manager) GuardReaderMultiplier(userID string, users int, userUsed, current, expected, multiplier int64, src io.Reader) (io.Reader, func(), error) {
+	return m.GuardReaderWorkspace(userID, users, userUsed, current, expected, multiplier, 0, 0, 0, src)
+}
+
+// GuardReaderWorkspace also reserves fixed and per-chunk index/manifest overhead.
+func (m *Manager) GuardReaderWorkspace(userID string, users int, userUsed, current, expected, multiplier, fixed, perChunk, chunkSize int64, src io.Reader) (io.Reader, func(), error) {
 	if multiplier < 1 || (expected >= 0 && expected > math.MaxInt64/multiplier) {
 		return nil, nil, ErrExceeded
 	}
+	if fixed < 0 || perChunk < 0 || (perChunk > 0 && chunkSize <= 0) {
+		return nil, nil, ErrExceeded
+	}
 	if expected >= 0 {
-		release, err := m.Reserve(userID, users, userUsed, current, expected*multiplier)
+		overhead, err := workspaceOverhead(expected, fixed, perChunk, chunkSize)
+		if err != nil || expected*multiplier > math.MaxInt64-overhead {
+			return nil, nil, ErrExceeded
+		}
+		release, err := m.Reserve(userID, users, userUsed, current, expected*multiplier+overhead)
 		return src, release, err
 	}
-	g := &guardedReader{manager: m, userID: userID, users: users, userUsed: userUsed, current: current, multiplier: multiplier, src: src}
+	var releases []func()
+	if fixed > 0 {
+		release, err := m.Reserve(userID, users, userUsed, current, fixed)
+		if err != nil {
+			return nil, nil, err
+		}
+		releases = append(releases, release)
+	}
+	g := &guardedReader{manager: m, userID: userID, users: users, userUsed: userUsed, current: current, multiplier: multiplier, fixed: fixed, perChunk: perChunk, chunkSize: chunkSize, releases: releases, src: src}
 	return g, g.release, nil
 }
 
@@ -162,6 +182,8 @@ type guardedReader struct {
 	users             int
 	userUsed, current int64
 	multiplier        int64
+	fixed, perChunk   int64
+	chunkSize, read   int64
 	src               io.Reader
 	mu                sync.Mutex
 	releases          []func()
@@ -171,10 +193,25 @@ type guardedReader struct {
 func (g *guardedReader) Read(p []byte) (int, error) {
 	n, err := g.src.Read(p)
 	if n > 0 {
-		if int64(n) > math.MaxInt64/g.multiplier {
+		amount := int64(n)
+		if amount > math.MaxInt64/g.multiplier || g.read > math.MaxInt64-amount {
 			return 0, ErrExceeded
 		}
-		release, reserveErr := g.manager.Reserve(g.userID, g.users, g.userUsed, g.current, int64(n)*g.multiplier)
+		newRead := g.read + amount
+		extra := int64(0)
+		if g.perChunk > 0 {
+			oldChunks := workspaceChunks(g.read, g.chunkSize)
+			newChunks := workspaceChunks(newRead, g.chunkSize)
+			if newChunks-oldChunks > math.MaxInt64/g.perChunk {
+				return 0, ErrExceeded
+			}
+			extra = (newChunks - oldChunks) * g.perChunk
+		}
+		reserve := amount * g.multiplier
+		if reserve > math.MaxInt64-extra {
+			return 0, ErrExceeded
+		}
+		release, reserveErr := g.manager.Reserve(g.userID, g.users, g.userUsed, g.current, reserve+extra)
 		if reserveErr != nil {
 			return 0, reserveErr
 		}
@@ -185,9 +222,28 @@ func (g *guardedReader) Read(p []byte) (int, error) {
 			return 0, errors.New("quota reservation closed")
 		}
 		g.releases = append(g.releases, release)
+		g.read = newRead
 		g.mu.Unlock()
 	}
 	return n, err
+}
+
+func workspaceChunks(size, chunkSize int64) int64 {
+	if size == 0 {
+		return 0
+	}
+	return (size-1)/chunkSize + 1
+}
+
+func workspaceOverhead(size, fixed, perChunk, chunkSize int64) (int64, error) {
+	if perChunk == 0 {
+		return fixed, nil
+	}
+	chunks := workspaceChunks(size, chunkSize)
+	if chunks > (math.MaxInt64-fixed)/perChunk {
+		return 0, ErrExceeded
+	}
+	return fixed + chunks*perChunk, nil
 }
 
 func (g *guardedReader) release() {

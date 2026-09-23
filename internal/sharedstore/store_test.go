@@ -86,10 +86,10 @@ func TestSharedDedupeOwnershipAndVaultLifecycle(t *testing.T) {
 	}
 	a := upload(aliceUser.ID, "entry-a", alice)
 	b := upload(bobUser.ID, "entry-b", bob)
-	if a.Reference.ObjectID != b.Reference.ObjectID {
-		t.Fatal("identical bytes did not converge")
+	if a.Reference.ObjectID == b.Reference.ObjectID || a.Reference.Version != chunkFormatVersion || b.Reference.Version != chunkFormatVersion {
+		t.Fatal("identical files did not receive independent versioned manifests")
 	}
-	if n, e := store.ObjectCount(ctx); e != nil || n != 1 {
+	if n, e := store.ObjectCount(ctx); e != nil || n < 1 {
 		t.Fatalf("objects=%d err=%v", n, e)
 	}
 	var physical int64
@@ -104,8 +104,8 @@ func TestSharedDedupeOwnershipAndVaultLifecycle(t *testing.T) {
 		}
 		physical += info.Size()
 	}
-	if len(objects) != 1 || physical >= int64(len(data))*2 {
-		t.Fatalf("no whole-file payload saving: objects=%d physical=%d logical=%d", len(objects), physical, len(data)*2)
+	if len(objects) < 2 || physical >= int64(len(data))*2 {
+		t.Fatalf("no content-defined chunk savings: objects=%d physical=%d logical=%d", len(objects), physical, len(data)*2)
 	}
 	for _, path := range []string{filepath.Join(root, "shared-index", "node.keys"), filepath.Join(root, "shared-index", "index.db"), filepath.Join(root, "shared-objects", objects[0].Name())} {
 		info, e := os.Stat(path)
@@ -116,7 +116,7 @@ func TestSharedDedupeOwnershipAndVaultLifecycle(t *testing.T) {
 			t.Fatalf("shared file %s has permissions %o", filepath.Base(path), info.Mode().Perm())
 		}
 	}
-	t.Logf("whole-file dedupe: two logical copies=%d bytes, one authenticated payload=%d bytes", len(data)*2, physical)
+	t.Logf("chunk dedupe: two logical copies=%d bytes, authenticated chunks and private manifests=%d bytes", len(data)*2, physical)
 	for _, tc := range []struct {
 		name    string
 		v       *vault.Vault
@@ -221,10 +221,10 @@ func TestConcurrentIdenticalUploadsConverge(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	if refs[0].Reference.ObjectID != refs[1].Reference.ObjectID {
-		t.Fatal("simultaneous duplicates created separate objects")
+	if refs[0].Reference.ObjectID == refs[1].Reference.ObjectID {
+		t.Fatal("simultaneous duplicate files reused a private manifest")
 	}
-	if n, e := s1.ObjectCount(ctx); e != nil || n != 1 {
+	if n, e := s1.ObjectCount(ctx); e != nil || n < 1 {
 		t.Fatalf("objects=%d err=%v", n, e)
 	}
 }

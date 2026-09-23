@@ -149,7 +149,7 @@ func (m *Manager) Create(owner users.User, path string, size int64, expectedHash
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.quota != nil {
-		reservation, reserveErr := m.reserveBytes(owner.ID, size*2)
+		reservation, reserveErr := m.reserveUploadBytes(owner.ID, size, 0)
 		if reserveErr != nil {
 			return SessionView{}, reserveErr
 		}

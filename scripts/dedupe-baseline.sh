@@ -21,6 +21,8 @@ docker run --rm --memory=2g -v "$volume:/data" -v "$PWD:/src:ro" -w /src \
     export WEAZLCLOUD_BASELINE_ROOT=/data/baseline
     export WEAZLCLOUD_DEDUPE_FIXTURES=/data/baseline/fixtures
     export WEAZLCLOUD_DEDUPE_BASELINE=1
+    export WEAZLCLOUD_CHUNK_BASELINE=1
     mkdir -p "$GOCACHE" "$GOMODCACHE" "$GOTMPDIR"
     go test ./internal/library -run "^TestDedupeBaseline$" -count=1 -v 2>&1 | tee /data/baseline/results.txt
+    go test ./internal/sharedstore -run "^TestChunkDedupeBaseline$" -count=1 -v 2>&1 | tee /data/baseline/chunk-results.txt
   '
