@@ -127,7 +127,7 @@ func isMediaExtension(ext string) bool {
 
 func isAudioExtension(ext string) bool {
 	switch ext {
-	case ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".oga":
+	case ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".oga", ".opus":
 		return true
 	default:
 		return false

@@ -105,7 +105,7 @@ function gridFileCard(f, fullPath = false) {
   const href = `/api/library?path=${encodeURIComponent(path)}&preview=1`;
   const kind = String(f.kind || '').toUpperCase();
   const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1).toLowerCase() : '';
-  const audio = ['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA'].includes(kind) || ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga'].includes(ext);
+  const audio = ['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'OPUS'].includes(kind) || ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga', 'opus'].includes(ext);
   const video = ['MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V'].includes(kind) || ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'].includes(ext);
   const media = audio || video;
   const raster = ['JPG', 'JPEG', 'PNG', 'GIF'].includes(kind) || ['jpg', 'jpeg', 'png', 'gif'].includes(ext);
@@ -126,10 +126,11 @@ function gridFileCard(f, fullPath = false) {
       ? `<div class="grid-text-preview" ${capability} data-grid-text-preview="${esc(path)}"><span>Loading preview…</span></div>`
       : `<div class="grid-kind" ${capability}><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span></div>`;
   const opener = media
-    ? `<div class="grid-open grid-media" data-select-file="${f.id}" role="button" tabindex="0" aria-label="Open ${esc(f.title)}">${preview}</div>`
+    ? `<div class="grid-open grid-media${audio ? ' grid-audio' : ''}" ${audio ? `data-grid-music="${esc(path)}"` : ''} data-select-file="${f.id}" role="button" tabindex="0" aria-label="Open ${esc(f.title)}">${audio ? '<div class="grid-music-art"><span aria-hidden="true">♫</span><img data-music-cover alt="Embedded album cover" hidden></div>' : ''}${preview}</div>`
     : `<button class="grid-open" data-select-file="${f.id}" aria-label="Open ${esc(f.title)}">${preview}</button>`;
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
     ${opener}
+    ${audio ? '<div class="grid-music-details" data-music-details hidden></div>' : ''}
     <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong title="${esc(f.title)}">${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
     <button class="icon-button menu-btn grid-menu" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
   </div>`;
@@ -177,7 +178,7 @@ function matchesLibraryFilters(file) {
   const groups = {
     image: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'heic', 'avif'],
     video: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'],
-    audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga'],
+    audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'oga', 'opus'],
     document: ['md', 'txt', 'csv', 'json', 'xml', 'log', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp'],
     archive: ['zip', 'tar', 'gz', '7z', 'rar', 'iso']
   };
@@ -370,11 +371,25 @@ function takeout() {
 }
 
 function photos() {
-  const media = files.filter(f => /^Google Takeout\/Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title));
+  const albums = state.photoAlbums || [];
+  const selected = albums.find(album => album.path === state.photosAlbum);
+  const tabs = `<div class="hero-actions photos-tabs" aria-label="Photo views"><button class="${state.photosMode === 'all' ? 'primary' : 'secondary'}" data-photos-mode="all" aria-pressed="${state.photosMode === 'all'}">All photos</button><button class="${state.photosMode === 'albums' ? 'primary' : 'secondary'}" data-photos-mode="albums" aria-pressed="${state.photosMode === 'albums'}">Albums${state.photoAlbumsLoaded ? ` · ${albums.length}` : ''}</button></div>`;
+  const heading = head('LIBRARY / PHOTOS', 'Your photos.', 'Browse your photos and the albums you brought from Google Takeout.');
+  if (state.photosMode === 'albums' && !state.photosAlbum) {
+    if (!state.photoAlbumsLoaded) return heading + tabs + '<p class="empty">Loading albums…</p>';
+    if (state.photoAlbumsError) return heading + tabs + `<p class="empty" role="alert">${esc(state.photoAlbumsError)}</p>`;
+    const shown = albums.slice(0, state.photosShown || 60);
+    return heading + tabs + (shown.length ? `<div class="library-grid photo-albums">${shown.map(album => `<button class="photo-album-card" data-photo-album="${esc(album.path)}" aria-label="Open album ${esc(album.title)}"><div class="photo-album-cover">${album.cover ? `<img class="grid-preview" data-grid-thumbnail="${esc(album.cover)}" alt="" loading="lazy">` : '<span aria-hidden="true">▧</span>'}</div><strong>${esc(album.title)}</strong><small>${album.count} ${album.count === 1 ? 'item' : 'items'}</small>${album.description ? `<p>${esc(album.description)}</p>` : ''}${album.metadata_warning ? '<small>Using folder name · album details unavailable</small>' : ''}</button>`).join('')}</div>` : '<p class="empty">No albums yet. Named Takeout albums appear here as their files arrive; yearly collections stay in All photos.</p>') + (shown.length < albums.length ? '<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more albums</button></div>' : '');
+  }
+  if (state.photosAlbum && !selected) {
+    return heading + tabs + `<p class="empty">${state.photoAlbumsError ? esc(state.photoAlbumsError) : !state.photoAlbumsLoaded ? 'Loading album…' : 'This album is no longer in the library.'}</p>`;
+  }
+  const media = files.filter(f => !f.folder && /^Google Takeout\/Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title) && (!selected || f.folders.concat(f.title).join('/').startsWith(selected.path + '/')));
   media.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || '') || a.title.localeCompare(b.title));
   const shown = media.slice(0, state.photosShown || 60);
-  return head('LIBRARY / PHOTOS', 'Your photos.', `${media.length} photos and videos from Google Takeout. Originals and JSON sidecars stay in the library.`) +
-    (media.length ? `<div class="library-grid">${shown.map(f => gridFileCard(f, false)).join('')}</div>${shown.length < media.length ? `<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more · ${media.length - shown.length} left</button></div>` : ''}` : '<p class="empty">Photos will appear here after the Google Takeout import.</p>');
+  const title = selected ? head('PHOTOS / ALBUM', esc(selected.title), esc(selected.description || `${media.length} photos and videos`)) : heading;
+  return title + tabs + (selected ? '<button class="text-button" data-photos-mode="albums">← All albums</button>' : '') +
+    (media.length ? `<div class="library-grid">${shown.map(f => gridFileCard(f, false)).join('')}</div>${shown.length < media.length ? `<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more · ${media.length - shown.length} left</button></div>` : ''}` : `<p class="empty">${selected ? 'No media in this album yet. More files may arrive in the next ZIP.' : 'Photos will appear here after the Google Takeout import.'}</p>`);
 }
 
 function check() {

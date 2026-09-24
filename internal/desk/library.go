@@ -145,7 +145,7 @@ func libraryContentType(path string, sample []byte) string {
 		contentType = map[string]string{
 			".md": "text/markdown", ".markdown": "text/markdown", ".json": "application/json",
 			".yaml": "application/x-yaml", ".yml": "application/x-yaml", ".log": "text/plain",
-			".svg": "image/svg+xml", ".m4a": "audio/mp4", ".webm": "video/webm",
+			".svg": "image/svg+xml", ".m4a": "audio/mp4", ".opus": "audio/ogg", ".webm": "video/webm",
 		}[strings.ToLower(filepath.Ext(path))]
 	}
 	if contentType == "" {

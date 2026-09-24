@@ -138,6 +138,7 @@ export const finalizeUpload = id => uploadJSON('/api/uploads/' + encodeURICompon
 export const cancelUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id), {method: 'DELETE', headers: jsonHeaders});
 
 export const listTakeout = () => uploadJSON('/api/takeout');
+export const listPhotoAlbums = () => uploadJSON('/api/photos/albums');
 export const startTakeout = name => post('/api/takeout', {name});
 export const cancelTakeout = name => uploadJSON('/api/takeout', {method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({name})});
 

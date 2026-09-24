@@ -39,6 +39,7 @@ type Library struct {
 	sharedStore   *sharedstore.Store
 	ownerID       string
 	sharedWrites  bool
+	albumMetadata map[string]albumMetadata
 }
 
 const TrashLifetime = 30 * 24 * time.Hour

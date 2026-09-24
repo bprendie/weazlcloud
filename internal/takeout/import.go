@@ -2,6 +2,7 @@ package takeout
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -162,6 +163,12 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 		if err != nil {
 			return s, fmt.Errorf("%s: %w", target, err)
 		}
+		var albumRaw bytes.Buffer
+		var body io.Reader = reader
+		albumMetadata := library.IsPhotoAlbumMetadata(target) && entry.UncompressedSize64 <= 1<<20
+		if albumMetadata {
+			body = io.TeeReader(reader, &albumRaw)
+		}
 		previous, found := existing[target]
 		if found {
 			if previous.Folder || previous.Size < 0 || uint64(previous.Size) != entry.UncompressedSize64 {
@@ -169,7 +176,7 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 				return s, fmt.Errorf("%s: conflicting library path", target)
 			}
 			hash := sha256.New()
-			_, err = io.Copy(hash, reader)
+			_, err = io.Copy(hash, body)
 			closeErr := reader.Close()
 			if err == nil {
 				err = closeErr
@@ -199,7 +206,7 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 			if mtime.Before(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)) {
 				mtime = time.Time{}
 			}
-			stored, putErr := lib.PutReaderAt(ctx, target, reader, int64(entry.UncompressedSize64), mtime)
+			stored, putErr := lib.PutReaderAt(ctx, target, body, int64(entry.UncompressedSize64), mtime)
 			err = putErr
 			closeErr := reader.Close()
 			release()
@@ -211,6 +218,9 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 			}
 			existing[target] = stored
 			s.Imported++
+		}
+		if albumMetadata {
+			lib.RememberPhotoAlbumMetadata(target, existing[target].Hash, albumRaw.Bytes())
 		}
 		s.ProcessedBytes += entry.UncompressedSize64
 		if progress != nil {

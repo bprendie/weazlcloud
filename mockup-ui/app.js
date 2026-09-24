@@ -49,6 +49,8 @@ const GRID_PREVIEW_RAILS = 4;
 const gridTextQueue = [];
 const gridThumbQueue = [];
 const gridCapabilityQueue = [];
+const gridMusicQueue = [];
+let gridMusicActive = 0;
 const gridPreviewRequests = new Map();
 let gridTextActive = 0;
 let gridThumbActive = 0;
@@ -63,12 +65,14 @@ const gridPreviewObserver = 'IntersectionObserver' in window
     const el = entry.target;
     gridPreviewObserver.unobserve(el);
     el.dataset.previewQueued = '1';
-    if (el.dataset.gridCapability !== undefined) gridCapabilityQueue.push(el);
+    if (el.dataset.gridMusic !== undefined) gridMusicQueue.push(el);
+    else if (el.dataset.gridCapability !== undefined) gridCapabilityQueue.push(el);
     else if (el.dataset.gridTextPreview !== undefined) gridTextQueue.push(el);
     else gridThumbQueue.push(el);
     pumpGridCapabilities();
     pumpGridTextPreviews();
     pumpGridThumbnails();
+    pumpGridMusic();
   }), {rootMargin: '500px 0px'})
   : null;
 
@@ -110,6 +114,43 @@ function pumpGridThumbnails() {
       if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
       done();
     }, {once: true});
+  }
+}
+
+function pumpGridMusic() {
+  while (gridMusicActive < 2 && gridMusicQueue.length) {
+    const el = gridMusicQueue.shift();
+    if (!el?.isConnected) continue;
+    gridMusicActive++;
+    const controller = new AbortController();
+    gridPreviewRequests.set(el, {controller});
+    fetch(`/api/library/music?path=${encodeURIComponent(el.dataset.gridMusic)}`, {signal: controller.signal})
+      .then(response => { if (!response.ok) throw new Error('music details unavailable'); return response.json(); })
+      .then(tags => {
+        if (!el.isConnected) return;
+        const cover = el.querySelector('[data-music-cover]');
+        if (cover && String(tags.artwork || '').startsWith('data:image/png;base64,')) {
+          const bytes = Uint8Array.from(atob(tags.artwork.split(',')[1]), ch => ch.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'}));
+          cover.addEventListener('load', () => { URL.revokeObjectURL(url); cover.hidden = false; cover.previousElementSibling.hidden = true; }, {once: true});
+          cover.addEventListener('error', () => URL.revokeObjectURL(url), {once: true});
+          cover.src = url;
+        }
+        const details = el.closest('.library-card')?.querySelector('[data-music-details]');
+        if (!details) return;
+        const lines = [tags.title, tags.artist || tags.album_artist, tags.album].filter(Boolean);
+        for (const [i, line] of lines.entries()) {
+          const text = document.createElement(i === 0 && tags.title ? 'strong' : 'span');
+          text.textContent = line;
+          text.title = line;
+          details.append(text);
+        }
+        const extra = [tags.genre, tags.year, tags.track ? `Track ${tags.track}` : ''].filter(Boolean).join(' · ');
+        if (extra) { const text = document.createElement('span'); text.textContent = extra; text.title = extra; details.append(text); }
+        details.hidden = !details.childElementCount;
+      })
+      .catch(() => {}) // Missing, invalid or unsupported tags keep the music icon.
+      .finally(() => { gridPreviewRequests.delete(el); gridMusicActive--; pumpGridMusic(); });
   }
 }
 
@@ -204,6 +245,8 @@ function hydrateGridTextPreviews() {
   document.querySelectorAll('[data-grid-capability]').forEach(el => observe(el, gridCapabilityQueue));
   document.querySelectorAll('[data-grid-text-preview]').forEach(el => observe(el, gridTextQueue));
   document.querySelectorAll('[data-grid-thumbnail]').forEach(el => observe(el, gridThumbQueue));
+  document.querySelectorAll('[data-grid-music]').forEach(el => observe(el, gridMusicQueue));
+  pumpGridMusic();
   pumpGridCapabilities();
   pumpGridTextPreviews();
   pumpGridThumbnails();
@@ -496,9 +539,9 @@ async function previewFile(id) {
   const f = files.find(x => x.id === id); if (!f || f.folder) return;
   const path = filePath(id);
   if (!live) { toast('Preview is available when the node is connected.'); return; }
-  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'FLA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
+  const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'OPUS', 'FLA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
   if (!previewable.has(String(f.kind).toUpperCase())) { toast('This file opens as a download.'); return; }
-  const mediaKind = new Set(['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
+  const mediaKind = new Set(['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'OPUS', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
   if (mediaKind.has(String(f.kind).toUpperCase())) {
     const mediaURL = `/api/library?path=${encodeURIComponent(path)}&inline=1`;
     const isVideo = ['MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V'].includes(String(f.kind).toUpperCase());
@@ -815,6 +858,7 @@ function vaultCard() {
 }
 
 function routeHash(view = state.view) {
+  if (view === 'photos') return state.photosAlbum ? '#photos/album/' + encodeURIComponent(state.photosAlbum) : state.photosMode === 'albums' ? '#photos/albums' : '#photos';
   return `#${view}${view === 'library' && state.currentPath ? '/' + encodeURIComponent(state.currentPath) : ''}`;
 }
 
@@ -836,6 +880,12 @@ function applyRoute() {
   if (state.view === 'library') {
     try { state.currentPath = encoded ? decodeURIComponent(encoded) : ''; } catch { state.currentPath = ''; }
   }
+  if (state.view === 'photos') {
+    state.photosMode = encoded === 'albums' || encoded === 'album' ? 'albums' : 'all';
+    try { state.photosAlbum = encoded === 'album' ? decodeURIComponent(raw.split('/')[2] || '') : ''; } catch { state.photosAlbum = ''; }
+    state.photosShown = 60;
+    loadPhotoAlbums();
+  }
   renderMain();
   renderDeck();
   if (state.view === 'trash') loadTrash();
@@ -843,11 +893,12 @@ function applyRoute() {
 }
 
 function navigate(view, replace = false) {
-  if (state.view === 'library' && view !== 'library') stopMediaPlayback();
+  if (state.view !== view) stopMediaPlayback();
   state.view = view;
   renderMain();
   if (view === 'trash') loadTrash();
   if (view === 'takeout') refreshTakeout();
+  if (view === 'photos') loadPhotoAlbums();
   history[replace ? 'replaceState' : 'pushState']({}, '', routeHash(view));
 }
 
@@ -1043,6 +1094,25 @@ async function loadLibrary() {
   }
   state.expanded = folders;
   await loadQuota();
+  if (state.view === 'photos') await loadPhotoAlbums(false);
+}
+
+let photoAlbumsRequest = 0;
+async function loadPhotoAlbums(render = true) {
+  if (!live || !state.unlocked) return;
+  const request = ++photoAlbumsRequest, username = state.username;
+  try {
+    const result = await engine.listPhotoAlbums();
+    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked) return;
+    state.photoAlbums = result.albums || [];
+    state.photoAlbumsError = '';
+  } catch (err) {
+    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked) return;
+    state.photoAlbums = [];
+    state.photoAlbumsError = err.message;
+  }
+  state.photoAlbumsLoaded = true;
+  if (render && state.view === 'photos') renderMain();
 }
 
 async function syncLibraryFromChange() {
@@ -1113,6 +1183,9 @@ async function loadTrash() {
 
 function openDesk() {
   state.unlocked = true;
+  state.photoAlbums = [];
+  state.photoAlbumsLoaded = false;
+  state.photoAlbumsError = '';
   $('#unlock-screen').hidden = true;
   $('.app').hidden = false;
   $('#admin-nav').hidden = !state.admin;
@@ -1120,6 +1193,7 @@ function openDesk() {
   renderMain();
   renderDeck();
   startLibraryEvents();
+  if (state.view === 'photos') loadPhotoAlbums();
 }
 
 async function loadAccessRequests() {
@@ -1317,6 +1391,15 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.dataset.action === 'photos-more') { state.photosShown = (state.photosShown || 60) + 60; renderMain(); return; }
+  if (b.dataset.photosMode || b.dataset.photoAlbum) {
+    stopMediaPlayback();
+    clearFileSelection();
+    state.photosMode = b.dataset.photosMode || 'albums';
+    state.photosAlbum = b.dataset.photoAlbum || '';
+    state.photosShown = 60;
+    navigate('photos');
+    return;
+  }
   if (b.dataset.action === 'mint') { e.preventDefault(); mint(); }
   if (b.dataset.action === 'copy-url') {
     navigator.clipboard?.writeText(state.minted?.url || '').catch(() => {});

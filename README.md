@@ -3,6 +3,38 @@
 A household library node. Your files on metal you own. Send recipient a grab link.
 Mount the same library in Files over `davs://`. No FUSE. No Weazl account.
 
+## Photos and music in the library
+
+**Photos → Albums** recognizes named albums imported from Google Takeout.
+Album titles and descriptions come from the album metadata, with folder names
+as a fallback. Importing another ZIP extends the same album; folders with the
+same displayed title stay separate. Yearly collections stay in **All photos**.
+The original files and JSON sidecars remain in the library. See the
+[Takeout import guide](docs/google-takeout-import-2026-09-24.md) for staging,
+verification and source ZIP cleanup.
+
+**Library → Grid** shows embedded music cover art, title, artist, album and
+available genre, date and track tags, alongside the filename and playback
+controls. Supported tags: MP3 (ID3v2.2–2.4), FLAC, M4A/iTunes, Ogg/Vorbis and
+Opus. Artwork uses embedded JPEG, PNG or GIF images. Missing, malformed or
+unsupported tags retain a music icon; playback depends on the browser's codec
+support. WAV, raw AAC and ID3v1-only tracks currently use that fallback.
+
+Previews load as cards approach the viewport. Music metadata and scaled covers
+are cached encrypted inside the owner's vault storage; replacements invalidate
+the cache. No artwork service, external lookup or local helper is required.
+Audio is streamed through the server's metadata reader, never loaded wholesale
+into memory or extracted to a temporary plaintext file. Metadata is limited to
+8 MiB, artwork to 16 million decoded pixels, and cold reads to 30 seconds. An
+M4A file with metadata after the audio may take longer on its first preview.
+
+The album and music browser smoke uses a disposable Docker volume and synthetic
+fixtures: `WEAZLCLOUD_IMAGE=<fresh-image> python scripts/smoke-photo-albums.py`
+(requires Python Playwright and Chromium). It checks split albums, covers,
+playback, vault locking and owner isolation.
+
+## Development preview
+
 The static mockup is the contract. The API is paint.
 
 ```sh
@@ -41,7 +73,7 @@ recipient, on a phone
 
 At mint, WeazlCloud **copies** the current bytes into the capsule and encrypts
 that copy. The library file can change later. recipient’s link does not. Editing
-`gil-setlist.md` after you mint does not mutate an already-minted grab. If you
+`setlist.md` after you mint does not mutate an already-minted grab. If you
 want recipient to have the new version, mint again and send a new URL.
 
 A **file** capsule is that file. A **folder** capsule is the tree as it stood

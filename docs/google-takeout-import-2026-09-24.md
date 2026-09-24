@@ -23,7 +23,19 @@ The server build now has an owner-only Takeout page and `/api/takeout` job endpo
 
 Each ZIP entry is classified independently: `Takeout/Drive/...` becomes `Google Takeout/Drive/...`, `Takeout/Google Photos/...` becomes `Google Takeout/Photos/...`, and other products become `Google Takeout/Other/...`. The sidebar Photos page displays imported photo and video files separately from Library grid view. JSON sidecars remain in Library next to the originals. The source ZIPs are never deleted by the app.
 
-Current job status is in memory; a process restart clears the progress display. The library catalog is the durable resume marker. Rerunning an archive checks existing content hashes and skips exact matches. The job fails on a conflicting path. The initial implementation preserves ZIP timestamps and uses one worker for bounded disk use. It does not yet interpret Google Photos sidecars or albums.
+Current job status is in memory; a process restart clears the progress display. The library catalog is the durable resume marker. Rerunning an archive checks existing content hashes and skips exact matches. The job fails on a conflicting path. The implementation preserves ZIP timestamps and uses one worker for bounded disk use. Per-photo JSON capture dates and EXIF rewriting are outside this album update.
+
+## Photo albums
+
+Photos now offers **All photos** and **Albums**. Each named folder directly under `Google Takeout/Photos` is an album, with a cover, item count, title and description. Opening a card shows that album's photos and videos; links support reload and browser back/forward. Year collections (`Photos from YYYY` or `YYYY`) stay in All photos unless explicit metadata names a different album. Known Trash and Failed Videos folders do not become albums.
+
+The parser understands top-level `title`/`description` and nested `albumData` in `metadata.json`, plus known localized metadata filenames. Missing, malformed or oversized metadata falls back to the folder name; the original JSON is preserved. The folder is the stable album identity, so identical titles do not merge unrelated albums. Membership follows live library paths: it accumulates across ZIP parts and updates after moves, deletions and restores. Existing imports work without reimporting.
+
+Album metadata is read during import and cached in `.weazl-photo-albums.enc` beside the user's catalog. The cache is encrypted with the user's vault and keyed by source path and content hash. It can be deleted and rebuilt; all album data is derived from library files. No photo/video bodies or individual photo sidecars are read to list albums. The album API uses the logged-in user's unlocked vault; the admin role does not grant access to another user's albums.
+
+Export layouts vary; folder relationships cannot recover distinctions Google did not export (for example separate untitled albums combined into one folder). Parser compatibility references: [immich-go's Takeout format observations](https://github.com/simulot/immich-go/blob/main/docs/misc/google-takeout.md), [PhotoStructure's documented album metadata fields](https://photostructure.com/guide/albums/).
+
+Validation: library tests cover metadata shapes, folder fallback, year exclusion, split-import membership, encrypted cache reuse after restart, metadata replacement, Trash and locked vaults. The Desk integration test imports an album ZIP and checks isolation from another account. `scripts/smoke-photo-albums.py` exercises the actual Docker/Chromium flow, including covers, preview, split ZIPs, deep links and restart (requires Python Playwright and Chromium).
 
 ## Remaining rollout checks
 

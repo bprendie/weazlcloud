@@ -58,10 +58,14 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiQuota)
 	case r.URL.Path == "/api/qr" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.qr)
+	case r.URL.Path == "/api/photos/albums" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoAlbums)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet && r.URL.Query().Get("path") == "":
 		h.multiGuard(w, r, true, h.multiListLibrary)
 	case r.URL.Path == "/api/library/thumbnail" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiThumbnailLibrary)
+	case r.URL.Path == "/api/library/music" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiMusicLibrary)
 	case r.URL.Path == "/api/library/capability" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiCapabilityLibrary)
 	case r.URL.Path == "/api/library/events" && r.Method == http.MethodGet:

@@ -37,6 +37,29 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if _, err := w.Write([]byte("photo")); err != nil {
 		t.Fatal(err)
 	}
+	for name, body := range map[string]string{
+		"Takeout/Google Photos/Trip/pic.jpg":       "photo",
+		"Takeout/Google Photos/Trip/metadata.json": `{"albumData":{"title":"Summer holiday","description":"At the lake"}}`,
+	} {
+		entry, err := z.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = entry.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	music, err := os.ReadFile("../music/testdata/tagged.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err = z.Create("Takeout/Drive/Music/song.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.Write(music); err != nil {
+		t.Fatal(err)
+	}
 	if err := z.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +138,41 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("imported photo %d", res.StatusCode)
 	}
+	musicURL := s.URL + "/api/library/music?path=Google%20Takeout%2FDrive%2FMusic%2Fsong.mp3"
+	res, err = c.Get(musicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tags map[string]string
+	if err = json.NewDecoder(res.Body).Decode(&tags); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || tags["title"] != "Midnight <Signal>" || !strings.HasPrefix(tags["artwork"], "data:image/png;base64,") {
+		t.Fatalf("music status %d title %q", res.StatusCode, tags["title"])
+	}
 	res = post("/api/users", map[string]string{"username": "bob", "password": "bob-pass", "vault_passphrase": "bob-vault"})
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create bob %d", res.StatusCode)
 	}
 	res.Body.Close()
+	res, err = c.Get(s.URL + "/api/photos/albums")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var albums struct {
+		Albums []struct {
+			Title string `json:"title"`
+			Count int    `json:"count"`
+		} `json:"albums"`
+	}
+	if err = json.NewDecoder(res.Body).Decode(&albums); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(albums.Albums) != 1 || albums.Albums[0].Title != "Summer holiday" || albums.Albums[0].Count != 1 {
+		t.Fatalf("albums %+v status %d", albums, res.StatusCode)
+	}
 	res = post("/api/logout", map[string]any{})
 	res.Body.Close()
 	res = post("/api/login", map[string]string{"username": "bob", "password": "bob-pass"})
@@ -139,6 +192,30 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusForbidden {
 		t.Fatalf("other user started import: %d", res.StatusCode)
+	}
+	res = post("/api/unlock", map[string]string{"passphrase": "bob-vault"})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("bob unlock %d", res.StatusCode)
+	}
+	res.Body.Close()
+	res, err = c.Get(s.URL + "/api/photos/albums?owner=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.NewDecoder(res.Body).Decode(&albums); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(albums.Albums) != 0 {
+		t.Fatalf("cross-user albums %+v", albums)
+	}
+	res, err = c.Get(musicURL + "&owner=alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode == http.StatusOK {
+		t.Fatal("other owner saw music tags")
 	}
 	if _, err := os.Stat(filepath.Join(stage, "part.zip")); err != nil || strings.Contains(errString(err), "not exist") {
 		t.Fatal("staged ZIP removed")
