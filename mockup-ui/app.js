@@ -1036,8 +1036,6 @@ async function loadLibrary() {
   if (!live) return;
   const rows = await engine.listLibrary();
   files.splice(0, files.length, ...rows.map(engine.toFixture));
-  const photosNav = $('#photos-nav');
-  if (photosNav) photosNav.hidden = !files.some(f => f.folders.join('/').startsWith('Google Takeout/Photos'));
   const folders = [...new Set(files.map(f => f.folders.join('/')))];
   if (state.currentPath && !folders.includes(state.currentPath)) {
     state.currentPath = '';
