@@ -89,3 +89,10 @@ Verification: `python3 -m unittest discover -s scripts/takeout_watch -v` and
 `WEAZLCLOUD_IMAGE=<fresh-image> python3 scripts/smoke-takeout-watch.py` cover
 the waiting gate, integrity failures, owner API, readable-file verification,
 guarded cleanup and final report. The Docker smoke needs local port 7272 free.
+
+During the live transfer the data disk developed long write queues: durable
+readiness probes took around two minutes although `/live` still answered
+immediately. Readiness now allows one outstanding filesystem probe per
+listener, caches its result for five seconds, and bounds each HTTP wait to two
+seconds. Slow or failed durable writes still return an unavailable status;
+timed-out health requests no longer create an accumulating queue of probes.

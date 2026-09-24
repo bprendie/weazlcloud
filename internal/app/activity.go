@@ -20,15 +20,14 @@ func trackRequests(next http.Handler, activity *idle.Coordinator) http.Handler {
 }
 
 func health(next http.Handler, dataDir string) http.Handler {
+	probe := &storageProbe{check: func() error { return storageReady(dataDir) }}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/live" && r.Method == http.MethodGet {
 			ready.Live(w, r)
 			return
 		}
 		if r.URL.Path == "/ready" && r.Method == http.MethodGet {
-			ready.Storage(w, r, func() error {
-				return storageReady(dataDir)
-			})
+			ready.Storage(w, r, func() error { return probe.ready(r.Context()) })
 			return
 		}
 		next.ServeHTTP(w, r)
