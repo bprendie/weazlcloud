@@ -85,7 +85,8 @@ func (h *Handler) startTakeout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		SkipCorrupt bool   `json:"skip_corrupt"`
 	}
 	if !decodeBody(w, r, &body, 8192) {
 		return
@@ -137,7 +138,7 @@ func (h *Handler) startTakeout(w http.ResponseWriter, r *http.Request) {
 			job.Updated = time.Now().UTC()
 			h.importMu.Unlock()
 		}
-		result, err := takeout.Import(jobCtx, res.Lib, body.Name, z, "Google Takeout", reserve, progress)
+		result, err := takeout.Import(jobCtx, res.Lib, body.Name, z, "Google Takeout", reserve, progress, takeout.Options{SkipCorrupt: body.SkipCorrupt})
 		h.importMu.Lock()
 		job.Summary = result
 		job.Updated = time.Now().UTC()

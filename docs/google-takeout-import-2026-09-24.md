@@ -45,3 +45,47 @@ Validation: library tests cover metadata shapes, folder fallback, year exclusion
 4. Review each completed job and sample its library files before removing that ZIP from server staging. If an archive fails, leave its ZIP and select **Resume** after fixing the error.
 
 Deletion is deliberately a separate step after each archive passes verification. The importer should never delete the only remaining source automatically on a failed or incomplete run.
+
+## Evening batch — owner-authorized unattended run
+
+The owner subsequently queued 14 more files after the first three completed
+ZIPs. This run waits for at least 17 ZIPs matching `takeout-20260923T154520Z-*`,
+including the final `takeout-20260923T154520Z-3-003.zip`. The entire batch must
+remain unchanged across two 20-minute checks, have no missing part numbers,
+and have no detected SFTP writer before import begins. It is run from bobp's
+cron on production, using `scripts/takeout_watch/watch.py`; its private state,
+log and configuration live in `/home/bobp/weazlcloud-import-watch`.
+
+The runner signs in as bobp using the already-provisioned owner credentials;
+it does not use an administrator bypass. Credentials are read directly from
+the mode-0600 credentials file and never copied into logs or command lines.
+It records source SHA-256, checks every ZIP entry's CRC, checks conservative
+disk headroom before each ZIP, and submits one import at a time. It does not
+claim to have compared Windows-side hashes, which were not provided.
+
+The owner explicitly requested skipping corrupt data and clearing staging
+after the readable data lands. `POST /api/takeout` with `skip_corrupt: true`
+skips and reports source checksum/format/decompression errors. The default
+remains strict. Quota failures, backend failures and content conflicts still
+stop the job and retain the source for investigation. An unreadable ZIP
+directory is recorded as an unreadable archive once transfer completion is
+established. No outside source is fetched to replace damaged data.
+
+Before removing a ZIP, the runner checks completed-job accounting, every
+readable entry's library path and size, and SHA-256 readbacks of sample files.
+It persists the verification record first, checks that the ZIP has not changed
+or reopened for writing, and removes only that frozen batch member. A restart
+resumes from its state; if the app lost its in-memory job, the same ZIP is
+submitted again and the catalog skips existing matching files.
+
+`report.md` and `report.json` contain landed file/byte totals, exact-file
+dedupe savings from the existing library metric, actual allocated Restic
+repository bytes, skipped corruption counts, source ZIP space freed and disk
+space remaining. `corrupt-files.json` contains paths and errors. Physical
+storage includes compression, chunk dedupe and metadata, so it is reported
+separately from exact-file dedupe. Windows originals remain untouched.
+
+Verification: `python3 -m unittest discover -s scripts/takeout_watch -v` and
+`WEAZLCLOUD_IMAGE=<fresh-image> python3 scripts/smoke-takeout-watch.py` cover
+the waiting gate, integrity failures, owner API, readable-file verification,
+guarded cleanup and final report. The Docker smoke needs local port 7272 free.

@@ -19,14 +19,17 @@ import (
 )
 
 type Summary struct {
-	Archive        string `json:"archive"`
-	Files          int    `json:"files"`
-	Folders        int    `json:"folders"`
-	Bytes          uint64 `json:"bytes"`
-	Largest        uint64 `json:"largest"`
-	Imported       int    `json:"imported"`
-	Skipped        int    `json:"skipped"`
-	ProcessedBytes uint64 `json:"processed_bytes"`
+	Archive        string         `json:"archive"`
+	Files          int            `json:"files"`
+	Folders        int            `json:"folders"`
+	Bytes          uint64         `json:"bytes"`
+	Largest        uint64         `json:"largest"`
+	Imported       int            `json:"imported"`
+	Skipped        int            `json:"skipped"`
+	ProcessedBytes uint64         `json:"processed_bytes"`
+	Corrupt        int            `json:"corrupt"`
+	CorruptBytes   uint64         `json:"corrupt_bytes"`
+	Errors         []EntryFailure `json:"errors,omitempty"`
 }
 
 // Destination groups Google products even when one ZIP contains both of them.
@@ -130,7 +133,7 @@ type Reserve func(int64) (func(), error)
 
 // Import is restartable: committed catalog hashes are checked before writing.
 // A conflicting path fails closed, leaving the staged ZIP untouched.
-func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reader, prefix string, reserve Reserve, progress func(Summary)) (Summary, error) {
+func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reader, prefix string, reserve Reserve, progress func(Summary), options ...Options) (Summary, error) {
 	s, err := Scan(name, z, prefix)
 	if err != nil {
 		return s, err
@@ -161,13 +164,17 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 		}
 		reader, err := entry.Open()
 		if err != nil {
+			if skipCorrupt(options, &s, entry, err, progress) {
+				continue
+			}
 			return s, fmt.Errorf("%s: %w", target, err)
 		}
+		source := &entryReader{ReadCloser: reader}
 		var albumRaw bytes.Buffer
-		var body io.Reader = reader
+		var body io.Reader = source
 		albumMetadata := library.IsPhotoAlbumMetadata(target) && entry.UncompressedSize64 <= 1<<20
 		if albumMetadata {
-			body = io.TeeReader(reader, &albumRaw)
+			body = io.TeeReader(source, &albumRaw)
 		}
 		previous, found := existing[target]
 		if found {
@@ -182,6 +189,9 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 				err = closeErr
 			}
 			if err != nil {
+				if skipCorrupt(options, &s, entry, source.sourceError, progress) {
+					continue
+				}
 				return s, fmt.Errorf("%s: %w", target, err)
 			}
 			if previous.Hash != hex.EncodeToString(hash.Sum(nil)) {
@@ -214,6 +224,9 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 				err = closeErr
 			}
 			if err != nil {
+				if skipCorrupt(options, &s, entry, source.sourceError, progress) {
+					continue
+				}
 				return s, fmt.Errorf("%s: %w", target, err)
 			}
 			existing[target] = stored
