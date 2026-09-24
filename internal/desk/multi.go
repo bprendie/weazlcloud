@@ -96,6 +96,12 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiArchive)
 	case r.URL.Path == "/api/library/archive" && r.Method == http.MethodDelete:
 		h.multiGuard(w, r, true, h.multiCancelArchive)
+	case r.URL.Path == "/api/takeout" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.listTakeout)
+	case r.URL.Path == "/api/takeout" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.startTakeout)
+	case r.URL.Path == "/api/takeout" && r.Method == http.MethodDelete:
+		h.multiGuard(w, r, true, h.cancelTakeout)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiListCapsules)
 	case r.URL.Path == "/api/capsules" && r.Method == http.MethodPost:

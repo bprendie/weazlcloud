@@ -44,6 +44,16 @@ type Handler struct {
 	uploads           *upload.Manager
 	accounts          *accountlifecycle.Manager
 	maintenanceStatus interface{ Status() []idle.JobStatus }
+	importDir         string
+	importOwner       string
+	importMu          sync.Mutex
+	importJobs        map[string]*takeoutJob
+}
+
+// EnableTakeout exposes a fixed, node-mounted staging directory to one owner.
+func (h *Handler) EnableTakeout(root, owner string) {
+	h.importDir, h.importOwner = root, owner
+	h.importJobs = make(map[string]*takeoutJob)
 }
 
 func (h *Handler) SetMaintenanceStatus(status interface{ Status() []idle.JobStatus }) {

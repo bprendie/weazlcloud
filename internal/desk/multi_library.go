@@ -34,11 +34,12 @@ func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiLock(w http.ResponseWriter, r *http.Request) {
-	res, _, err := h.currentResource(r)
+	res, u, err := h.currentResource(r)
 	if err != nil {
 		apiUsersError(w, err)
 		return
 	}
+	h.cancelOwnerTakeout(u.ID)
 	res.Archives.Lock()
 	res.Vault.Lock()
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "locked"})

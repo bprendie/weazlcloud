@@ -137,6 +137,10 @@ export function appendUpload(id, offset, body, hash, onProgress) {
 export const finalizeUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id) + '/finalize', {method: 'POST', headers: jsonHeaders});
 export const cancelUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id), {method: 'DELETE', headers: jsonHeaders});
 
+export const listTakeout = () => uploadJSON('/api/takeout');
+export const startTakeout = name => post('/api/takeout', {name});
+export const cancelTakeout = name => uploadJSON('/api/takeout', {method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({name})});
+
 export const createFolder = path => post('/api/library/folder', {path});
 export const renameLibrary = (from, to) => post('/api/library/rename', {from, to});
 export const copyLibrary = (from, to) => post('/api/library/copy', {from, to});

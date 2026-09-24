@@ -168,6 +168,11 @@ func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.Fi
 }
 
 func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, expected int64) (catalog.File, error) {
+	return l.PutReaderAt(ctx, name, body, expected, time.Time{})
+}
+
+// PutReaderAt preserves source timestamps for trusted server-side imports.
+func (l *Library) PutReaderAt(ctx context.Context, name string, body io.Reader, expected int64, mtime time.Time) (catalog.File, error) {
 	name, err := cleanPath(name)
 	if err != nil {
 		return catalog.File{}, err
@@ -175,6 +180,12 @@ func (l *Library) PutReader(ctx context.Context, name string, body io.Reader, ex
 	stage, err := l.stageReader(name, body, expected)
 	if err != nil {
 		return catalog.File{}, err
+	}
+	if !mtime.IsZero() {
+		stage.Mtime = mtime.UTC()
+		if err := l.writeStage(stage); err != nil {
+			return catalog.File{}, err
+		}
 	}
 	return l.commitStagedQueued(ctx, stage)
 }

@@ -14,6 +14,7 @@ let uploadWorkersRunning = false;
 let uploadRefreshTimer;
 let uploadPersistTimer;
 let uploadStorageKey = '';
+let lastTakeoutComplete = '';
 
 function libraryPath() {
   if (!state.selected) return '';
@@ -830,7 +831,7 @@ function setLibraryPath(path, push = true) {
 function applyRoute() {
   const raw = location.hash.replace(/^#/, '') || 'home';
   const [view, encoded] = raw.split('/');
-  const allowed = new Set(['home', 'library', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
+  const allowed = new Set(['home', 'library', 'photos', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
   state.view = allowed.has(view) ? view : 'home';
   if (state.view === 'library') {
     try { state.currentPath = encoded ? decodeURIComponent(encoded) : ''; } catch { state.currentPath = ''; }
@@ -838,6 +839,7 @@ function applyRoute() {
   renderMain();
   renderDeck();
   if (state.view === 'trash') loadTrash();
+  if (state.view === 'takeout') refreshTakeout();
 }
 
 function navigate(view, replace = false) {
@@ -845,6 +847,7 @@ function navigate(view, replace = false) {
   state.view = view;
   renderMain();
   if (view === 'trash') loadTrash();
+  if (view === 'takeout') refreshTakeout();
   history[replace ? 'replaceState' : 'pushState']({}, '', routeHash(view));
 }
 
@@ -1033,6 +1036,8 @@ async function loadLibrary() {
   if (!live) return;
   const rows = await engine.listLibrary();
   files.splice(0, files.length, ...rows.map(engine.toFixture));
+  const photosNav = $('#photos-nav');
+  if (photosNav) photosNav.hidden = !files.some(f => f.folders.join('/').startsWith('Google Takeout/Photos'));
   const folders = [...new Set(files.map(f => f.folders.join('/')))];
   if (state.currentPath && !folders.includes(state.currentPath)) {
     state.currentPath = '';
@@ -1054,7 +1059,7 @@ async function syncLibraryFromChange() {
     await loadLibrary();
     state.selectedFiles = (state.selectedFiles || []).filter(id => files.some(file => file.id === id));
     if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
-    if (state.view === 'library') {
+    if (state.view === 'library' || state.view === 'photos') {
       renderMain();
       renderDeck();
       requestAnimationFrame(() => window.scrollTo({top: scroll, behavior: 'auto'}));
@@ -1068,6 +1073,24 @@ async function syncLibraryFromChange() {
     }
   }
 }
+
+async function refreshTakeout() {
+  if (!live || !state.authenticated || !state.unlocked) return;
+  try {
+    const result = await engine.listTakeout();
+    state.takeoutArchives = result.archives || [];
+    state.takeoutJobs = result.jobs || [];
+    state.takeoutError = '';
+    const complete = state.takeoutJobs.filter(job => job.status === 'complete').map(job => `${job.name}:${job.updated_at}`).join('|');
+    if (complete && complete !== lastTakeoutComplete) {
+      lastTakeoutComplete = complete;
+      await loadLibrary();
+    }
+  } catch (err) { state.takeoutError = err.message; }
+  if (state.view === 'takeout') renderMain();
+}
+
+setInterval(() => { if (state.view === 'takeout' && live && state.unlocked) refreshTakeout(); }, 4000);
 
 function startLibraryEvents() {
   libraryEventSource?.close();
@@ -1287,6 +1310,15 @@ document.addEventListener('click', e => {
     if (cap?.status === 'live') window.open(grabHref(cap.id), '_blank', 'noopener');
   }
   if (b.dataset.takeout) { state.takeout = b.dataset.takeout; renderMain(); }
+  if (b.dataset.importZip) {
+    engine.startTakeout(b.dataset.importZip).then(() => { toast('Takeout import started.'); refreshTakeout(); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.cancelZip) {
+    engine.cancelTakeout(b.dataset.cancelZip).then(() => { toast('Stopping import.'); refreshTakeout(); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'photos-more') { state.photosShown = (state.photosShown || 60) + 60; renderMain(); return; }
   if (b.dataset.action === 'mint') { e.preventDefault(); mint(); }
   if (b.dataset.action === 'copy-url') {
     navigator.clipboard?.writeText(state.minted?.url || '').catch(() => {});
@@ -1315,7 +1347,7 @@ document.addEventListener('click', e => {
     toast(live ? `${files.length} files in the current tree.` : 'Packs look healthy in this preview. Filenames stayed off the page.');
   }
   if (b.dataset.action === 'ingest') {
-    if (live) toast('Takeout ingest is not in this build.');
+    if (live) refreshTakeout();
     else ingest();
   }
   if (b.dataset.action === 'toggle-token') { state.tokenShown = !state.tokenShown; renderMain(); }

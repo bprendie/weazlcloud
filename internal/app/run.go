@@ -131,7 +131,6 @@ func Start(cfg config.Config) (*Node, error) {
 }
 
 func (n *Node) Close() error { return n.shutdown() }
-
 func listen(cfg config.Config) (*Node, error) {
 	d, err := net.Listen("tcp", cfg.DeskAddr)
 	if err != nil {
@@ -203,6 +202,7 @@ func (n *Node) bind() error {
 	registry.SetActivityTracker(n.activity.Track)
 	n.registerSharedMaintenance(registry)
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
+	deskHandler.EnableTakeout(os.Getenv("WEAZLCLOUD_IMPORT_DIR"), os.Getenv("WEAZLCLOUD_IMPORT_OWNER"))
 	deskHandler.SetMaintenanceStatus(n.activity)
 	n.activity.RegisterNamed("pending-account-cleanup", func(ctx context.Context) error {
 		return deskHandler.ResumeDeletes(ctx)

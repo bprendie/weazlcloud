@@ -342,8 +342,17 @@ function kit() {
 
 function takeout() {
   if (state.engine) {
-    return head('WEAZLCLOUD / TAKEOUT', 'Bring the dump. Do not connect the cloud.', 'Google Takeout, iCloud export, OneDrive zip. Stretch. Not in this build.') +
-      '<p class="empty">The dump comes here later. Weazl does not OAuth to those clouds.</p>';
+    const jobs = new Map((state.takeoutJobs || []).map(job => [job.name, job]));
+    const rows = (state.takeoutArchives || []).map(archive => {
+      const job = jobs.get(archive.name);
+      const done = job?.summary?.imported || 0;
+      const skipped = job?.summary?.skipped || 0;
+      const scanned = job?.summary;
+      return `<div class="takeout-row"><div><strong title="${esc(archive.name)}">${esc(archive.name)}</strong><small>${esc(formatBytes(archive.size))} ZIP · ${esc(job ? `${job.status} · ${done} imported · ${skipped} already present` : 'ready to import')}</small>${scanned ? `<small>${esc(`${scanned.files} files · ${formatBytes(scanned.processed_bytes || 0)} / ${formatBytes(scanned.bytes || 0)} expanded`)}</small><progress max="${Math.max(1, scanned.bytes || 0)}" value="${scanned.processed_bytes || 0}"></progress>` : ''}${job?.error ? `<small class="takeout-error">${esc(job.error)}</small>` : ''}</div><div>${job?.status === 'running' ? `<button class="secondary" data-cancel-zip="${esc(archive.name)}">Pause</button>` : `<button class="secondary" data-import-zip="${esc(archive.name)}">${job?.status === 'complete' ? 'Recheck entries' : job?.status === 'failed' ? 'Resume' : 'Import'}</button>`}</div></div>`;
+    }).join('');
+    return head('WEAZLCLOUD / TAKEOUT', 'Bring the dump.', 'Upload Google Takeout ZIPs to the node with FileZilla. Import each ZIP into your library; Drive and Photos are sorted into their own folders.') +
+      (state.takeoutError ? `<p class="empty">${esc(state.takeoutError)}</p>` : rows || '<p class="empty">No ZIPs staged yet. Upload to the private staging directory first.</p>') +
+      '<p class="eyebrow">Server ZIPs stay in staging after import. Verify the library before removing them. Windows originals stay with you.</p>';
   }
   const t = takeouts.find(x => x.id === state.takeout) || takeouts[0];
   return head('WEAZLCLOUD / TAKEOUT', 'Bring the dump. Do not connect the cloud.', 'Google Takeout, iCloud export, OneDrive zip. You already downloaded it. Weazl walks the tree. Restic keeps one copy of the repeats. No OAuth.') +
@@ -358,6 +367,14 @@ function takeout() {
     </div>
     <div class="hero-actions"><button class="primary" data-action="ingest">Ingest takeout →</button></div>
     <p class="eyebrow" style="margin-top:22px">STRETCH GOAL. THE DUMP COMES HERE. WEAZL DOES NOT GO THERE.</p>`;
+}
+
+function photos() {
+  const media = files.filter(f => /^Google Takeout\/Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title));
+  media.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || '') || a.title.localeCompare(b.title));
+  const shown = media.slice(0, state.photosShown || 60);
+  return head('LIBRARY / PHOTOS', 'Your photos.', `${media.length} photos and videos from Google Takeout. Originals and JSON sidecars stay in the library.`) +
+    (media.length ? `<div class="library-grid">${shown.map(f => gridFileCard(f, false)).join('')}</div>${shown.length < media.length ? `<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more · ${media.length - shown.length} left</button></div>` : ''}` : '<p class="empty">Photos will appear here after the Google Takeout import.</p>');
 }
 
 function check() {
@@ -419,10 +436,10 @@ function restoreMediaPlayback() {
 
 export function renderMain() {
   preserveMediaPlayback();
-  const pages = {home, library, send, capsules, places, admin, kit, takeout, check, destroy, trash};
+  const pages = {home, library, photos, send, capsules, places, admin, kit, takeout, check, destroy, trash};
   const html = (pages[state.view] || home)();
   $('#content').innerHTML = html;
-  const crumb = {home: 'HOME', library: 'LIBRARY', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', admin: 'ADMIN', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY', trash: 'TRASH'};
+  const crumb = {home: 'HOME', library: 'LIBRARY', photos: 'PHOTOS', send: 'SEND', capsules: 'CAPSULES', places: 'PLACES', admin: 'ADMIN', kit: 'KIT', takeout: 'TAKEOUT', check: 'CHECK', destroy: 'DESTROY', trash: 'TRASH'};
   $('#breadcrumb').textContent = state.view === 'library' && state.currentPath
     ? `LIBRARY / ${state.currentPath.split('/').join(' / ')}`
     : (crumb[state.view] || state.view.toUpperCase());
