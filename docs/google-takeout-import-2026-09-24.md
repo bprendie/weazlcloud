@@ -1,0 +1,28 @@
+# Google Takeout import — 2026-09-24
+
+Goal: transfer nine roughly 50 GB Google Takeout ZIP files from a Windows PC on the same LAN, import their contents into the owner's browsable WeazlCloud library, then remove the server-side ZIP copies after verification. Keep the Windows copies until the full import is checked.
+
+## Current state and space budget
+
+- Production is `bobp@weazlcloud.teralab.local`. The data filesystem is `/exports/dockervolume`, mounted into the container at `/data` through `/exports/dockervolume/weazlcloud`. Do not stage on the 98 GB root filesystem.
+- Private upload directory already created: `/exports/dockervolume/weazlcloud-import-2026-09-24` (owner `bobp`, mode `0700`). It is outside the live `/data` tree but on the same data filesystem.
+- Measured 2026-09-24: capacity 2,197,948,465,152 bytes; used 49,852,239,872 bytes; available 2,148,096,225,280 bytes. The application's 97% hard ceiling is about 2,132,010,011,197 bytes used, leaving about 2,082,157,771,325 bytes below the cap today.
+- Budget example: 450 GB of source ZIPs plus 700 GB of imported physical data leaves about 932 GB below that cap. This is an estimate, not a guaranteed final footprint. Restic will reuse identical content within this user's repository, but do not assume a particular saving; already-compressed photos/video often compress little further. Current production uses per-user Restic repositories, so this is not cross-user dedupe.
+- Space needed during import includes all retained ZIPs, per-file plaintext staging, Restic pack writes, metadata, and ordinary activity. Inspect actual ZIP totals and largest entries before import. Check free space before each archive and pause if projected peak would approach the 97% ceiling. Import one archive at a time; delete each server-side ZIP only after that archive is verified. If the real uncompressed total is far above 700 GB, transfer/import/verify/delete in smaller batches instead of staging all nine.
+
+## Transfer now
+
+1. In FileZilla, use **SFTP**, host `weazlcloud.teralab.local`, port `22`, user `bobp`, with the same SSH authentication that works from Windows. Choose the remote directory `/exports/dockervolume/weazlcloud-import-2026-09-24`.
+2. Queue the nine ZIPs. Use one or two simultaneous transfers on the gigabit LAN; parallelism above that does not increase the link's total capacity. If a transfer breaks, resume the partial file rather than overwrite it from the start. Do not use an FTP connection or the browser upload UI.
+3. After each transfer, compare its size and SHA-256 hash on Windows (`Get-FileHash -Algorithm SHA256 'D:\path\file.zip'`) and on the server (`sha256sum '/exports/dockervolume/weazlcloud-import-2026-09-24/file.zip'`). Do not import a partial or mismatched ZIP. A hash scan reads the file again, so it takes extra time, but it makes resumed transfers safe to trust.
+4. Keep the ZIPs private. The current mode `0700` is intentional; grant only the import worker narrowly scoped read access when that worker exists. Do not chmod the directory world-readable.
+
+## Importer work (no production importer exists yet)
+
+1. **Preflight:** list each ZIP's entries without extracting the whole archive. Record compressed/uncompressed totals, file and directory counts, largest individual entry, duplicate paths across ZIPs, and malformed/unsafe names. Check ZIP integrity, reject traversal/absolute paths and symlinks, and calculate a conservative peak-space budget. Decide the library prefix (for example `Google Takeout/`) before the first write.
+2. **Owner-controlled job:** add a background import started by the signed-in, unlocked vault owner. Admin may stage the raw ZIP bytes but cannot browse or import another user's vault. Give the worker read-only access to this fixed staging directory; do not accept arbitrary host paths from a web request. Run against the existing owner library and stored unlock mechanism so it can continue while the browser is closed.
+3. **Streaming:** open each ZIP using indexed random access, stream one entry at a time into `Library.PutReader`, and bound concurrency (start with two workers). Never extract the full archive to disk or hold a large entry in RAM. Create empty folders where needed; retain JSON sidecars as files. Preserve ZIP entry modification times in library metadata where available (the current `PutReader` defaults to import time, so add an explicit metadata path). Do not invent Google Photos albums or silently rewrite EXIF/sidecars in this first pass.
+4. **Safe resume:** store a durable per-entry journal with source archive identity and target path. A restart must skip already-verified entries without overwriting changed library files. Report progress by archive, file count, and bytes; surface failures with their ZIP and entry names. Treat duplicate paths explicitly: identical content may be skipped; conflicting content must be reported and resolved without silent replacement.
+5. **Acceptance:** smoke test with a small local fixture including duplicate names, empty folders, traversal names, a large stream, an interrupted job, and bad ZIP/CRC data. On production, import a small real sample first, verify file counts, selected SHA-256 readbacks, browsing, previews, and current disk use; then process all nine archives. Check the job report and spot-check large and small files before removing each server-side ZIP. Keep Windows source ZIPs until the whole import is accepted.
+
+Deletion is deliberately a separate step after each archive passes verification. The importer should never delete the only remaining source automatically on a failed or incomplete run.
