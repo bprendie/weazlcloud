@@ -1,10 +1,11 @@
 import io
+import json
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
-from support import destination, inventory, signature, validate, verify
+from support import destination, inventory, repository_bytes, signature, validate, verify
 from watch import Watch
 
 
@@ -76,6 +77,17 @@ class WatchTests(unittest.TestCase):
         self.assertEqual(destination('Takeout/Drive/a.txt'),'Google Takeout/Drive/a.txt')
         for name in ['../escape','/absolute','Takeout/Drive/C:/bad']:
             with self.assertRaises(ValueError): destination(name)
+
+    def test_container_disk_measurement_checks_mount_and_owner(self):
+        cfg={'container':'weazlcloud','data':'/exports/data'}
+        mounts=json.dumps([{'Destination':'/data','Source':'/exports/data'}])
+        with patch('support.subprocess.check_output',side_effect=[mounts,'123\t/data/users/abc/library\n']) as run:
+            self.assertEqual(repository_bytes(cfg,'abc'),123*1024)
+            self.assertEqual(run.call_args.args[0],['docker','exec','weazlcloud','du','-sk','/data/users/abc/library'])
+        with patch('support.subprocess.check_output',return_value='[]') as run:
+            with self.assertRaises(RuntimeError): repository_bytes(cfg,'abc')
+            self.assertEqual(run.call_count,1)
+        with self.assertRaises(AssertionError): repository_bytes(cfg,'../another-user')
 
 
 if __name__=='__main__': unittest.main()

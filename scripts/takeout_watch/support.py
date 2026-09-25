@@ -6,6 +6,7 @@ import os
 import posixpath
 import re
 import stat
+import subprocess
 import time
 import urllib.parse
 import urllib.request
@@ -30,6 +31,22 @@ def signature(path):
     if not stat.S_ISREG(s.st_mode):
         raise ValueError('source is not a regular file: '+path.name)
     return [s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns]
+
+
+def repository_bytes(cfg, owner_id):
+    assert re.fullmatch('[a-f0-9]+', owner_id)
+    if container := cfg.get('container'):
+        # Production vault directories belong to the container UID. Obtain
+        # allocation totals as that UID without relaxing vault permissions.
+        mounts = json.loads(subprocess.check_output(
+            ['docker', 'inspect', container, '--format', '{{json .Mounts}}'], text=True))
+        if not any(m.get('Destination') == '/data' and Path(m.get('Source', '')).resolve() == Path(cfg['data']).resolve() for m in mounts):
+            raise RuntimeError('container data mount does not match configured import data')
+        value = subprocess.check_output(
+            ['docker', 'exec', container, 'du', '-sk', '/data/users/'+owner_id+'/library'], text=True)
+        return int(value.split()[0]) * 1024
+    repo = Path(cfg['data'])/'users'/owner_id/'library'
+    return int(subprocess.check_output(['du', '-sB1', str(repo)], text=True).split()[0])
 
 
 def open_writers(stage):

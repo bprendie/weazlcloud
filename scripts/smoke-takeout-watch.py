@@ -41,7 +41,7 @@ try:
         else:raise AssertionError('container not ready')
         request=urllib.request.Request('http://127.0.0.1:7272/api/bootstrap',data=json.dumps({'username':'bobp','password':'watch-test-pass','vault_passphrase':'watch-test-pass','confirm':'watch-test-pass'}).encode(),headers={'Content-Type':'application/json','X-Weazl-Desk':'1'})
         with urllib.request.urlopen(request):pass
-        cfg={'work':str(work),'stage':str(stage),'data':str(data),'prefix':'takeout-smoke-','last_name':'takeout-smoke-2-001.zip','minimum_files':3,'api':'http://127.0.0.1:7272','owner':'bobp','credentials':str(work/'creds.md')}
+        cfg={'work':str(work),'stage':str(stage),'data':str(data),'container':name,'prefix':'takeout-smoke-','last_name':'takeout-smoke-2-001.zip','minimum_files':3,'api':'http://127.0.0.1:7272','owner':'bobp','credentials':str(work/'creds.md')}
         watcher=Watch(cfg)
         watcher.run()
         assert watcher.state['phase']=='waiting'

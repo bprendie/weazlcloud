@@ -5,12 +5,11 @@ import fcntl
 import json
 import os
 import re
-import subprocess
 import time
 import urllib.error
 import zipfile
 from pathlib import Path
-from support import API, atomic_json, inventory, open_writers, signature, validate, verify
+from support import API, atomic_json, inventory, open_writers, repository_bytes, signature, validate, verify
 
 
 class Watch:
@@ -166,9 +165,7 @@ class Watch:
                 self.remove_verified(name,item)
         stats=api.json('/api/quota')
         listing=api.json('/api/library')['files']
-        assert re.fullmatch('[a-f0-9]+',api.owner_id)
-        repo=Path(self.cfg['data'])/'users'/api.owner_id/'library'
-        physical=int(subprocess.check_output(['du','-sB1',str(repo)],text=True).split()[0])
+        physical=repository_bytes(self.cfg,api.owner_id)
         logical=sum(f['size'] for f in listing if not f.get('folder'))
         remaining=sum(p.stat().st_size for p in self.stage.iterdir() if p.is_file())
         report={'owner':self.cfg['owner'],'finished':time.time(),'landed_files':sum(not f.get('folder') for f in listing),'landed_logical_bytes':logical,'unique_file_content_bytes':stats.get('unique_bytes'),'dedupe_saved_bytes':max(0,logical-stats.get('unique_bytes',logical)),'dedupe_percent':stats.get('dedupe_percent'),'physical_repository_bytes':physical,'skipped_corrupt_files':len(failures),'unreadable_archives':unreadable,'source_zip_bytes_removed':sum(i['signature'][2] for i in self.state['archives'].values()),'staging_bytes_remaining':remaining,'disk':stats,'archives':self.state['archives']}

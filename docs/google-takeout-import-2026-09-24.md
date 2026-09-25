@@ -85,6 +85,11 @@ space remaining. `corrupt-files.json` contains paths and errors. Physical
 storage includes compression, chunk dedupe and metadata, so it is reported
 separately from exact-file dedupe. Windows originals remain untouched.
 
+On production, set the runner's `container` to `weazlcloud`. Repository disk
+allocation is measured inside that container as its normal service user,
+after verifying that `/data` maps to the configured host data directory.
+Private vault directory permissions are preserved.
+
 Verification: `python3 -m unittest discover -s scripts/takeout_watch -v` and
 `WEAZLCLOUD_IMAGE=<fresh-image> python3 scripts/smoke-takeout-watch.py` cover
 the waiting gate, integrity failures, owner API, readable-file verification,
