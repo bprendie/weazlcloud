@@ -13,6 +13,11 @@ The original files and JSON sidecars remain in the library. See the
 [Takeout import guide](docs/google-takeout-import-2026-09-24.md) for staging,
 verification and source ZIP cleanup.
 
+Takeout imports batch up to eight small files through the encrypted storage
+queue. Files larger than 32 MiB stream individually, so large videos, disk
+images and ISO files stay out of application memory. Interrupted imports
+resume by checking the hashes of files already committed to the library.
+
 **Library → Grid** shows embedded music cover art, title, artist, album and
 available genre, date and track tags, alongside the filename and playback
 controls. Supported tags: MP3 (ID3v2.2–2.4), FLAC, M4A/iTunes, Ogg/Vorbis and

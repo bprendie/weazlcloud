@@ -23,7 +23,7 @@ The server build now has an owner-only Takeout page and `/api/takeout` job endpo
 
 Each ZIP entry is classified independently: `Takeout/Drive/...` becomes `Google Takeout/Drive/...`, `Takeout/Google Photos/...` becomes `Google Takeout/Photos/...`, and other products become `Google Takeout/Other/...`. The sidebar Photos page displays imported photo and video files separately from Library grid view. JSON sidecars remain in Library next to the originals. The source ZIPs are never deleted by the app.
 
-Current job status is in memory; a process restart clears the progress display. The library catalog is the durable resume marker. Rerunning an archive checks existing content hashes and skips exact matches. The job fails on a conflicting path. The implementation preserves ZIP timestamps and uses one worker for bounded disk use. Per-photo JSON capture dates and EXIF rewriting are outside this album update.
+Current job status is in memory; a process restart clears the progress display. The library catalog is the durable resume marker. Rerunning an archive checks existing content hashes and skips exact matches. The job fails on a conflicting path. The implementation preserves ZIP timestamps. Up to eight files of at most 32 MiB stream concurrently into the existing Restic batch queue (at most 256 MiB of expanded input per wave); larger entries stream alone. Folder changes and repeated paths separate waves, preserving conflict checks. Progress accounts for all committed peers before a failed wave stops, so resuming remains safe. Per-photo JSON capture dates and EXIF rewriting are outside this album update.
 
 ## Photo albums
 
@@ -49,7 +49,7 @@ Deletion is deliberately a separate step after each archive passes verification.
 ## Evening batch — owner-authorized unattended run
 
 The owner subsequently queued 14 more files after the first three completed
-ZIPs. This run waits for at least 17 ZIPs matching `takeout-20260923T154520Z-*`,
+ZIPs. The initial count estimate was 17; the completed upload has 16 ZIPs (group 1: 3, group 2: 10, group 3: 3), totaling 765,737,951,268 compressed bytes and 770,738,737,579 expanded bytes across 95,476 file entries. The monitor was corrected to require at least 16 ZIPs matching `takeout-20260923T154520Z-*`,
 including the final `takeout-20260923T154520Z-3-003.zip`. The entire batch must
 remain unchanged across two 20-minute checks, have no missing part numbers,
 and have no detected SFTP writer before import begins. It is run from bobp's
@@ -96,3 +96,9 @@ immediately. Readiness now allows one outstanding filesystem probe per
 listener, caches its result for five seconds, and bounds each HTTP wait to two
 seconds. Slow or failed durable writes still return an unavailable status;
 timed-out health requests no longer create an accumulating queue of probes.
+
+The first production Photos import measured roughly one file per second when
+submitting entries serially. Small-entry concurrency now feeds the existing
+durable batch queue; CRC validation, per-entry quota reservations, catalog
+hash checks on resume, and verified-source cleanup are unchanged. Large
+entries are streamed to disk, including the 35 GB file in this batch.

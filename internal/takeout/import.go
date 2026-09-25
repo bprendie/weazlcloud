@@ -2,17 +2,12 @@ package takeout
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/library"
@@ -148,99 +143,7 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 	if err := ensureFolder(ctx, lib, existing, prefix); err != nil {
 		return s, err
 	}
-	for _, entry := range z.File {
-		if err := ctx.Err(); err != nil {
-			return s, err
-		}
-		target, _ := Destination(prefix, entry.Name) // Scan validated every name.
-		if err := ensureParents(ctx, lib, existing, target); err != nil {
-			return s, fmt.Errorf("%s: %w", target, err)
-		}
-		if entry.FileInfo().IsDir() {
-			if err := ensureFolder(ctx, lib, existing, target); err != nil {
-				return s, fmt.Errorf("%s: %w", target, err)
-			}
-			continue
-		}
-		reader, err := entry.Open()
-		if err != nil {
-			if skipCorrupt(options, &s, entry, err, progress) {
-				continue
-			}
-			return s, fmt.Errorf("%s: %w", target, err)
-		}
-		source := &entryReader{ReadCloser: reader}
-		var albumRaw bytes.Buffer
-		var body io.Reader = source
-		albumMetadata := library.IsPhotoAlbumMetadata(target) && entry.UncompressedSize64 <= 1<<20
-		if albumMetadata {
-			body = io.TeeReader(source, &albumRaw)
-		}
-		previous, found := existing[target]
-		if found {
-			if previous.Folder || previous.Size < 0 || uint64(previous.Size) != entry.UncompressedSize64 {
-				reader.Close()
-				return s, fmt.Errorf("%s: conflicting library path", target)
-			}
-			hash := sha256.New()
-			_, err = io.Copy(hash, body)
-			closeErr := reader.Close()
-			if err == nil {
-				err = closeErr
-			}
-			if err != nil {
-				if skipCorrupt(options, &s, entry, source.sourceError, progress) {
-					continue
-				}
-				return s, fmt.Errorf("%s: %w", target, err)
-			}
-			if previous.Hash != hex.EncodeToString(hash.Sum(nil)) {
-				return s, fmt.Errorf("%s: conflicting library content", target)
-			}
-			s.Skipped++
-		} else {
-			if entry.UncompressedSize64 > uint64(^uint64(0)>>1)/2 {
-				reader.Close()
-				return s, fmt.Errorf("%s: entry too large", target)
-			}
-			release := func() {}
-			if reserve != nil {
-				// Stage and encrypted store coexist until commit; allow pack overhead.
-				release, err = reserve(int64(entry.UncompressedSize64)*2 + 16<<20)
-				if err != nil {
-					reader.Close()
-					return s, fmt.Errorf("%s: %w", target, err)
-				}
-			}
-			mtime := entry.Modified
-			if mtime.Before(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)) {
-				mtime = time.Time{}
-			}
-			stored, putErr := lib.PutReaderAt(ctx, target, body, int64(entry.UncompressedSize64), mtime)
-			err = putErr
-			closeErr := reader.Close()
-			release()
-			if err == nil {
-				err = closeErr
-			}
-			if err != nil {
-				if skipCorrupt(options, &s, entry, source.sourceError, progress) {
-					continue
-				}
-				return s, fmt.Errorf("%s: %w", target, err)
-			}
-			existing[target] = stored
-			s.Imported++
-		}
-		if albumMetadata {
-			lib.RememberPhotoAlbumMetadata(target, existing[target].Hash, albumRaw.Bytes())
-		}
-		s.ProcessedBytes += entry.UncompressedSize64
-		if progress != nil {
-			progress(s)
-		}
-	}
-	return s, nil
+	return importEntries(ctx, lib, z, prefix, existing, s, reserve, progress, options)
 }
 
 func ensureParents(ctx context.Context, lib *library.Library, existing map[string]catalog.File, target string) error {
