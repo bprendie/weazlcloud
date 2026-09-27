@@ -130,7 +130,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	res, err = c.Get(s.URL + "/api/library?path=" + "Google%20Takeout%2FPhotos%2FPhotos%20from%202020%2Fpic.jpg")
+	res, err = c.Get(s.URL + "/api/library?path=" + "Photos%2FPhotos%20from%202020%2Fpic.jpg")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("imported photo %d", res.StatusCode)
 	}
-	musicURL := s.URL + "/api/library/music?path=Google%20Takeout%2FDrive%2FMusic%2Fsong.mp3"
+	musicURL := s.URL + "/api/library/music?path=Music%2Fsong.mp3"
 	res, err = c.Get(musicURL)
 	if err != nil {
 		t.Fatal(err)

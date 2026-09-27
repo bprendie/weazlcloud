@@ -96,7 +96,7 @@ func (h *Handler) startTakeout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	summary, err := takeout.Scan(body.Name, z, "Google Takeout")
+	summary, err := takeout.Scan(body.Name, z, "")
 	if err != nil {
 		f.Close()
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -138,7 +138,7 @@ func (h *Handler) startTakeout(w http.ResponseWriter, r *http.Request) {
 			job.Updated = time.Now().UTC()
 			h.importMu.Unlock()
 		}
-		result, err := takeout.Import(jobCtx, res.Lib, body.Name, z, "Google Takeout", reserve, progress, takeout.Options{SkipCorrupt: body.SkipCorrupt})
+		result, err := takeout.Import(jobCtx, res.Lib, body.Name, z, "", reserve, progress, takeout.Options{SkipCorrupt: body.SkipCorrupt})
 		h.importMu.Lock()
 		job.Summary = result
 		job.Updated = time.Now().UTC()

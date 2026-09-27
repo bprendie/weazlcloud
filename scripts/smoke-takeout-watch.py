@@ -57,8 +57,10 @@ try:
         assert report['skipped_corrupt_files']==1,report
         assert report['physical_repository_bytes']>0,report
         assert errors['files'][0]['path']=='Takeout/Drive/bad.txt',errors
-        assert not list(stage.iterdir()),'staging not cleared'
-        assert all(x['status']=='removed' for x in report['archives'].values())
+        assert [p.name for p in stage.iterdir()]==['takeout-smoke-1-001.zip'],'corrupt ZIP must be retained'
+        assert report['retained_archives']==['takeout-smoke-1-001.zip']
+        assert report['archives']['takeout-smoke-1-001.zip']['status']=='retained'
+        assert all(x['status']=='removed' for n,x in report['archives'].items() if n!='takeout-smoke-1-001.zip')
         print('PASS: wait gate, skip corrupt entry, Drive/Photos import, stored hash verification, resumable watcher, cleanup and disk report')
 finally:
     subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

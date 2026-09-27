@@ -351,7 +351,7 @@ function takeout() {
       const scanned = job?.summary;
       return `<div class="takeout-row"><div><strong title="${esc(archive.name)}">${esc(archive.name)}</strong><small>${esc(formatBytes(archive.size))} ZIP · ${esc(job ? `${job.status} · ${done} imported · ${skipped} already present · ${job?.summary?.corrupt || 0} corrupt entries skipped` : 'ready to import')}</small>${scanned ? `<small>${esc(`${scanned.files} files · ${formatBytes(scanned.processed_bytes || 0)} / ${formatBytes(scanned.bytes || 0)} expanded`)}</small><progress max="${Math.max(1, scanned.bytes || 0)}" value="${scanned.processed_bytes || 0}"></progress>` : ''}${job?.error ? `<small class="takeout-error">${esc(job.error)}</small>` : ''}</div><div>${job?.status === 'running' ? `<button class="secondary" data-cancel-zip="${esc(archive.name)}">Pause</button>` : `<button class="secondary" data-import-zip="${esc(archive.name)}">${job?.status === 'complete' ? 'Recheck entries' : job?.status === 'failed' ? 'Resume' : 'Import'}</button>`}</div></div>`;
     }).join('');
-    return head('WEAZLCLOUD / TAKEOUT', 'Bring the dump.', 'Upload Google Takeout ZIPs to the node with FileZilla. Import each ZIP into your library; Drive and Photos are sorted into their own folders.') +
+    return head('WEAZLCLOUD / TAKEOUT', 'Bring the dump.', 'Upload Google Takeout ZIPs to the node with FileZilla. Import each ZIP into your library; Drive files go to your library root; Photos go to /Photos.') +
       (state.takeoutError ? `<p class="empty">${esc(state.takeoutError)}</p>` : rows || '<p class="empty">No ZIPs staged yet. Upload to the private staging directory first.</p>') +
       '<p class="eyebrow">Server ZIPs stay in staging after import. Verify the library before removing them. Windows originals stay with you.</p>';
   }
@@ -384,7 +384,7 @@ function photos() {
   if (state.photosAlbum && !selected) {
     return heading + tabs + `<p class="empty">${state.photoAlbumsError ? esc(state.photoAlbumsError) : !state.photoAlbumsLoaded ? 'Loading album…' : 'This album is no longer in the library.'}</p>`;
   }
-  const media = files.filter(f => !f.folder && /^Google Takeout\/Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title) && (!selected || f.folders.concat(f.title).join('/').startsWith(selected.path + '/')));
+  const media = files.filter(f => !f.folder && /^Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title) && (!selected || f.folders.concat(f.title).join('/').startsWith(selected.path + '/')));
   media.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || '') || a.title.localeCompare(b.title));
   const shown = media.slice(0, state.photosShown || 60);
   const title = selected ? head('PHOTOS / ALBUM', esc(selected.title), esc(selected.description || `${media.length} photos and videos`)) : heading;

@@ -5,6 +5,7 @@ RUN go mod download
 COPY . .
 RUN bash scripts/generate-desk-ui.sh
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazlcloud ./cmd/weazlcloud
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/takeout-layout ./cmd/takeout-layout
 
 FROM restic/restic:0.18.0 AS restic
 
@@ -14,6 +15,7 @@ RUN apk add --no-cache ca-certificates tzdata \
  && mkdir -p /data/tmp \
  && chown -R weazl:weazl /data
 COPY --from=build /out/weazlcloud /usr/local/bin/weazlcloud
+COPY --from=build /out/takeout-layout /usr/local/bin/takeout-layout
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
 USER 7272:7272
 ENV HOME=/data

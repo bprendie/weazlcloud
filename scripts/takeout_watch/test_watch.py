@@ -63,19 +63,35 @@ class WatchTests(unittest.TestCase):
         p.write_bytes(p.read_bytes().replace(b'unique-payload',b'BROKEN-payload',1))
         result=validate(p,lambda *a,**k:None)
         self.assertEqual([e['path'] for e in result['errors']],['Takeout/Drive/bad.txt'])
-        self.assertEqual(result['samples'][0]['path'],'Google Takeout/Drive/good.txt')
+        self.assertEqual(result['samples'][0]['path'],'good.txt')
         summary={'files':2,'imported':1,'skipped':0,'corrupt':1,'bytes':19,'processed_bytes':19,'errors':result['errors']}
         class FakeAPI:
-            def json(self,path): return {'files':[{'path':'Google Takeout/Drive/good.txt','size':5}]}
+            def json(self,path): return {'files':[{'path':'good.txt','size':5}]}
             def open(self,path): return io.BytesIO(b'hello')
         self.assertEqual(verify(p,result,summary,FakeAPI())['verified_files'],1)
         result['samples'][0]['sha256']='wrong'
         with self.assertRaises(RuntimeError): verify(p,result,summary,FakeAPI())
 
     def test_product_routing_and_unsafe_paths(self):
-        self.assertEqual(destination('Takeout/Google Photos/Trip/a.jpg'),'Google Takeout/Photos/Trip/a.jpg')
-        self.assertEqual(destination('Takeout/Drive/a.txt'),'Google Takeout/Drive/a.txt')
+        self.assertEqual(destination('Takeout/Google Photos/Trip/a.jpg'),'Photos/Trip/a.jpg')
+        self.assertEqual(destination('Takeout/Drive/a.txt'),'a.txt')
         for name in ['../escape','/absolute','Takeout/Drive/C:/bad']:
+            with self.assertRaises(ValueError): destination(name)
+
+    def test_verified_problem_sources_are_retained(self):
+        for flag in ({'requires_review':True},{'prepared':{'errors':[{'path':'bad'}]}},{'summary':{'corrupt':1}},{'unreadable_archive':True}):
+            with self.subTest(flag=flag):
+                p=self.archive('takeout-test-1-001.zip')
+                item={'signature':signature(p),'status':'verified','verification':{'files':1},**flag}
+                self.w.state['archives'][p.name]=item
+                self.w.remove_verified(p.name,item)
+                self.assertTrue(p.exists())
+                self.assertEqual(item['status'],'retained')
+
+    def test_root_and_component_whitespace_routing(self):
+        self.assertEqual(destination('Takeout/Drive/ Trip /a.jpg'),'Trip/a.jpg')
+        self.assertEqual(destination('Takeout/Drive/'),'')
+        for name in ['Takeout/Drive/ ../bad','Takeout/Drive/ /bad','Takeout/Drive']:
             with self.assertRaises(ValueError): destination(name)
 
     def test_container_disk_measurement_checks_mount_and_owner(self):

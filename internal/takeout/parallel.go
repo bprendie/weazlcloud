@@ -66,6 +66,9 @@ func importEntries(ctx context.Context, lib *library.Library, z *zip.Reader, pre
 	}
 	for _, entry := range z.File {
 		target, _ := Destination(prefix, entry.Name) // Scan validated all paths.
+		if target == "" && entry.FileInfo().IsDir() {
+			continue
+		}
 		large := entry.UncompressedSize64 > parallelEntryLimit
 		folder := entry.FileInfo().IsDir()
 		if len(pending) > 0 && (len(pending) == importWorkers || targets[target] || parent != path.Dir(target) || folder || large || ctx.Err() != nil) {

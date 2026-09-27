@@ -102,7 +102,7 @@ try:
             page.locator('nav [data-view="photos"]').click()
             page.locator('[data-photos-mode="albums"]').first.click()
             expect(page.locator('.photo-album-card')).to_have_count(2)
-            page.locator('[data-photo-album="Google Takeout/Photos/Trip"]').click()
+            page.locator('[data-photo-album="Photos/Trip"]').click()
             expect(page.locator('.library-card')).to_have_count(2)
             page.screenshot(path='/tmp/weazl-photo-albums-smoke.png', full_page=True)
             docker('restart', name)

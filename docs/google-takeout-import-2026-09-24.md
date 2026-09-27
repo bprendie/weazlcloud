@@ -21,13 +21,13 @@ Goal: transfer nine roughly 50 GB Google Takeout ZIP files from a Windows PC on 
 
 The server build now has an owner-only Takeout page and `/api/takeout` job endpoint. Configure both `WEAZLCLOUD_IMPORT_DIR=/import` and `WEAZLCLOUD_IMPORT_OWNER=<vault username>`, and mount the staging directory read-only at `/import` inside the container. The owner must sign in and unlock the vault before starting each ZIP. Only one ZIP imports at a time. Import progress is visible on the Takeout page; after a process restart, select the same ZIP again to skip files already committed with matching hashes.
 
-Each ZIP entry is classified independently: `Takeout/Drive/...` becomes `Google Takeout/Drive/...`, `Takeout/Google Photos/...` becomes `Google Takeout/Photos/...`, and other products become `Google Takeout/Other/...`. The sidebar Photos page displays imported photo and video files separately from Library grid view. JSON sidecars remain in Library next to the originals. The source ZIPs are never deleted by the app.
+Each ZIP entry is classified independently: `Takeout/Drive/...` becomes the library root `...`, `Takeout/Google Photos/...` becomes `Photos/...`, and other products become `Other/<product>/...`. Leading/trailing whitespace is canonicalized consistently in each path component. The sidebar Photos page displays imported photo and video files separately from Library grid view. JSON sidecars remain in Library next to the originals. The source ZIPs are never deleted by the app.
 
 Current job status is in memory; a process restart clears the progress display. The library catalog is the durable resume marker. Rerunning an archive checks existing content hashes and skips exact matches. The job fails on a conflicting path. The implementation preserves ZIP timestamps. Up to eight files of at most 32 MiB stream concurrently into the existing Restic batch queue (at most 256 MiB of expanded input per wave); larger entries stream alone. Folder changes and repeated paths separate waves, preserving conflict checks. Progress accounts for all committed peers before a failed wave stops, so resuming remains safe. Per-photo JSON capture dates and EXIF rewriting are outside this album update.
 
 ## Photo albums
 
-Photos now offers **All photos** and **Albums**. Each named folder directly under `Google Takeout/Photos` is an album, with a cover, item count, title and description. Opening a card shows that album's photos and videos; links support reload and browser back/forward. Year collections (`Photos from YYYY` or `YYYY`) stay in All photos unless explicit metadata names a different album. Known Trash and Failed Videos folders do not become albums.
+Photos now offers **All photos** and **Albums**. Each named folder directly under `/Photos` is an album, with a cover, item count, title and description. Opening a card shows that album's photos and videos; links support reload and browser back/forward. Year collections (`Photos from YYYY` or `YYYY`) stay in All photos unless explicit metadata names a different album. Known Trash and Failed Videos folders do not become albums.
 
 The parser understands top-level `title`/`description` and nested `albumData` in `metadata.json`, plus known localized metadata filenames. Missing, malformed or oversized metadata falls back to the folder name; the original JSON is preserved. The folder is the stable album identity, so identical titles do not merge unrelated albums. Membership follows live library paths: it accumulates across ZIP parts and updates after moves, deletions and restores. Existing imports work without reimporting.
 
@@ -63,13 +63,15 @@ It records source SHA-256, checks every ZIP entry's CRC, checks conservative
 disk headroom before each ZIP, and submits one import at a time. It does not
 claim to have compared Windows-side hashes, which were not provided.
 
-The owner explicitly requested skipping corrupt data and clearing staging
-after the readable data lands. `POST /api/takeout` with `skip_corrupt: true`
+The owner requested skipping corrupt data and clearing verified healthy sources.
+The later retention requirement overrides deletion for any ZIP with an issue: a
+failed attempt, corruption, unreadable directory or verification error holds
+that source for manual review, even if a retry succeeds. `POST /api/takeout` with `skip_corrupt: true`
 skips and reports source checksum/format/decompression errors. The default
 remains strict. Quota failures, backend failures and content conflicts still
 stop the job and retain the source for investigation. An unreadable ZIP
 directory is recorded as an unreadable archive once transfer completion is
-established. No outside source is fetched to replace damaged data.
+established. No outside source is fetched to replace damaged data. Unreadable ZIPs remain staged.
 
 Before removing a ZIP, the runner checks completed-job accounting, every
 readable entry's library path and size, and SHA-256 readbacks of sample files.
@@ -107,3 +109,28 @@ submitting entries serially. Small-entry concurrency now feeds the existing
 durable batch queue; CRC validation, per-entry quota reservations, catalog
 hash checks on resume, and verified-source cleanup are unchanged. Large
 entries are streamed to disk, including the 35 GB file in this batch.
+
+
+## Correcting the original wrapper layout
+
+The offline `takeout-layout` binary ships in the image. Stop the service and
+scheduler first. Pass `--user-dir /data/users/<owner-id>` and the owner's
+passphrase as JSON on stdin (`passphrase` key), never a command-line argument.
+Without `--apply` it validates and reports the proposed mapping. With `--apply`
+it saves encrypted `.pre-root-v2` catalog/cache backups, migrates paths and
+album cache keys, then verifies every file's identity, content hash, size and
+storage reference. It does not rewrite Restic payloads or object paths.
+
+Migrate the runner's prepared sample paths using `support.migrate_path`, record
+`layout: root-v2` in its state/configuration, and retain the prior state backup.
+Mark historical failed sources `requires_review: true` before resuming. The
+`preserve_all_sources` config option additionally holds even healthy ZIPs.
+Normal cleanup only deletes verified sources with no issue history. The final
+report lists retained archives and counts only actual removals as reclaimed
+staging space.
+
+`python3 scripts/smoke-takeout-layout.py` reproduces the original whitespace
+failure against an old image, migrates an encrypted real Restic library, checks
+readbacks/album metadata, and resumes the previously failing ZIP. Set
+`WEAZLCLOUD_OLD_IMAGE` to a pre-layout image and `WEAZLCLOUD_IMAGE` to the newly
+built image. It uses disposable data and local port 7272.

@@ -69,7 +69,7 @@ def open_writers(stage):
 
 
 def destination(name):
-    parts = name.rstrip('/').split('/')
+    parts = [p.strip() for p in name.rstrip('/').split('/')]
     if not name or name.startswith('/') or '\\' in name or '\0' in name or any(p in ('', '.', '..') or ':' in p for p in parts):
         raise ValueError('unsafe ZIP entry: '+name)
     if len(parts) > 1 and parts[0].lower() == 'takeout':
@@ -77,7 +77,23 @@ def destination(name):
     group = {'drive':'Drive', 'google drive':'Drive', 'photos':'Photos', 'google photos':'Photos'}.get(parts[0].lower(), 'Other')
     if group != 'Other':
         parts = parts[1:]
-    return posixpath.normpath(('/'.join(['Google Takeout',group]+parts)).strip())
+    if group != 'Drive':
+        parts.insert(0, group)
+    target = '/'.join(parts)
+    if not target and not name.endswith('/'):
+        raise ValueError('file cannot replace library root')
+    return target
+
+
+def migrate_path(name):
+    if name in ('Google Takeout', 'Google Takeout/Drive'):
+        return ''
+    if not name.startswith('Google Takeout/'):
+        return name
+    relative = name[len('Google Takeout/'):]
+    if relative.startswith('Other/'):
+        return '/'.join(p.strip() for p in relative.split('/'))
+    return destination(relative)
 
 
 def digest(reader):

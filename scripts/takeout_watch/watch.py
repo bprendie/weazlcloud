@@ -68,6 +68,12 @@ class Watch:
     def remove_verified(self, name, item):
         if item.get('status')!='verified' or not item.get('verification') or self.state['archives'].get(name) is not item or Path(name).name!=name:
             raise RuntimeError('source removal requires a persisted verification record')
+        if self.cfg.get('preserve_all_sources') or item.get('requires_review') or item.get('unreadable_archive') or item.get('prepared',{}).get('errors') or item.get('summary',{}).get('corrupt') or item.get('summary',{}).get('errors'):
+            item['status']='retained'
+            item['retained_reason']='source held for review' if not self.cfg.get('preserve_all_sources') else 'source retention enabled'
+            self.save()
+            self.log('source_retained',name=name,reason=item['retained_reason'])
+            return
         path = self.stage/name
         if path.exists():
             if signature(path) != item['signature'] or name in open_writers(self.stage):
@@ -88,11 +94,12 @@ class Watch:
             jobs={j['name']:j for j in api.json('/api/takeout')['jobs']}
             running=[j for j in jobs.values() if j['status']=='running']
             for name,item in self.state['archives'].items():
-                if item['status'] in ('removed','corrupt_archive'):
+                if item['status'] in ('removed','retained','corrupt_archive'):
                     continue
                 if item['status']=='verified':
                     self.remove_verified(name,item)
                     continue
+                self.state['active_archive']=name
                 job=jobs.get(name)
                 if job and job['status']=='running':
                     item['summary']=job['summary']
@@ -102,6 +109,9 @@ class Watch:
                     return
                 if job and job['status']=='failed':
                     item['summary']=job['summary']
+                    item['requires_review']=True
+                    item['failure']=job.get('error','unknown error')
+                    self.save()
                     raise RuntimeError('import failed; source retained: '+name+': '+job.get('error','unknown error'))
                 path=self.stage/name
                 if job and job['status']=='complete':
@@ -155,23 +165,21 @@ class Watch:
             for error in item.get('summary',{}).get('errors',[]):
                 failures.append({'archive':name,**error})
         atomic_json(self.root/'corrupt-files.json',{'files':failures,'unreadable_archives':unreadable})
-        # Explicit user instruction: after the readable data is verified, clear
-        # this batch, including corrupt ZIPs, leaving their audit record.
+        # A corrupt source is never automatically deleted, even after the
+        # readable entries are verified. The owner can review it separately.
         for name,item in self.state['archives'].items():
             if item['status']=='corrupt_archive':
-                item['verification']={'unreadable_archive_logged':True,'time':time.time()}
-                item['status']='verified'
-                self.save()
-                self.remove_verified(name,item)
+                item['retained_reason']='unreadable archive; manual review required'
+        retained=[name for name,item in self.state['archives'].items() if item['status'] in ('retained','corrupt_archive')]
         stats=api.json('/api/quota')
         listing=api.json('/api/library')['files']
         physical=repository_bytes(self.cfg,api.owner_id)
         logical=sum(f['size'] for f in listing if not f.get('folder'))
         remaining=sum(p.stat().st_size for p in self.stage.iterdir() if p.is_file())
-        report={'owner':self.cfg['owner'],'finished':time.time(),'landed_files':sum(not f.get('folder') for f in listing),'landed_logical_bytes':logical,'unique_file_content_bytes':stats.get('unique_bytes'),'dedupe_saved_bytes':max(0,logical-stats.get('unique_bytes',logical)),'dedupe_percent':stats.get('dedupe_percent'),'physical_repository_bytes':physical,'skipped_corrupt_files':len(failures),'unreadable_archives':unreadable,'source_zip_bytes_removed':sum(i['signature'][2] for i in self.state['archives'].values()),'staging_bytes_remaining':remaining,'disk':stats,'archives':self.state['archives']}
+        report={'owner':self.cfg['owner'],'finished':time.time(),'landed_files':sum(not f.get('folder') for f in listing),'landed_logical_bytes':logical,'unique_file_content_bytes':stats.get('unique_bytes'),'dedupe_saved_bytes':max(0,logical-stats.get('unique_bytes',logical)),'dedupe_percent':stats.get('dedupe_percent'),'physical_repository_bytes':physical,'skipped_corrupt_files':len(failures),'unreadable_archives':unreadable,'retained_archives':retained,'source_zip_bytes_removed':sum(i['signature'][2] for i in self.state['archives'].values() if i['status']=='removed'),'staging_bytes_remaining':remaining,'disk':stats,'archives':self.state['archives']}
         atomic_json(self.root/'report.json',report)
         def gib(n): return f'{n/(1024**3):,.2f} GiB'
-        text=f"# bobp Takeout import completed\n\nLanded: {report['landed_files']:,} files, {gib(logical)} logical data.\n\nDedupe: {report['dedupe_percent']}% ({gib(report['dedupe_saved_bytes'])} identical-file savings).\n\nPhysical library repository: {gib(physical)} (includes Restic compression, chunk dedupe and repository metadata).\n\nCorrupt entries skipped: {len(failures)}. Unreadable archives skipped: {len(unreadable)}. Details: corrupt-files.json.\n\nStaging freed: {gib(report['source_zip_bytes_removed'])}. Remaining staging files: {gib(remaining)}.\n\nWindows source files were not changed. Full per-archive audit: report.json.\n"
+        text=f"# bobp Takeout import completed\n\nLanded: {report['landed_files']:,} files, {gib(logical)} logical data.\n\nDedupe: {report['dedupe_percent']}% ({gib(report['dedupe_saved_bytes'])} identical-file savings).\n\nPhysical library repository: {gib(physical)} (includes Restic compression, chunk dedupe and repository metadata).\n\nCorrupt entries skipped: {len(failures)}. Unreadable archives skipped: {len(unreadable)}. Details: corrupt-files.json.\n\nStaging freed: {gib(report['source_zip_bytes_removed'])}. Remaining staging files: {gib(remaining)}. Retained archives: {len(retained)}; see report.json.\n\nWindows source files were not changed. Full per-archive audit: report.json.\n"
         out=self.root/'report.md'
         out.write_text(text)
         out.chmod(0o600)
@@ -202,6 +210,10 @@ def main():
             if isinstance(error,urllib.error.HTTPError):
                 message+=' '+error.read(2048).decode(errors='replace')
             watcher.state['error']=message
+            item=watcher.state.get('archives',{}).get(watcher.state.get('active_archive'))
+            if item is not None:
+                item['requires_review']=True
+                item['failure']=message
             watcher.save()
             watcher.log('needs_attention',error=message)
             raise SystemExit(1)

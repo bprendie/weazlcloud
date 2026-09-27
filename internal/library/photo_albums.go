@@ -12,7 +12,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/catalog"
 )
 
-const PhotosRoot = "Google Takeout/Photos/"
+const PhotosRoot = "Photos/"
 const albumMetadataLimit = 1 << 20
 
 var photoYearFolder = regexp.MustCompile(`(?i)^(photos from )?[0-9]{4}$`)

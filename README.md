@@ -6,12 +6,14 @@ Mount the same library in Files over `davs://`. No FUSE. No Weazl account.
 ## Photos and music in the library
 
 **Photos → Albums** recognizes named albums imported from Google Takeout.
-Album titles and descriptions come from the album metadata, with folder names
+Photos imports live under `/Photos`; Drive imports go directly to the library
+root. Album titles and descriptions come from the album metadata, with folder names
 as a fallback. Importing another ZIP extends the same album; folders with the
 same displayed title stay separate. Yearly collections stay in **All photos**.
 The original files and JSON sidecars remain in the library. See the
 [Takeout import guide](docs/google-takeout-import-2026-09-24.md) for staging,
-verification and source ZIP cleanup.
+verification and source ZIP cleanup. ZIPs with corruption, a failed attempt, or
+failed verification are retained for review even after a successful retry.
 
 Takeout imports batch up to eight small files through the encrypted storage
 queue. Files larger than 32 MiB stream individually, so large videos, disk

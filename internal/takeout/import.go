@@ -27,35 +27,6 @@ type Summary struct {
 	Errors         []EntryFailure `json:"errors,omitempty"`
 }
 
-// Destination groups Google products even when one ZIP contains both of them.
-// Keep unknown products instead of silently dropping export data.
-func Destination(prefix, raw string) (string, error) {
-	clean, err := cleanEntry(raw)
-	if err != nil {
-		return "", err
-	}
-	parts := strings.Split(clean, "/")
-	if len(parts) > 1 && strings.EqualFold(parts[0], "Takeout") {
-		parts = parts[1:]
-	}
-	if len(parts) == 0 {
-		return "", errors.New("empty Takeout path")
-	}
-	group := "Other"
-	switch strings.ToLower(parts[0]) {
-	case "drive", "google drive":
-		group = "Drive"
-		parts = parts[1:]
-	case "google photos", "photos":
-		group = "Photos"
-		parts = parts[1:]
-	}
-	if len(parts) == 0 {
-		return prefix + "/" + group, nil
-	}
-	return library.CleanPath(prefix + "/" + group + "/" + strings.Join(parts, "/"))
-}
-
 // Open accepts one regular, completed ZIP from a fixed staging directory.
 // The directory is supplied by the node, never by an HTTP request.
 func Open(root, name string) (*os.File, *zip.Reader, error) {
@@ -87,16 +58,19 @@ func cleanEntry(name string) (string, error) {
 		return "", errors.New("unsafe ZIP path")
 	}
 	name = strings.TrimSuffix(name, "/")
-	for _, part := range strings.Split(name, "/") {
+	parts := strings.Split(name, "/")
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		parts[i] = part
 		if part == "" || part == "." || part == ".." || strings.Contains(part, ":") {
 			return "", errors.New("unsafe ZIP path")
 		}
 	}
-	return library.CleanPath(name)
+	return library.CleanPath(strings.Join(parts, "/"))
 }
 
 func Scan(name string, z *zip.Reader, prefix string) (Summary, error) {
-	if _, err := library.CleanPath(prefix); err != nil {
+	if _, err := Destination(prefix, "Takeout/Drive/"); err != nil {
 		return Summary{}, err
 	}
 	s := Summary{Archive: name}
@@ -140,8 +114,10 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 	for _, file := range lib.List() {
 		existing[file.Path] = file
 	}
-	if err := ensureFolder(ctx, lib, existing, prefix); err != nil {
-		return s, err
+	if prefix != "" {
+		if err := ensureFolder(ctx, lib, existing, prefix); err != nil {
+			return s, err
+		}
 	}
 	return importEntries(ctx, lib, z, prefix, existing, s, reserve, progress, options)
 }
