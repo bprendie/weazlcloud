@@ -1,7 +1,11 @@
 # Rehydration recovery — 2026-09-26
 
-Status: investigation and implementation plan. Production has not been changed
-by this investigation; the import is stopped on the fifth ZIP.
+Status: root layout and ZIP retention safeguards deployed on 2026-09-26.
+The offline production migration preserved all 77,019 files and
+226,649,020,136 logical bytes, changing 77,716 catalog paths. Encrypted catalog
+and album-cache backups, runner checkpoints and migration results are retained
+on the host. Import resume validation is in progress. General conflict recovery
+(R3) and catalog/worker performance work (R4) remain open.
 
 ## Desired result
 
@@ -32,8 +36,10 @@ Checked through `ssh -J bobp@jumpbox.prendie.io bobp@weazlcloud.teralab.local`.
   paths. Twelve existing paths have whitespace at a component boundary; 28
   entries in the remaining ZIPs have such whitespace. An implementation must
   additionally validate file/ancestor conflicts and preserve an audit mapping.
-- VM: four vCPUs, approximately 16 GiB RAM, generic QEMU CPU model. The guest
-  already exposes AES. Docker has no explicit CPU or memory limit.
+- VM at investigation: four vCPUs and approximately 16 GiB RAM. The owner
+  subsequently upgraded it to 32 vCPUs across two sockets and 128 GB RAM
+  (121 GiB visible in the guest). Generic QEMU CPU model; AES is exposed.
+  Docker has no explicit CPU or memory limit.
 - Owner catalog: 84,285,637 bytes on disk. `Catalog.Put` copies, serializes,
   encrypts and atomically writes the whole catalog for each file. The current
   Restic batch loop calls it once per member, and library `ensure` reloads the
@@ -111,8 +117,11 @@ the old catalog or the complete new catalog, with an unambiguous resume path.
   writes remain fatal for the affected work. Bounded retries may handle
   transient failures; repeating a deterministic failure forever is not recovery.
 - Verification must understand renamed/skipped entries. Delete a source only
-  after all its entries have a verified import or an explicitly authorized,
-  durable skip record. Produce the requested final corruption/issues report.
+  after all its entries have a verified import. Any archive with corruption,
+  an import/verification failure or another recorded issue stays staged for
+  owner review, even after a successful retry. This latest retention rule
+  overrides the earlier permission to delete sources with skipped corrupt
+  entries. Produce the requested final corruption/issues report.
 
 Acceptance: mixed valid, corrupt, duplicate and conflicting entries finish
 with a complete accounting; valid different content is preserved; disk/backend
@@ -141,8 +150,9 @@ failures retain the source and never produce a false success.
    memory and staged bytes. Validate performance with an existing-sized
    catalog; a tiny empty-vault example will miss this bottleneck.
 
-Proxmox recommendation: eight vCPUs is a sensible initial allocation; keep
-16 GiB RAM for now. This is a tuning starting point, not a measured minimum.
+The owner has supplied 32 vCPUs and 128 GB RAM. Keep the existing bounded
+eight-small-file worker policy until catalog batching and measurements justify
+a larger queue; the hardware upgrade alone does not change importer limits.
 CPU type `host` can expose the physical CPU features if the VM stays on this
 host or the migration targets have matching CPU capabilities. Heterogeneous
 live-migration requirements need a compatible common CPU model instead.
@@ -168,3 +178,22 @@ See the [Proxmox CPU-model documentation discussion](https://lists.proxmox.com/p
 
 Completion means the corrected layout and import are verified on production;
 creating this plan or rebuilding the image alone does not complete recovery.
+
+## Rollout evidence
+
+- Full `make check` passed, including Go tests, race checks, vet and UI syntax.
+- Disposable Docker migration reproduced the trailing-space failure, migrated
+  an existing Restic library, preserved album metadata/content readbacks, and
+  verified retry/idempotence without payload reupload.
+- Watcher smoke retained a corrupt ZIP while deleting healthy verified sources.
+- Chromium smoke passed albums across split ZIPs, previews, deep links,
+  restart and music artwork/playback. Its tab-style assertion now evaluates
+  the connected element atomically to avoid racing a polling-driven rerender.
+- Production offline migration compared every file's identity, size, hash,
+  storage reference and other metadata; only the intended path/revision changed.
+- Production API checks confirmed unchanged counts/bytes, the new roots,
+  four original sample SHA-256 readbacks and a working albums endpoint.
+- The failed fifth archive carries a sticky `requires_review` deletion hold.
+  Healthy sources remain eligible for deletion only after verification.
+- The 20-minute host cron was restored after the fifth archive resumed.
+  Private host audit files live under `/home/bobp/weazlcloud-import-watch/`.

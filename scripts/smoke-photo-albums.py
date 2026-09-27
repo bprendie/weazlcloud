@@ -83,7 +83,14 @@ try:
             page.locator('nav [data-view="photos"]').click()
             page.locator('[data-photos-mode="albums"]').click()
             expect(page.locator('.photo-album-card')).to_have_count(1)
-            assert page.locator('.photos-tabs [aria-pressed=true]').evaluate('(el) => getComputedStyle(el).color !== getComputedStyle(el).backgroundColor')
+            # Album polling can replace the tab between locator resolution and
+            # evaluation. Inspect the current connected element in one turn.
+            page.wait_for_function('''() => {
+                const el = document.querySelector('.photos-tabs [aria-pressed=true]');
+                if (!el) return false;
+                const style = getComputedStyle(el);
+                return !!style.color && style.color !== style.backgroundColor;
+            }''')
             expect(page.locator('.photo-album-card strong')).to_have_text('Holiday <2020>')
             for _ in range(80):
                 if page.locator('.photo-album-cover img').evaluate('(img) => img.naturalWidth > 0'): break
