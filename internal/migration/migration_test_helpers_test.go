@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -70,26 +69,7 @@ func populateMigrationLibrary(t *testing.T, ctx context.Context, account migrati
 	if _, err := account.lib.Put(ctx, "empty.bin", nil); err != nil {
 		t.Fatal(err)
 	}
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	var wg sync.WaitGroup
-	for _, item := range []struct{ path, content string }{{"batch/one.txt", "first batch item"}, {"batch/two.txt", "second batch item"}} {
-		wg.Add(1)
-		go func(path, content string) {
-			defer wg.Done()
-			<-start
-			_, putErr := account.lib.Put(ctx, path, []byte(content))
-			results <- putErr
-		}(item.path, item.content)
-	}
-	close(start)
-	wg.Wait()
-	close(results)
-	for err := range results {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
+	populateLegacyBatchSnapshot(t, ctx, account)
 	files, err := account.lib.MigrationFiles(ctx, false)
 	if err != nil {
 		t.Fatal(err)
