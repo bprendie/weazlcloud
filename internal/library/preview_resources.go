@@ -91,6 +91,9 @@ func defaultPreviewPolicy() PreviewPolicy {
 
 // ValidatePreviewSettings is called before opening service listeners.
 func ValidatePreviewSettings() error {
+	if err := validatePreviewRenderer(); err != nil {
+		return err
+	}
 	_, err := choosePreviewPolicy(discoverPreviewResources(), os.LookupEnv)
 	return err
 }

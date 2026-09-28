@@ -31,7 +31,7 @@ func validThumbnailConfig(config image.Config) bool {
 	return config.Width > 0 && config.Height > 0 && config.Width <= 20_000 && config.Height <= 20_000 && int64(config.Width)*int64(config.Height) <= thumbnailMaxPixels
 }
 
-func renderThumbnailBytes(ctx context.Context, data []byte, size int) ([]byte, string, error) {
+func renderThumbnailGo(ctx context.Context, data []byte, size int) ([]byte, string, error) {
 	src, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, "", err

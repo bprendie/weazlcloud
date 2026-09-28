@@ -54,6 +54,25 @@ by default to 4 GiB and 100,000 files per owner and 16 GiB per node. Set
 `WEAZLCLOUD_PREVIEW_NODE_BYTES` to change those limits (byte values are integers).
 These limits apply to generated previews, not the library quota.
 
+Docker images include a **libjpeg-turbo JPEG renderer**. It uses runtime CPU
+feature detection (including SIMD where supported), scaled JPEG decoding, and
+bilinear resizing. There is no AVX requirement: PNG, GIF, CMYK JPEG, and native
+builds without the helper use the Go renderer. Set
+`WEAZLCLOUD_PREVIEW_RENDERER=auto` (default), `go` (disable native rendering), or
+`turbo` (require the installed helper). Invalid settings or a broken installed
+helper reject startup. A corrupt native JPEG fails that preview rather than
+silently caching a partial image.
+
+The single-image helper uses pipes only, with no plaintext image files. Existing
+64-MiB input / 32-million-pixel limits remain; native workers additionally have a
+512-MiB address-space ceiling, 30-second CPU limit and 35-second wall timeout.
+Cancellation kills and reaps the helper. The Go process remains CGO-free. The
+`raster-v3` cache identity regenerates derivatives lazily; old encrypted caches
+remain subject to normal eviction. Originals are never rewritten. See the
+[acceleration workbook](accelerated_previews_workbook_2026-09-28.md) for measurements
+and limitations. Local native tests need a C compiler, libjpeg-turbo development
+headers and `cjpeg`/`djpeg`: run `bash scripts/test-native-preview.sh`.
+
 Preview workers use the minimum visible CPU, affinity, execution, and nested
 cgroup v1/v2 limits. Their memory admission budget is one eighth of visible
 host/container memory, capped at 8 GiB; incomplete discovery selects a conservative

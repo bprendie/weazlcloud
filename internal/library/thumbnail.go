@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	thumbnailRenderer  = "raster-v2"
+	thumbnailRenderer  = "raster-v3"
 	thumbnailMaxInput  = 64 << 20
 	thumbnailMaxPixels = 32_000_000
 	thumbnailMaxOutput = 8 << 20
@@ -77,6 +77,8 @@ func (l *Library) Thumbnail(ctx context.Context, name string, size int) ([]byte,
 
 func logPreviewPolicy() {
 	previewLogOnce.Do(func() {
+		mode, helper, _ := previewRenderer()
+		log.Printf("photo preview renderer: mode=%s native_available=%t", mode, helper != "")
 		log.Printf("photo preview resources: cpu workers=%d background=%d readers=%d memory=%d reason=%s", previewPolicy.RenderWorkers, previewPolicy.BackgroundWorkers, previewPolicy.SourceReaders, previewPolicy.MemoryBytes, previewPolicy.Reason)
 	})
 }

@@ -20,6 +20,10 @@ jobs:
           node-version: '22'
       - name: Install pinned Restic for legacy-backend tests
         run: bash scripts/ci-install-restic.sh
+      - name: Install native JPEG test dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjpeg-turbo8-dev libjpeg-turbo-progs
+      - name: Native JPEG boundary and sanitizer checks
+        run: bash scripts/test-native-preview.sh
       - run: make check
       - run: make build VERSION=ci-${GITHUB_SHA::12}
 
