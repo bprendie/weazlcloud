@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+bash scripts/generate-desk-ui.sh
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 cc -O3 -Wall -Wextra -Werror -o "$work/weazl-preview-turbo" native/preview/main.c -ljpeg
