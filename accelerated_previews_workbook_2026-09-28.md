@@ -93,5 +93,8 @@ and prior encrypted cache files were not deleted.
 
 Observed after resume: `running`, 16 ready / 0 failed out of 32,368 candidates,
 with four concurrent Restic children. Source retrieval still consumes substantial
-wall time. All five delivery phases are implemented and production rollout checks
-passed; final CI status is recorded below when the hosted workflow completes.
+wall time. All five delivery phases are complete and production rollout checks passed.
+The release workflow passed all three jobs: checks, container and browser
+([CI run](https://github.com/bprendie/weazlcloud/actions/runs/36421353631)).
+A later observation showed continued progress at 55 ready / 1 failed, position 56;
+the individual failure did not stop preparation.
