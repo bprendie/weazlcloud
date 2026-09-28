@@ -1,7 +1,8 @@
 # Responsiveness remediation workbook — September 28, 2026
 
-Owner: Bob. Implementer: Luna. Status: local work in progress. Work locally first. Preserve the existing
-uncommitted Photos/UI work and production settings, vaults and retained ZIPs.
+Owner: Bob. Implementer: Luna. Status: implemented subset deployed September 28;
+remaining gates below stay open. Production settings and vaults were preserved.
+The owner subsequently authorized cleanup of verified landed ZIPs; see R7 release evidence.
 
 ## Outcome
 
@@ -379,7 +380,7 @@ to push, restart production, remove review holds or claim unmeasured speedups.
 | R4 | Folder and search/filter paging active; client LRU/virtualization, SSE patching, payload limits and browser smoke pending |
 | R5 | Partial; existing global preview scheduler gets foreground memory priority; retained-cache budget, unified memory admission, pressure feedback, fairness and mixed-load gates pending |
 | R6 | Partial; per-manifest sequential zstd encoder reuse benchmarked and implemented; ISA/PGO experiments and representative host gates pending |
-| R7 | Partial local checks only; browser/container smoke and rollout handoff pending |
+| R7 | Full local checks, container/recovery/constrained-browser smokes and authorized production rollout passed; unmeasured performance and fault gates remain open |
 
 **Local verification so far:** JavaScript syntax, Go line limits, all-package Go
 compile (`go test ./... -run '^$'`), `go vet ./...`, the full Library,
@@ -400,3 +401,10 @@ readback after restart and disposable migration. The recovery smoke passed.
 Chromium Photos/Library/music and upload smokes also passed in a 2-CPU/4-GiB
 container. These checks do not close the unmeasured cache, pressure-feedback or
 scaling gates. See [release evidence](docs/release-2026-09-28.md).
+
+**Authorized rollout:** release `7bb01f4` is live, with unchanged catalog metadata,
+healthy probes, authenticated paging, thumbnail and original readback checks.
+The prior image, source/config and stopped data snapshot are retained for rollback.
+The owner's later explicit cleanup instruction superseded ZIP retention: the final
+three sources were reverified and removed, freeing 149.40 GiB. Full audit and
+remaining performance limitations are in the release evidence linked above.
