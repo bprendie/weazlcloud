@@ -52,6 +52,9 @@ func (h *Handler) unlock(w http.ResponseWriter, r *http.Request) {
 		apiError(w, err)
 		return
 	}
+	if h.lib != nil {
+		h.lib.ResumePhotoPreparation(r.Context())
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "unlocked"})
 }
 
@@ -61,6 +64,9 @@ func (h *Handler) lock(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	h.vault.Lock()
+	if h.lib != nil {
+		h.lib.ForgetVaultSession()
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "locked"})
 }
 

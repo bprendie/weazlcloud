@@ -7,6 +7,52 @@ import (
 	"github.com/bprendie/weazlcloud/internal/catalog"
 )
 
+type StorageSummary struct {
+	DedupePercent int
+	LogicalBytes  int64
+	UniqueBytes   int64
+	TrashBytes    int64
+	TrashCount    int
+	Shared        bool
+	Allocated     int64
+	Manifests     int64
+	Index         int64
+	Staging       int64
+}
+
+const storageSummaryMaxAge = 5 * time.Second
+
+// Summary loads and aggregates the catalog once for the quota display.
+func (l *Library) Summary(ctx context.Context) (StorageSummary, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := l.ensure(ctx); err != nil {
+		return StorageSummary{}, err
+	}
+	version := l.catalog.Version()
+	if l.storageSummaryReady && l.storageSummaryVersion == version && time.Since(l.storageSummaryAt) < storageSummaryMaxAge {
+		return l.storageSummary, nil
+	}
+	var out StorageSummary
+	out.LogicalBytes, out.UniqueBytes, out.TrashBytes, out.TrashCount = l.catalog.Summary()
+	if l.sharedStore != nil {
+		stats, err := l.sharedStore.Metrics(ctx)
+		if err != nil {
+			return StorageSummary{}, err
+		}
+		out.Shared = true
+		out.LogicalBytes, out.UniqueBytes = stats.LogicalBytes, stats.UniqueBytes
+		out.Allocated, out.Manifests = stats.AllocatedBytes, stats.ManifestAllocated
+		out.Index, out.Staging = stats.IndexAllocatedBytes, stats.StagingAllocated
+	}
+	if out.LogicalBytes > 0 {
+		out.DedupePercent = int((out.LogicalBytes - out.UniqueBytes) * 100 / out.LogicalBytes)
+	}
+	l.storageSummary, l.storageSummaryAt = out, time.Now()
+	l.storageSummaryVersion, l.storageSummaryReady = version, true
+	return out, nil
+}
+
 func (l *Library) Dedupe(ctx context.Context) (int, int64, int64, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

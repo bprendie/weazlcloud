@@ -79,7 +79,7 @@ class WatchTests(unittest.TestCase):
             with self.assertRaises(ValueError): destination(name)
 
     def test_verified_problem_sources_are_retained(self):
-        for flag in ({'requires_review':True},{'prepared':{'errors':[{'path':'bad'}]}},{'summary':{'corrupt':1}},{'unreadable_archive':True}):
+        for flag in ({'requires_review':True},{'prepared':{'errors':[{'path':'bad'}]}},{'summary':{'corrupt':1}},{'summary':{'renamed':[{'source':'conflict'}]}},{'summary':{'directories':[{'original':'tree'}]}},{'unreadable_archive':True}):
             with self.subTest(flag=flag):
                 p=self.archive('takeout-test-1-001.zip')
                 item={'signature':signature(p),'status':'verified','verification':{'files':1},**flag}

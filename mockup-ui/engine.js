@@ -44,6 +44,30 @@ export async function listLibrary() {
   return j.files || [];
 }
 
+export async function listLibraryPage(path = '', options = {}) {
+  const query = new URLSearchParams({path, limit: String(options.limit || 100), sort: options.sort || 'name'});
+  if (options.descending) query.set('desc', '1');
+  if (options.cursor) query.set('cursor', options.cursor);
+  const r = await fetch('/api/library/page?' + query.toString(), {signal: options.signal});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'library page');
+  return {...j, files: (j.files || []).map(toFixture)};
+}
+
+export async function searchLibraryPage(options = {}) {
+  const query = new URLSearchParams({
+    q: options.query || '', scope: options.scope || '', type: options.type || 'all',
+    date: options.date || 'all', size: options.size || 'all',
+    sort: options.sort || 'name', limit: String(options.limit || 100),
+  });
+  if (options.descending) query.set('desc', '1');
+  if (options.cursor) query.set('cursor', options.cursor);
+  const r = await fetch('/api/library/search/page?' + query.toString(), {signal: options.signal});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'library search');
+  return {...j, files: (j.files || []).map(toFixture)};
+}
+
 export function libraryEvents(onChange) {
   const source = new EventSource('/api/library/events');
   source.addEventListener('library', event => {
@@ -139,6 +163,14 @@ export const cancelUpload = id => uploadJSON('/api/uploads/' + encodeURIComponen
 
 export const listTakeout = () => uploadJSON('/api/takeout');
 export const listPhotoAlbums = () => uploadJSON('/api/photos/albums');
+export const listPhotos = (cursor = '', album = '') => {
+  const q = new URLSearchParams({limit: '100'});
+  if (cursor) q.set('cursor', cursor);
+  if (album) q.set('album', album);
+  return uploadJSON('/api/photos?' + q.toString());
+};
+export const photoPreparation = () => uploadJSON('/api/photos/preparation');
+export const setPhotoPreparation = action => post('/api/photos/preparation', {action});
 export const startTakeout = name => post('/api/takeout', {name});
 export const cancelTakeout = name => uploadJSON('/api/takeout', {method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({name})});
 
@@ -258,5 +290,5 @@ export function toFixture(row) {
   if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true, mtime: row.mtime};
   const ext = title.includes('.') ? title.slice(title.lastIndexOf('.') + 1).toUpperCase() : 'FILE';
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
-  return { id: row.path, title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime };
+  return { id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified };
 }

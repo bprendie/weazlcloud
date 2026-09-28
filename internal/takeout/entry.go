@@ -16,7 +16,7 @@ import (
 
 // Each worker streams one entry to the existing durable library queue. Its
 // result is accounted by the coordinator only after every worker has returned.
-func importFile(ctx context.Context, lib *library.Library, entry *zip.File, target string, previous catalog.File, found bool, reserve Reserve, options []Options) (catalog.File, Summary, error) {
+func importFileAt(ctx context.Context, lib *library.Library, entry *zip.File, target string, previous catalog.File, found bool, reserve Reserve, options []Options) (catalog.File, Summary, error) {
 	var s Summary
 	result := previous
 	if err := ctx.Err(); err != nil {
@@ -39,7 +39,7 @@ func importFile(ctx context.Context, lib *library.Library, entry *zip.File, targ
 	if found {
 		if previous.Folder || previous.Size < 0 || uint64(previous.Size) != entry.UncompressedSize64 {
 			reader.Close()
-			return result, s, fmt.Errorf("%s: conflicting library path", target)
+			return result, s, fmt.Errorf("%s: %w", target, errImportConflict)
 		}
 		hash := sha256.New()
 		_, err = io.Copy(hash, body)
@@ -54,7 +54,7 @@ func importFile(ctx context.Context, lib *library.Library, entry *zip.File, targ
 			return result, s, fmt.Errorf("%s: %w", target, err)
 		}
 		if previous.Hash != hex.EncodeToString(hash.Sum(nil)) {
-			return result, s, fmt.Errorf("%s: conflicting library content", target)
+			return result, s, fmt.Errorf("%s: %w", target, errImportConflict)
 		}
 		s.Skipped++
 	} else {

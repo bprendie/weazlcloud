@@ -4,9 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,12 +32,16 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var archive bytes.Buffer
+	var photo bytes.Buffer
+	if err := png.Encode(&photo, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
 	z := zip.NewWriter(&archive)
 	w, err := z.Create("Takeout/Google Photos/Photos from 2020/pic.jpg")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Write([]byte("photo")); err != nil {
+	if _, err := w.Write(photo.Bytes()); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
@@ -45,7 +52,11 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = entry.Write([]byte(body)); err != nil {
+		content := []byte(body)
+		if name == "Takeout/Google Photos/Trip/pic.jpg" {
+			content = photo.Bytes()
+		}
+		if _, err = entry.Write(content); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -173,6 +184,55 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || len(albums.Albums) != 1 || albums.Albums[0].Title != "Summer holiday" || albums.Albums[0].Count != 1 {
 		t.Fatalf("albums %+v status %d", albums, res.StatusCode)
 	}
+	res, err = c.Get(s.URL + "/api/photos?limit=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var photoPage struct {
+		Items      []map[string]any `json:"items"`
+		NextCursor string           `json:"next_cursor"`
+	}
+	if err = json.NewDecoder(res.Body).Decode(&photoPage); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(photoPage.Items) != 1 || photoPage.NextCursor == "" {
+		t.Fatalf("photo page %+v status %d", photoPage, res.StatusCode)
+	}
+	photoID, _ := photoPage.Items[0]["id"].(string)
+	if photoID == "" {
+		t.Fatal("photo page omitted entry ID")
+	}
+	res, err = c.Get(s.URL + "/api/library/thumbnail?id=" + url.QueryEscape(photoID) + "&size=320")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("photo ID thumbnail status %d", res.StatusCode)
+	}
+	res = post("/api/photos/preparation", map[string]string{"action": "start"})
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("start photo preparation %d", res.StatusCode)
+	}
+	res = post("/api/photos/preparation", map[string]string{"action": "pause"})
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("pause photo preparation %d", res.StatusCode)
+	}
+	aliceCursor := photoPage.NextCursor
+	res, err = c.Get(s.URL + "/api/photos?limit=1&cursor=" + url.QueryEscape(aliceCursor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.NewDecoder(res.Body).Decode(&photoPage); err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || len(photoPage.Items) != 1 {
+		t.Fatalf("photo page continuation %+v status %d", photoPage, res.StatusCode)
+	}
 	res = post("/api/logout", map[string]any{})
 	res.Body.Close()
 	res = post("/api/login", map[string]string{"username": "bob", "password": "bob-pass"})
@@ -208,6 +268,14 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || len(albums.Albums) != 0 {
 		t.Fatalf("cross-user albums %+v", albums)
+	}
+	res, err = c.Get(s.URL + "/api/photos?limit=1&cursor=" + url.QueryEscape(aliceCursor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("cross-vault photo cursor status %d", res.StatusCode)
 	}
 	res, err = c.Get(musicURL + "&owner=alice")
 	if err != nil {

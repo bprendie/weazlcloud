@@ -14,17 +14,19 @@ import (
 )
 
 type Summary struct {
-	Archive        string         `json:"archive"`
-	Files          int            `json:"files"`
-	Folders        int            `json:"folders"`
-	Bytes          uint64         `json:"bytes"`
-	Largest        uint64         `json:"largest"`
-	Imported       int            `json:"imported"`
-	Skipped        int            `json:"skipped"`
-	ProcessedBytes uint64         `json:"processed_bytes"`
-	Corrupt        int            `json:"corrupt"`
-	CorruptBytes   uint64         `json:"corrupt_bytes"`
-	Errors         []EntryFailure `json:"errors,omitempty"`
+	Archive        string            `json:"archive"`
+	Files          int               `json:"files"`
+	Folders        int               `json:"folders"`
+	Bytes          uint64            `json:"bytes"`
+	Largest        uint64            `json:"largest"`
+	Imported       int               `json:"imported"`
+	Skipped        int               `json:"skipped"`
+	ProcessedBytes uint64            `json:"processed_bytes"`
+	Corrupt        int               `json:"corrupt"`
+	CorruptBytes   uint64            `json:"corrupt_bytes"`
+	Errors         []EntryFailure    `json:"errors,omitempty"`
+	Renamed        []EntryRename     `json:"renamed,omitempty"`
+	Directories    []DirectoryRename `json:"directories,omitempty"`
 }
 
 // Open accepts one regular, completed ZIP from a fixed staging directory.
@@ -101,8 +103,10 @@ func Scan(name string, z *zip.Reader, prefix string) (Summary, error) {
 type Reserve func(int64) (func(), error)
 
 // Import is restartable: committed catalog hashes are checked before writing.
-// A conflicting path fails closed, leaving the staged ZIP untouched.
+// Conflicting file versions receive deterministic alternate names.
 func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reader, prefix string, reserve Reserve, progress func(Summary), options ...Options) (Summary, error) {
+	endStorage := lib.BeginPhotoStorageWork()
+	defer endStorage()
 	s, err := Scan(name, z, prefix)
 	if err != nil {
 		return s, err

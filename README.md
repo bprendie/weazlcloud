@@ -20,6 +20,13 @@ queue. Files larger than 32 MiB stream individually, so large videos, disk
 images and ISO files stay out of application memory. Interrupted imports
 resume by checking the hashes of files already committed to the library.
 
+Filename conflicts preserve both versions: incoming files receive a stable
+`(takeout-…)` suffix, and a file blocking an incoming folder gets a separate
+folder for the imported tree. Retries reuse those destinations after checking
+content hashes. The batch continues, with source-to-destination mappings in its
+audit record. ZIPs containing these conflicts remain staged for review; cleanup
+requires verification of the renamed content too.
+
 **Library → Grid** shows embedded music cover art, title, artist, album and
 available genre, date and track tags, alongside the filename and playback
 controls. Supported tags: MP3 (ID3v2.2–2.4), FLAC, M4A/iTunes, Ogg/Vorbis and
@@ -34,6 +41,56 @@ Audio is streamed through the server's metadata reader, never loaded wholesale
 into memory or extracted to a temporary plaintext file. Metadata is limited to
 8 MiB, artwork to 16 million decoded pixels, and cold reads to 30 seconds. An
 M4A file with metadata after the audio may take longer on its first preview.
+
+**Photos** uses a private, encrypted index and loads the first 100 photos without
+listing the whole library or reading original image bytes. Use **Prepare previews**
+in Photos to build grid-size previews in the background; preparation is opt-in,
+resumes after restart, and pauses for a locked vault, bulk storage work or low disk
+space. JPEG, PNG and GIF get encrypted 320-pixel grid previews and 1280-pixel
+viewing previews on demand. Other formats keep their existing browser/fallback
+behavior. The originals are unchanged. Preview caches are disposable and bounded
+by default to 4 GiB and 100,000 files per owner and 16 GiB per node. Set
+`WEAZLCLOUD_PREVIEW_OWNER_BYTES`, `WEAZLCLOUD_PREVIEW_OWNER_FILES` and
+`WEAZLCLOUD_PREVIEW_NODE_BYTES` to change those limits (byte values are integers).
+These limits apply to generated previews, not the library quota.
+
+Preview workers use the minimum visible CPU, affinity, execution, and nested
+cgroup v1/v2 limits. Their memory admission budget is one eighth of visible
+host/container memory, capped at 8 GiB; incomplete discovery selects a conservative
+one-worker policy with at most 256 MiB. Sources are bounded and header-probed
+before reserving compressed bytes, decoded pixels, scratch, cache copies, and
+an allowance for the backend reader. Restic preview children also receive a
+128 MiB `GOMEMLIMIT` heap target. These are conservative admission estimates,
+not a hard whole-container RSS limit.
+
+Operators can set `WEAZLCLOUD_PREVIEW_BACKGROUND_WORKERS`,
+`WEAZLCLOUD_PREVIEW_TOTAL_WORKERS`, `WEAZLCLOUD_PREVIEW_SOURCE_READERS` and
+`WEAZLCLOUD_PREVIEW_MEMORY_BYTES`. Invalid values reject startup; memory overrides
+cannot exceed the detected preview budget. CPU ceilings still apply. These
+settings do not change the service's disk quota. Raster work is coalesced and
+limited to 256 outstanding distinct jobs across owners; a full queue returns a
+retryable error. One cancelled tile request does not cancel another waiter.
+Preview working-memory reservations are shared by the process, and waiting visible
+previews get the next available reservation ahead of background preparation. This
+does not yet provide fair scheduling between owners or dynamically promote an
+already-running coalesced background job.
+
+Preparation resumes by checking current content identities and reusable caches,
+not trusting old slice positions. Manual pause survives restart and index changes.
+Failure records are encrypted, capped at 100,000 per owner, and retryable through
+**Retry failed previews**. A corrupt image does not prevent later photos from
+being prepared; inability to persist a checkpoint pauses with a visible error.
+Cache skips, write failures and eviction produce partial readiness. Lock, rekey,
+revocation and shutdown invalidate preview work; imports pause background dispatch
+through their entire lifetime. A cold raster render uses a bounded header probe
+and a separate full read to avoid deadlocking memory upgrades.
+
+Adaptive pressure feedback, owner queue fairness, node-wide accounting for retained
+catalog/index RAM, and measured large-host scaling remain follow-up work. Shared-store writes
+reuse one zstd encoder sequentially per manifest without changing the stored
+format; this reduces per-chunk allocation but has not been measured on production.
+See the
+[local verification record](docs/photos-smoke-followup-2026-09-27.md) before rollout.
 
 The album and music browser smoke uses a disposable Docker volume and synthetic
 fixtures: `WEAZLCLOUD_IMAGE=<fresh-image> python scripts/smoke-photo-albums.py`

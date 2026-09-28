@@ -131,10 +131,22 @@ export const state = {
   libraryType: 'all',
   libraryDate: 'all',
   librarySize: 'all',
+  libraryFiltersOpen: false,
   librarySort: 'name',
   librarySortDir: 'asc',
   libraryView: 'list',
   photosShown: 60,
+  photoItems: [],
+  photoCursor: '',
+  photoHasMore: false,
+  photoLoading: false,
+  photoError: '',
+  photoGeneration: 0,
+  photoPreparation: null,
+  photoAlbumCount: 0,
+  photoWindowStart: 0,
+  photoWindowEnd: 0,
+  photoColumns: 4,
   photosMode: 'all',
   photosAlbum: '',
   photoAlbums: [],
@@ -185,7 +197,7 @@ export const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':
 export function selectedName() {
   if (!state.selected) return '';
   if (state.selected.type === 'folder') return state.selected.path;
-  return files.find(f => f.id === state.selected.id)?.title || '';
+  return (files.find(f => f.id === state.selected.id) || state.photoItems?.find(f => f.id === state.selected.id))?.title || '';
 }
 
 export function liveCapsules() {

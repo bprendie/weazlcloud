@@ -10,6 +10,10 @@ import (
 // CleanupThumbnailCache re-applies the cache bounds and removes abandoned
 // atomic-write temp files after the node has been idle.
 func CleanupThumbnailCache(dir string) (int64, error) {
+	defer thumbnailCacheEpoch.Add(1)
+	thumbnailWriteMu.Lock()
+	defer thumbnailWriteMu.Unlock()
+	defer forgetThumbnailNode(dir)
 	before, err := cacheBytes(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil

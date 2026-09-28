@@ -13,3 +13,19 @@ type Change struct {
 type ChangeSink interface {
 	Publish(Change)
 }
+
+func (l *Library) SetChangeSink(sink ChangeSink) {
+	l.changeMu.Lock()
+	l.changeSink = sink
+	l.changeMu.Unlock()
+}
+
+func (l *Library) publishChange(change Change) {
+	l.updatePhotoIndex(change)
+	l.changeMu.RLock()
+	sink := l.changeSink
+	l.changeMu.RUnlock()
+	if sink != nil {
+		sink.Publish(change)
+	}
+}

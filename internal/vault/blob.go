@@ -1,6 +1,8 @@
 package vault
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
@@ -9,6 +11,20 @@ import (
 type blobEnv struct {
 	Nonce      string `json:"nonce"`
 	Ciphertext string `json:"ciphertext"`
+}
+
+// Fingerprint returns a stable, vault-keyed identifier for private cache keys.
+// It prevents plaintext hashes or cross-user equality from appearing in paths.
+func (v *Vault) Fingerprint(domain string, value []byte) ([]byte, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if len(v.dek) == 0 {
+		return nil, ErrLocked
+	}
+	h := hmac.New(sha256.New, v.dek)
+	_, _ = h.Write([]byte("weazlcloud:" + domain + ":v1\x00"))
+	_, _ = h.Write(value)
+	return h.Sum(nil), nil
 }
 
 func (v *Vault) Wrap(plain []byte) ([]byte, error) {

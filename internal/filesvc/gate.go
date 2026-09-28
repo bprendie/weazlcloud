@@ -95,7 +95,7 @@ func (r *Registry) DrainResource(ctx context.Context, id string) error {
 	if err := resource.Lib.Drain(ctx); err != nil {
 		return err
 	}
-	resource.Vault.Lock()
+	resource.LockVault()
 	resource.Changes.Close()
 	r.mu.Lock()
 	delete(r.items, id)

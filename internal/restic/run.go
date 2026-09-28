@@ -40,6 +40,9 @@ func (r Runner) Run(ctx context.Context, repo Repo, stdin io.Reader, stdout io.W
 	cmd := exec.CommandContext(ctx, r.Binary, cmdArgs...)
 	cmd.ExtraFiles = []*os.File{pr}
 	cmd.Env = append(cleanEnv(), "RESTIC_PASSWORD_FILE=/proc/self/fd/3")
+	if limit, ok := ctx.Value(memoryLimitKey{}).(int64); ok && limit > 0 {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GOMEMLIMIT=%d", limit))
+	}
 	cmd.Stdin = stdin
 	var stderr bytes.Buffer
 	if stdout == nil {

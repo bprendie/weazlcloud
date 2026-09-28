@@ -1,8 +1,28 @@
 package library
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 func (l *Library) Drain(ctx context.Context) error {
+	l.stopPreviews()
+	for {
+		l.thumbMu.Lock()
+		jobs := len(l.thumbJobs)
+		l.thumbMu.Unlock()
+		l.photoPrepMu.Lock()
+		running := l.photoPrepRunning || l.photoResumeWaiting
+		l.photoPrepMu.Unlock()
+		if jobs == 0 && !running {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	for {
 		l.batchMu.Lock()
 		if !l.batchRunning {

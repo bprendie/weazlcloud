@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -47,6 +48,9 @@ type Vault struct {
 	dek            []byte
 	resticPassword []byte
 	driveToken     []byte
+	session        context.Context
+	endSession     context.CancelFunc
+	sessionVersion uint64
 }
 
 func New(path, nodePath string) *Vault {
@@ -73,10 +77,41 @@ func (v *Vault) Unlocked() bool {
 func (v *Vault) Lock() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.sessionVersion++
+	if v.endSession != nil {
+		v.endSession()
+	}
 	cryptox.Zero(v.dek)
 	cryptox.Zero(v.resticPassword)
 	cryptox.Zero(v.driveToken)
 	v.dek, v.resticPassword, v.driveToken = nil, nil, nil
+}
+
+// State returns the unlock state and a generation that changes whenever the
+// vault is locked, unlocked, or rekeyed.
+func (v *Vault) State() (bool, uint64) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return len(v.dek) == cryptox.KeyBytes, v.sessionVersion
+}
+
+// Session is invalidated by locking, unlocking, or rekeying the vault.
+func (v *Vault) Session() context.Context {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.session == nil {
+		v.session, v.endSession = context.WithCancel(context.Background())
+		v.endSession()
+	}
+	return v.session
+}
+
+func (v *Vault) renewSessionLocked() {
+	v.sessionVersion++
+	if v.endSession != nil {
+		v.endSession()
+	}
+	v.session, v.endSession = context.WithCancel(context.Background())
 }
 
 func (v *Vault) Secrets() (restic, drive []byte, err error) {

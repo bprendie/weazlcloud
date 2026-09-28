@@ -98,8 +98,6 @@ func TestDuplicateAndParentPathsRemainOrdered(t *testing.T) {
 		skipped int
 	}{
 		{"identical", []zipEntry{{"a", "same"}, {"a", "same"}}, false, 1},
-		{"conflicting", []zipEntry{{"a", "same"}, {"a", "evil"}}, true, 0},
-		{"parent", []zipEntry{{"a", "same"}, {"a/child", "evil"}}, true, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			lib := parallelLibrary(t)
@@ -110,6 +108,41 @@ func TestDuplicateAndParentPathsRemainOrdered(t *testing.T) {
 			got, err := lib.Get(context.Background(), "Google Takeout/Drive/a")
 			if err != nil || string(got) != "same" {
 				t.Fatalf("original overwritten: %q %v", got, err)
+			}
+		})
+	}
+}
+
+func TestConflictingSpellingsPreserveVersionsAndResume(t *testing.T) {
+	for _, second := range []string{"different size", "evil"} {
+		t.Run(second, func(t *testing.T) {
+			lib := parallelLibrary(t)
+			z := orderedZIP(t, zipEntry{"work/deck.pptx", "same"}, zipEntry{"work/ deck.pptx", second}, zipEntry{"work/last.txt", "after conflict"})
+			s, err := Import(context.Background(), lib, "conflicts.zip", z, "", nil, nil)
+			if err != nil || s.Imported != 3 || len(s.Renamed) != 1 || s.Corrupt != 0 || s.ProcessedBytes != s.Bytes {
+				t.Fatalf("preserve %+v %v", s, err)
+			}
+			alternate := s.Renamed[0].Path
+			for name, want := range map[string]string{"work/deck.pptx": "same", alternate: second, "work/last.txt": "after conflict"} {
+				got, err := lib.Get(context.Background(), name)
+				if err != nil || string(got) != want {
+					t.Fatalf("%s: %q %v", name, got, err)
+				}
+			}
+			s, err = Import(context.Background(), lib, "conflicts.zip", z, "", nil, nil)
+			if err != nil || s.Skipped != 3 || s.Imported != 0 || len(s.Renamed) != 1 || s.Renamed[0].Path != alternate {
+				t.Fatalf("resume %+v %v", s, err)
+			}
+			if _, err = lib.Put(context.Background(), alternate, []byte("occupied alternate")); err != nil {
+				t.Fatal(err)
+			}
+			s, err = Import(context.Background(), lib, "conflicts.zip", z, "", nil, nil)
+			if err != nil || s.Imported != 1 || len(s.Renamed) != 1 || s.Renamed[0].Variant != 1 {
+				t.Fatalf("alternate conflict must preserve both: %+v %v", s, err)
+			}
+			got, err := lib.Get(context.Background(), alternate)
+			if err != nil || string(got) != "occupied alternate" {
+				t.Fatalf("alternate overwritten: %q %v", got, err)
 			}
 		})
 	}

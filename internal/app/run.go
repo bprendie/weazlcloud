@@ -44,6 +44,9 @@ type Node struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if err := library.ValidatePreviewSettings(); err != nil {
+		return err
+	}
 	fs := flag.NewFlagSet("weazlcloud", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print version")
@@ -277,23 +280,4 @@ func (n *Node) startIdleMaintenance(parent context.Context) {
 		defer close(n.idleDone)
 		n.activity.Run(ctx)
 	}()
-}
-
-func probeReady(addr string) error {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return err
-	}
-	if host == "" || host == "0.0.0.0" || host == "::" {
-		host = "127.0.0.1"
-	}
-	resp, err := http.Get("http://" + net.JoinHostPort(host, port) + "/ready")
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("desk /ready status %d", resp.StatusCode)
-	}
-	return nil
 }

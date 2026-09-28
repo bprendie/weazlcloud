@@ -68,7 +68,7 @@ class Watch:
     def remove_verified(self, name, item):
         if item.get('status')!='verified' or not item.get('verification') or self.state['archives'].get(name) is not item or Path(name).name!=name:
             raise RuntimeError('source removal requires a persisted verification record')
-        if self.cfg.get('preserve_all_sources') or item.get('requires_review') or item.get('unreadable_archive') or item.get('prepared',{}).get('errors') or item.get('summary',{}).get('corrupt') or item.get('summary',{}).get('errors'):
+        if self.cfg.get('preserve_all_sources') or item.get('requires_review') or item.get('unreadable_archive') or item.get('prepared',{}).get('errors') or item.get('summary',{}).get('corrupt') or item.get('summary',{}).get('errors') or item.get('summary',{}).get('renamed') or item.get('summary',{}).get('directories'):
             item['status']='retained'
             item['retained_reason']='source held for review' if not self.cfg.get('preserve_all_sources') else 'source retention enabled'
             self.save()
@@ -108,6 +108,7 @@ class Watch:
                     self.log('import_progress',name=name,files=s['imported']+s['skipped'],total=s['files'],bytes=s['processed_bytes'],corrupt=s.get('corrupt',0))
                     return
                 if job and job['status']=='failed':
+                    item['status']='failed'
                     item['summary']=job['summary']
                     item['requires_review']=True
                     item['failure']=job.get('error','unknown error')

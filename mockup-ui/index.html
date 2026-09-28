@@ -30,18 +30,13 @@
 <button data-view="check" class="nav-item playlist-link"><span class="purple">↳</span> Check store</button>
 <button data-view="destroy" class="nav-item playlist-link"><span class="purple">↳</span> Destroy a capsule</button>
 </nav>
-<div class="sidebar-bottom"><div class="ethos"><span>NO NOISE.<br>JUST THE GOOD STUFF.</span><span class="mint">//</span></div><button id="account" class="account"><span class="avatar">V</span><span id="username">vault<small>Open · this session owns the key</small></span><span>↗</span></button></div>
+<div class="sidebar-bottom"><button id="account" class="account"><span class="avatar">V</span><span id="username">vault<small>Open · this session owns the key</small></span><span>↗</span></button></div>
 </aside>
 <div class="workspace">
 <header class="topbar"><span class="breadcrumb">WEAZL / <b id="breadcrumb">HOME</b></span><button class="icon-button" id="help" aria-label="Keyboard shortcuts">?</button></header>
 <div class="preview-strip"><span><span class="dot"></span> <span id="strip-kicker">MOCKUP / SOURCE OF TRUTH</span> <span class="dim" id="strip-dim">· no engine · 127.0.0.1:3001</span></span><span id="strip-status">LOCKED</span></div>
-<div class="desk"><main id="content"></main><aside class="queue-panel" aria-label="Current job"><div class="section-title"><h2 id="side-title">The job <span id="side-count" class="count"></span></h2><button id="side-action" class="text-button">Clear</button></div><p class="eyebrow" id="side-eyebrow">WHAT HAPPENS NEXT.</p><div id="queue"></div><div class="queue-note"><span>↳</span> Put a file in the library, mint a grab link, or connect Files.<br>Then return to the gig.</div>
-<div class="stat-card" id="dedupe-card">
-  <div class="signal-heading" id="dedupe-heading">IN THE LIBRARY</div>
-  <p><em id="dedupe-n">—</em><span id="dedupe-unit"></span></p>
-  <span class="eyebrow" id="dedupe-caption">FILES ON THIS NODE</span>
-</div>
-<div class="signal-card"><div class="signal-heading">THE WEAZL PROMISE <span>↗</span></div><p>Your files.<br>Your node.<br><em>Your rules.</em></p><span class="eyebrow">NEVER TAX THE GIG.</span></div><div id="upload-tray" class="upload-tray" hidden aria-live="polite"></div></aside></div>
+<div class="desk"><main id="content"></main></div>
+<div id="upload-tray" class="upload-tray" hidden aria-live="polite"></div>
 </div>
 <footer class="deck" aria-label="Node status">
 <div class="deck-id">

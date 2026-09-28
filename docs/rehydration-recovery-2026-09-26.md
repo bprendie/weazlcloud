@@ -7,6 +7,12 @@ and album-cache backups, runner checkpoints and migration results are retained
 on the host. Import resume validation is in progress. General conflict recovery
 (R3) and catalog/worker performance work (R4) remain open.
 
+September 27 follow-up: deterministic preservation of conflicting file versions
+and file/folder collisions is implemented, locally tested and deployed. See
+[the conflict recovery record](rehydration-conflicts-2026-09-27.md). Remaining
+R3 work includes unsafe-entry handling and broader persisted UI status; R4
+performance work remains separate.
+
 ## Desired result
 
 - Google Photos content lives in `/Photos`, including albums and sidecars.

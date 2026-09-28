@@ -79,6 +79,7 @@ func (v *Vault) Forge(passphrase, confirm []byte) error {
 		return err
 	}
 	v.dek, v.resticPassword, v.driveToken = dek, restic, drive
+	v.renewSessionLocked()
 	cryptox.Zero(node)
 	return nil
 }
@@ -176,6 +177,7 @@ func (v *Vault) load(env envelope, dek []byte) error {
 	v.dek = dek
 	v.resticPassword = restic
 	v.driveToken = drive
+	v.renewSessionLocked()
 	return nil
 }
 

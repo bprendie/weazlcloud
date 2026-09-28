@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -104,9 +103,9 @@ func TestImportRoutesAndResumesWithoutOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f2.Close()
-	_, err = Import(context.Background(), lib, "part2.zip", z2, "Google Takeout", nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "conflicting") {
-		t.Fatalf("missing conflict: %v", err)
+	s, err = Import(context.Background(), lib, "part2.zip", z2, "Google Takeout", nil, nil)
+	if err != nil || s.Imported != 1 || len(s.Renamed) != 1 {
+		t.Fatalf("conflict preservation: %+v %v", s, err)
 	}
 }
 

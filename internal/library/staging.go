@@ -247,11 +247,15 @@ func (l *Library) cleanupBatchRoot(root string) {
 
 func (l *Library) setStageActive(id string, active bool) {
 	l.stageMu.Lock()
-	defer l.stageMu.Unlock()
 	if active {
 		l.activeStages[id] = struct{}{}
 	} else {
 		delete(l.activeStages, id)
+	}
+	idle := len(l.activeStages) == 0
+	l.stageMu.Unlock()
+	if !active && idle {
+		l.resumePhotoPreparation()
 	}
 }
 

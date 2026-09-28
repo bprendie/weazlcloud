@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Every probe and transfer must fail in bounded time, including startup.
+curl() { command curl --connect-timeout 3 --max-time 120 "$@"; }
+
 image="${WEAZLCLOUD_IMAGE:-weazlcloud:2026.09.21}"
 storage_backend="${WEAZLCLOUD_SMOKE_STORAGE_BACKEND:-restic}"
 nonce="${WEAZLCLOUD_SMOKE_ID:-$(date +%s)-$$}"
@@ -8,6 +11,16 @@ name="weazlcloud-phase6-smoke-$nonce"
 desk_port="${WEAZLCLOUD_CONTAINER_PORT:-19272}"
 share_port="$((desk_port + 1))"
 drive_port="$((desk_port + 2))"
+network_args=(--publish "127.0.0.1:$desk_port:7272" --publish "127.0.0.1:$share_port:7273" --publish "127.0.0.1:$drive_port:7274")
+desk_addr=:7272
+share_addr=:7273
+drive_addr=:7274
+if [[ "${WEAZLCLOUD_SMOKE_HOST_NETWORK:-0}" == 1 ]]; then
+  network_args=(--network host)
+  desk_addr="127.0.0.1:$desk_port"
+  share_addr="127.0.0.1:$share_port"
+  drive_addr="127.0.0.1:$drive_port"
+fi
 root="$(mktemp -d)"
 volume_name="weazlcloud-phase6-smoke-data-$nonce"
 jar="$root/cookies.txt"
@@ -17,13 +30,11 @@ trap 'docker rm -f "$name" >/dev/null 2>&1 || true; docker volume rm "$volume_na
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="purple"/></svg>\n' >"$payload"
 expected="$(sha256sum "$payload" | awk '{print $1}')"
 docker run --detach --name "$name" \
-  --publish "127.0.0.1:$desk_port:7272" \
-  --publish "127.0.0.1:$share_port:7273" \
-  --publish "127.0.0.1:$drive_port:7274" \
+  "${network_args[@]}" \
   --env WEAZLCLOUD_DATA=/data \
-  --env WEAZLCLOUD_DESK_ADDR=:7272 \
-  --env WEAZLCLOUD_SHARE_ADDR=:7273 \
-  --env WEAZLCLOUD_DRIVE_ADDR=:7274 \
+  --env "WEAZLCLOUD_DESK_ADDR=$desk_addr" \
+  --env "WEAZLCLOUD_SHARE_ADDR=$share_addr" \
+  --env "WEAZLCLOUD_DRIVE_ADDR=$drive_addr" \
   --env WEAZLCLOUD_PUBLIC_BASE=https://grab.test \
   --env "WEAZLCLOUD_STORAGE_BACKEND=$storage_backend" \
   --env HOME=/data \
@@ -32,7 +43,7 @@ docker run --detach --name "$name" \
   "$image" >/dev/null
 
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:$desk_port/live" >/dev/null 2>&1; then
+  if curl --max-time 2 -fsS "http://127.0.0.1:$desk_port/live" >/dev/null 2>&1; then
     break
   fi
   sleep 0.25
@@ -125,13 +136,11 @@ if [[ "$storage_backend" == "restic" ]]; then
   python3 -c 'import json,sys; report=json.load(sys.stdin); assert report["migrated_files"] >= 3 and report["remaining_files"] == 0, report' <<<"$verified"
   docker rm "$name" >/dev/null
   docker run --detach --name "$name" \
-    --publish "127.0.0.1:$desk_port:7272" \
-    --publish "127.0.0.1:$share_port:7273" \
-    --publish "127.0.0.1:$drive_port:7274" \
+    "${network_args[@]}" \
     --env WEAZLCLOUD_DATA=/data \
-    --env WEAZLCLOUD_DESK_ADDR=:7272 \
-    --env WEAZLCLOUD_SHARE_ADDR=:7273 \
-    --env WEAZLCLOUD_DRIVE_ADDR=:7274 \
+    --env "WEAZLCLOUD_DESK_ADDR=$desk_addr" \
+    --env "WEAZLCLOUD_SHARE_ADDR=$share_addr" \
+    --env "WEAZLCLOUD_DRIVE_ADDR=$drive_addr" \
     --env WEAZLCLOUD_PUBLIC_BASE=https://grab.test \
     --env WEAZLCLOUD_STORAGE_BACKEND=shared-experimental \
     --env HOME=/data \

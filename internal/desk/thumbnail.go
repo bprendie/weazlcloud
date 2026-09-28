@@ -27,7 +27,14 @@ func (h *Handler) thumbnailLibraryFor(w http.ResponseWriter, r *http.Request, v 
 			size = parsed
 		}
 	}
-	body, contentType, err := l.Thumbnail(r.Context(), r.URL.Query().Get("path"), size)
+	var body []byte
+	var contentType string
+	var err error
+	if id := r.URL.Query().Get("id"); id != "" {
+		body, contentType, err = l.PhotoThumbnail(r.Context(), id, size)
+	} else {
+		body, contentType, err = l.Thumbnail(r.Context(), r.URL.Query().Get("path"), size)
+	}
 	if err != nil {
 		if err == library.ErrThumbnailUnavailable {
 			apiError(w, err)

@@ -26,7 +26,7 @@ func (r *Registry) RecoverStaging(ctx context.Context) (int64, error) {
 		}
 		bytes, err := func() (int64, error) {
 			if locked {
-				defer resource.Vault.Lock()
+				defer resource.LockVault()
 			}
 			return resource.Lib.RecoverStaging(ctx)
 		}()

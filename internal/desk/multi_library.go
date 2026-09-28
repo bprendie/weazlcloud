@@ -29,6 +29,7 @@ func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
 		apiError(w, err)
 		return
 	}
+	res.Lib.ResumePhotoPreparation(r.Context())
 	h.authLimit.Reset(key)
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "unlocked"})
 }
@@ -41,7 +42,7 @@ func (h *Handler) multiLock(w http.ResponseWriter, r *http.Request) {
 	}
 	h.cancelOwnerTakeout(u.ID)
 	res.Archives.Lock()
-	res.Vault.Lock()
+	res.LockVault()
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "locked"})
 }
 
@@ -89,26 +90,19 @@ func (h *Handler) multiQuota(w http.ResponseWriter, r *http.Request) {
 	}
 	out := map[string]any{"capacity": q.Capacity, "used": q.Used, "limit": q.Limit, "reserved": q.Reserved, "percent": q.Percent, "users": q.Users}
 	if res.Vault.Unlocked() {
-		if dedupe, logical, unique, e := res.Lib.Dedupe(r.Context()); e == nil {
-			out["dedupe_percent"] = dedupe
-			out["logical_bytes"] = logical
-			out["unique_bytes"] = unique
-			if shared, allocated, manifests, index, staging, metricsErr := res.Lib.SharedMetrics(r.Context()); metricsErr == nil && shared {
+		if summary, e := res.Lib.Summary(r.Context()); e == nil {
+			out["dedupe_percent"] = summary.DedupePercent
+			out["logical_bytes"] = summary.LogicalBytes
+			out["unique_bytes"] = summary.UniqueBytes
+			out["trash_bytes"] = summary.TrashBytes
+			if summary.Shared {
 				out["dedupe_scope"] = "all live and Trash references using shared storage"
-				out["shared_allocated_bytes"] = allocated
-				out["shared_manifest_allocated_bytes"] = manifests
-				out["shared_index_allocated_bytes"] = index
-				out["shared_staging_allocated_bytes"] = staging
+				out["shared_allocated_bytes"] = summary.Allocated
+				out["shared_manifest_allocated_bytes"] = summary.Manifests
+				out["shared_index_allocated_bytes"] = summary.Index
+				out["shared_staging_allocated_bytes"] = summary.Staging
 			}
-		}
-		if trash, e := res.Lib.Trash(r.Context()); e == nil {
-			var bytes int64
-			for _, item := range trash {
-				if !item.Folder {
-					bytes += item.Size
-				}
-			}
-			out["trash_bytes"] = bytes
+			out["trash_count"] = summary.TrashCount
 		}
 	}
 	if q.Limit > q.Used+q.Reserved {
@@ -131,6 +125,16 @@ func (h *Handler) multiListLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 	h.listLibraryFor(w, r, res.Vault, res.Lib)
 }
+
+func (h *Handler) multiFolderPage(w http.ResponseWriter, r *http.Request) {
+	res, _, err := h.currentResource(r)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	h.listFolderPageFor(w, r, res.Vault, res.Lib)
+}
+
 func (h *Handler) multiGetLibrary(w http.ResponseWriter, r *http.Request) {
 	res, _, err := h.currentResource(r)
 	if err != nil {

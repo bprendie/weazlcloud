@@ -1,5 +1,5 @@
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
-import {renderMain, renderSide, renderDeck, renderUploadTray} from './views.js';
+import {renderMain, renderDeck, renderUploadTray} from './views.js';
 import * as engine from './engine.js';
 
 const $ = s => document.querySelector(s);
@@ -25,13 +25,17 @@ function libraryPath() {
 }
 
 function filePath(id) {
-  const f = files.find(x => x.id === id);
+  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id);
   return f ? f.folders.concat(f.title).filter(Boolean).join('/') : id;
+}
+
+function fileByID(id) {
+  return files.find(file => file.id === id) || state.photoItems?.find(file => file.id === id);
 }
 
 function selectedFileRows() {
   const ids = state.selectedFiles?.length ? state.selectedFiles : state.selected?.type === 'file' ? [state.selected.id] : [];
-  return ids.map(id => files.find(file => file.id === id)).filter(Boolean);
+  return ids.map(id => files.find(file => file.id === id) || state.photoItems?.find(file => file.id === id)).filter(Boolean);
 }
 
 function clearFileSelection() {
@@ -52,6 +56,7 @@ const gridCapabilityQueue = [];
 const gridMusicQueue = [];
 let gridMusicActive = 0;
 const gridPreviewRequests = new Map();
+let photoWindowFrame = 0;
 let gridTextActive = 0;
 let gridThumbActive = 0;
 let gridCapabilityActive = 0;
@@ -74,6 +79,11 @@ const gridPreviewObserver = 'IntersectionObserver' in window
     pumpGridThumbnails();
     pumpGridMusic();
   }), {rootMargin: '500px 0px'})
+  : null;
+const photoMoreObserver = 'IntersectionObserver' in window
+  ? new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting) && state.photoHasMore && !state.photoLoading) loadPhotoPage(false);
+  }, {rootMargin: '900px 0px'})
   : null;
 
 function pumpGridTextPreviews() {
@@ -98,6 +108,7 @@ function pumpGridThumbnails() {
     if (!el?.isConnected) continue;
     gridThumbActive++;
     const path = el.dataset.gridThumbnail || '';
+    const photoID = el.dataset.photoThumbnail || '';
     const controller = new AbortController();
     let settled = false;
     const done = () => {
@@ -108,7 +119,7 @@ function pumpGridThumbnails() {
       pumpGridThumbnails();
     };
     gridPreviewRequests.set(el, {controller, cancel: () => { el.src = ''; done(); }});
-    el.src = `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
+    el.src = photoID ? `/api/library/thumbnail?id=${encodeURIComponent(photoID)}&size=320` : `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
       if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
@@ -231,6 +242,14 @@ function cancelDetachedGridRequests() {
   }
 }
 
+function hydratePhotoPager() {
+  const button = document.querySelector('[data-photo-load-more]');
+  if (button && photoMoreObserver && button.dataset.photoObserved !== '1') {
+    button.dataset.photoObserved = '1';
+    photoMoreObserver.observe(button);
+  }
+}
+
 function hydrateGridTextPreviews() {
   const observe = (el, queue) => {
     if (el.dataset.previewQueued !== undefined || el.dataset.previewObserved !== undefined) return;
@@ -245,6 +264,7 @@ function hydrateGridTextPreviews() {
   document.querySelectorAll('[data-grid-capability]').forEach(el => observe(el, gridCapabilityQueue));
   document.querySelectorAll('[data-grid-text-preview]').forEach(el => observe(el, gridTextQueue));
   document.querySelectorAll('[data-grid-thumbnail]').forEach(el => observe(el, gridThumbQueue));
+  document.querySelectorAll('[data-photo-thumbnail]').forEach(el => observe(el, gridThumbQueue));
   document.querySelectorAll('[data-grid-music]').forEach(el => observe(el, gridMusicQueue));
   pumpGridMusic();
   pumpGridCapabilities();
@@ -252,7 +272,35 @@ function hydrateGridTextPreviews() {
   pumpGridThumbnails();
 }
 
-const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); });
+function updatePhotoGridWindow() {
+  photoWindowFrame = 0;
+  const grid = document.querySelector('.photo-grid');
+  if (!grid || state.view !== 'photos') return;
+  const columns = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(' ').length);
+  const rowHeight = 272;
+  const top = grid.getBoundingClientRect().top + window.scrollY;
+  const firstVisible = Math.max(0, Math.floor((window.scrollY - top) / rowHeight) - 2);
+  const visibleRows = Math.min(10, Math.ceil(window.innerHeight / rowHeight) + 5);
+  const start = firstVisible * columns;
+  const end = Math.min(state.photoItems.length, start + visibleRows * columns);
+  if (state.photoWindowStart === start && state.photoWindowEnd === end && state.photoColumns === columns) return;
+  const focused = document.activeElement;
+  const focusFile = focused?.dataset?.selectFile || focused?.dataset?.menuFile || '';
+  state.photoWindowStart = start;
+  state.photoWindowEnd = end;
+  state.photoColumns = columns;
+  renderMain();
+  if (focusFile) requestAnimationFrame(() => document.querySelector(`[data-select-file="${CSS.escape(focusFile)}"], [data-menu-file="${CSS.escape(focusFile)}"]`)?.focus({preventScroll: true}));
+}
+
+function schedulePhotoGridWindow() {
+  if (photoWindowFrame || state.view !== 'photos') return;
+  photoWindowFrame = requestAnimationFrame(updatePhotoGridWindow);
+}
+window.addEventListener('scroll', schedulePhotoGridWindow, {passive: true});
+window.addEventListener('resize', schedulePhotoGridWindow, {passive: true});
+
+const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); hydratePhotoPager(); });
 contentObserver.observe($('#content'), {childList: true, subtree: true});
 
 function isWarmableRaster(path) {
@@ -435,14 +483,13 @@ function setClipboard(paths, mode) {
 }
 
 function detailsFile(id) {
-  const file = files.find(item => item.id === id);
+  const file = fileByID(id);
   if (!file) return;
   modal(`<span class="eyebrow purple">FILE DETAILS</span><h2>${esc(file.title)}</h2><div class="file-details"><p><strong>Path</strong><span>${esc(filePath(id))}</span></p><p><strong>Type</strong><span>${esc(file.kind || 'FILE')}</span></p><p><strong>Size</strong><span>${esc(file.size || '—')}</span></p><p><strong>Date modified</strong><span>${esc(new Date(file.mtime || 0).toLocaleString())}</span></p></div><div class="dialog-actions"><button class="secondary" data-close>Done</button></div>`);
 }
 
 function detailsFolder(path) {
-  const children = filesInFolder(path);
-  modal(`<span class="eyebrow purple">FOLDER DETAILS</span><h2>${esc(path.split('/').pop())}</h2><div class="file-details"><p><strong>Path</strong><span>${esc(path)}</span></p><p><strong>Items</strong><span>${children.length}</span></p></div><div class="dialog-actions"><button class="secondary" data-close>Done</button></div>`);
+  modal(`<span class="eyebrow purple">FOLDER DETAILS</span><h2>${esc(path.split('/').pop())}</h2><div class="file-details"><p><strong>Path</strong><span>${esc(path)}</span></p></div><div class="dialog-actions"><button class="secondary" data-close>Done</button></div>`);
 }
 
 async function pasteClipboard() {
@@ -536,9 +583,17 @@ async function createArchiveJob(paths) {
 }
 
 async function previewFile(id) {
-  const f = files.find(x => x.id === id); if (!f || f.folder) return;
+  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id); if (!f || f.folder) return;
   const path = filePath(id);
   if (!live) { toast('Preview is available when the node is connected.'); return; }
+  if (f.entryID && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?)$/i.test(f.title)) {
+    const response = await fetch(`/api/library/thumbnail?id=${encodeURIComponent(f.entryID)}&size=1280`);
+    if (!response.ok) { toast('Photo preview unavailable.'); return; }
+    const url = URL.createObjectURL(await response.blob());
+    modal(`<span class="eyebrow purple">PHOTO PREVIEW</span><h2>${esc(f.title)}</h2><img class="file-preview-image" src="${url}" alt="${esc(f.title)}"><div class="preview-actions"><a class="secondary button-link" href="/api/library?path=${encodeURIComponent(path)}" download="${esc(f.title)}">Download original</a></div><p class="eyebrow">${esc(path)}</p>`, true);
+    $('#modal').addEventListener('close', () => URL.revokeObjectURL(url), {once: true});
+    return;
+  }
   const previewable = new Set(['IMG', 'JPG', 'JPEG', 'PNG', 'GIF', 'WEB', 'WEBP', 'SVG', 'PDF', 'TXT', 'MD', 'CSV', 'JSON', 'DOC', 'DOCX', 'XLS', 'XLSX', 'PPT', 'PPTX', 'ODT', 'ODS', 'ODP', 'STL', '3MF', 'MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'OPUS', 'FLA', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
   if (!previewable.has(String(f.kind).toUpperCase())) { toast('This file opens as a download.'); return; }
   const mediaKind = new Set(['MP3', 'WAV', 'FLAC', 'M4A', 'AAC', 'OGG', 'OGA', 'OPUS', 'MP4', 'MOV', 'WEBM', 'MKV', 'AVI', 'M4V']);
@@ -582,6 +637,7 @@ function uploadState() {
 
 async function setUploadStorageUser(username) {
 	const nextKey = username ? `wzcl-upload-queue:${username}` : '';
+	const restoreKey = nextKey;
 	if (nextKey !== uploadStorageKey) state.upload.items = [];
 	uploadStorageKey = nextKey;
 	if (!uploadStorageKey) return;
@@ -589,6 +645,7 @@ async function setUploadStorageUser(username) {
 		const saved = JSON.parse(localStorage.getItem(uploadStorageKey) || '[]');
 		state.upload.items = Array.isArray(saved) ? saved.map(item => ({...item, file: null, status: item.status === 'done' ? 'done' : 'needs-file', error: item.status === 'done' ? '' : 'Select this file again to resume.'})) : [];
 		const serverSessions = await engine.listUploads();
+		if (uploadStorageKey !== restoreKey || state.username !== username || !state.unlocked) return;
 		for (const session of serverSessions) {
 			if (state.upload.items.some(item => item.sessionId === session.id)) continue;
 			state.upload.items.push({id: newUploadID(), sessionId: session.id, target: session.path, size: session.size, loaded: session.offset, confirmed: session.offset, status: session.status === 'complete' ? 'done' : 'needs-file', error: session.status === 'complete' ? '' : 'Select this file again to resume.', attempts: 0});
@@ -870,6 +927,7 @@ function setLibraryPath(path, push = true) {
   renderMain();
   renderDeck();
   if (push) history.pushState({}, '', routeHash('library'));
+  if (live && state.unlocked) loadLibrary(true).catch(err => toast(err.message));
 }
 
 function applyRoute() {
@@ -877,6 +935,11 @@ function applyRoute() {
   const [view, encoded] = raw.split('/');
   const allowed = new Set(['home', 'library', 'photos', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
   state.view = allowed.has(view) ? view : 'home';
+  if (state.view !== 'library' && libraryLoadController) {
+    libraryPageRequest++;
+    libraryLoadController.abort();
+    libraryLoadController = null;
+  }
   if (state.view === 'library') {
     try { state.currentPath = encoded ? decodeURIComponent(encoded) : ''; } catch { state.currentPath = ''; }
   }
@@ -884,7 +947,14 @@ function applyRoute() {
     state.photosMode = encoded === 'albums' || encoded === 'album' ? 'albums' : 'all';
     try { state.photosAlbum = encoded === 'album' ? decodeURIComponent(raw.split('/')[2] || '') : ''; } catch { state.photosAlbum = ''; }
     state.photosShown = 60;
+    state.photoItems = [];
+    state.photoCursor = '';
     loadPhotoAlbums();
+    loadPhotoPreparation();
+    loadPhotoPage(true);
+  }
+  if (state.view === 'library' && live && state.unlocked) {
+    loadLibrary(true).catch(err => toast(err.message));
   }
   renderMain();
   renderDeck();
@@ -894,11 +964,33 @@ function applyRoute() {
 
 function navigate(view, replace = false) {
   if (state.view !== view) stopMediaPlayback();
+  if (view !== 'library' && libraryLoadController) {
+    libraryPageRequest++;
+    libraryLoadController.abort();
+    libraryLoadController = null;
+  }
   state.view = view;
+  if (view === 'photos') {
+    state.photoItems = [];
+    state.photoCursor = '';
+    state.photoLoading = false;
+    state.photoWindowStart = 0;
+    state.photoWindowEnd = 0;
+  }
   renderMain();
   if (view === 'trash') loadTrash();
   if (view === 'takeout') refreshTakeout();
-  if (view === 'photos') loadPhotoAlbums();
+  if (view === 'library' && live && state.unlocked) {
+    loadLibrary().then(() => { if (state.view === 'library') renderMain(); }).catch(err => toast(err.message));
+  }
+  if (view === 'photos') {
+    state.photoItems = [];
+    state.photoCursor = '';
+    state.photoLoading = false;
+    loadPhotoAlbums();
+    loadPhotoPreparation();
+    loadPhotoPage(true);
+  }
   history[replace ? 'replaceState' : 'pushState']({}, '', routeHash(view));
 }
 
@@ -995,7 +1087,7 @@ function finishMint() {
   state.minted = {id, url: `${state.grabBase.replace(/\/$/, '')}/g/${id}`, gate: state.gate, name};
   const members = kind === 'folder'
     ? filesInFolder(state.selected.path).map(f => ({title: f.title, size: f.size, kind: f.kind}))
-    : [{title: name, size: files.find(f => f.id === state.selected.id)?.size || '', kind: files.find(f => f.id === state.selected.id)?.kind || 'FILE'}];
+    : [{title: name, size: fileByID(state.selected.id)?.size || '', kind: fileByID(state.selected.id)?.kind || 'FILE'}];
   const bag = JSON.parse(localStorage.getItem('wzcl-capsules') || '{}');
   bag[id] = {token: id, name, kind, size: kind === 'folder' ? `${members.length} files` : members[0].size, gate: state.gate, phrase: state.passphrase, status: 'live', expiry: capsule.expiry, files: members};
   localStorage.setItem('wzcl-capsules', JSON.stringify(bag));
@@ -1067,6 +1159,7 @@ function ingest() {
 
 async function lockVault() {
   stopWork();
+  libraryLoadController?.abort();
   stopMediaPlayback();
   stopPreviewWarming();
   libraryEventSource?.close();
@@ -1083,21 +1176,104 @@ async function lockVault() {
   toast(live ? 'Vault locked. Key zeroed.' : 'Vault locked. Key zeroed in this preview.');
 }
 
-async function loadLibrary() {
+let libraryPageRequest = 0;
+let librarySearchTimer = 0;
+let libraryLoadController = null;
+async function loadLibrary(reset = true) {
   if (!live) return;
-  const rows = await engine.listLibrary();
-  files.splice(0, files.length, ...rows.map(engine.toFixture));
-  const folders = [...new Set(files.map(f => f.folders.join('/')))];
-  if (state.currentPath && !folders.includes(state.currentPath)) {
-    state.currentPath = '';
-    history.replaceState({}, '', routeHash('library'));
+  const username = state.username, currentPath = state.currentPath, request = ++libraryPageRequest;
+  const hadSelection = !!state.selectedFiles?.length || state.selected?.type === 'folder';
+  libraryLoadController?.abort();
+  const controller = new AbortController();
+  libraryLoadController = controller;
+  const filtered = !!state.librarySearch.trim() || state.libraryType !== 'all' || state.libraryDate !== 'all' || state.librarySize !== 'all' || state.libraryScope !== 'all';
+  if (reset) {
+    state.libraryCursor = '';
+    state.libraryNextCursor = '';
+    files.splice(0, files.length);
   }
-  state.expanded = folders;
-  await loadQuota();
-  if (state.view === 'photos') await loadPhotoAlbums(false);
+  state.libraryLoading = true;
+  if (state.view === 'library') renderMain();
+  try {
+    const page = filtered
+      ? await engine.searchLibraryPage({query: state.librarySearch, scope: state.libraryScope === 'folder' ? currentPath : '', type: state.libraryType, date: state.libraryDate, size: state.librarySize, cursor: reset ? '' : state.libraryCursor, sort: state.librarySort, descending: state.librarySortDir === 'desc', signal: controller.signal})
+      : await engine.listLibraryPage(currentPath, {cursor: reset ? '' : state.libraryCursor, sort: state.librarySort, descending: state.librarySortDir === 'desc', signal: controller.signal});
+    if (request !== libraryPageRequest || !state.unlocked || state.username !== username || state.view !== 'library' || state.currentPath !== currentPath) return;
+    if (reset) files.splice(0, files.length, ...page.files);
+    else files.push(...page.files);
+    if (reset && hadSelection) {
+      const paths = new Set(files.map(file => file.path));
+      const missingFile = (state.selectedFiles || []).some(id => !files.some(file => file.id === id));
+      const missingFolder = state.selected?.type === 'folder' && !paths.has(state.selected.path);
+      if (missingFile || missingFolder) {
+        clearFileSelection();
+        toast('Selection cleared because the Library view changed.');
+      }
+    }
+    state.libraryNextCursor = page.next_cursor || '';
+    state.libraryCursor = state.libraryNextCursor;
+    state.libraryGeneration = page.generation || 0;
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    if (!reset && /(folder|search) changed/i.test(err.message || '')) {
+      state.libraryLoading = false;
+      return loadLibrary(true);
+    }
+    throw err;
+  } finally {
+    if (request === libraryPageRequest && state.username === username) {
+      state.libraryLoading = false;
+      libraryLoadController = null;
+      if (state.view === 'library') renderMain();
+    }
+  }
 }
 
 let photoAlbumsRequest = 0;
+let photoPageRequest = 0;
+async function loadPhotoPage(reset = false, render = true) {
+  if (!live || !state.unlocked || state.view !== 'photos' || state.photosMode === 'albums' && !state.photosAlbum) return;
+  if (state.photoLoading && !reset) return;
+  const request = ++photoPageRequest, username = state.username;
+  if (reset) {
+    state.photoItems = [];
+    state.photoCursor = '';
+    state.photoHasMore = false;
+    state.photoError = '';
+  }
+  state.photoLoading = true;
+  if (render) renderMain();
+  try {
+    const page = await engine.listPhotos(state.photoCursor, state.photosAlbum || '');
+    if (request !== photoPageRequest || username !== state.username || !state.unlocked || state.view !== 'photos') return;
+    state.photoItems.push(...(page.items || []).map(engine.toFixture));
+    state.photoCursor = page.next_cursor || '';
+    state.photoHasMore = Boolean(page.next_cursor);
+    state.photoGeneration = page.generation || 0;
+    state.photoError = '';
+  } catch (err) {
+    if (request !== photoPageRequest || username !== state.username) return;
+    if (err.message?.includes('photo library changed')) {
+      state.photoItems = [];
+      state.photoCursor = '';
+      state.photoLoading = false;
+      state.photoError = '';
+      return loadPhotoPage(true, render);
+    }
+    state.photoError = err.message;
+  } finally {
+    if (request === photoPageRequest) state.photoLoading = false;
+  }
+  if (request === photoPageRequest && render && state.view === 'photos') renderMain();
+  if (request === photoPageRequest && state.view === 'photos') schedulePhotoGridWindow();
+}
+
+async function loadPhotoPreparation() {
+  if (!live || !state.unlocked) return;
+  try { state.photoPreparation = await engine.photoPreparation(); } catch { state.photoPreparation = null; }
+  if (state.view === 'photos') renderMain();
+}
+
 async function loadPhotoAlbums(render = true) {
   if (!live || !state.unlocked) return;
   const request = ++photoAlbumsRequest, username = state.username;
@@ -1124,6 +1300,14 @@ async function syncLibraryFromChange() {
   librarySyncRunning = true;
   const scroll = window.scrollY;
   try {
+    if (state.view === 'photos') {
+      await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation()]);
+      await loadPhotoPage(true, false);
+      renderMain();
+      renderDeck();
+      requestAnimationFrame(() => window.scrollTo({top: scroll, behavior: 'auto'}));
+      return;
+    }
     await loadLibrary();
     state.selectedFiles = (state.selectedFiles || []).filter(id => files.some(file => file.id === id));
     if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
@@ -1152,13 +1336,44 @@ async function refreshTakeout() {
     const complete = state.takeoutJobs.filter(job => job.status === 'complete').map(job => `${job.name}:${job.updated_at}`).join('|');
     if (complete && complete !== lastTakeoutComplete) {
       lastTakeoutComplete = complete;
-      await loadLibrary();
+      if (state.view === 'photos') {
+        await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation()]);
+        await loadPhotoPage(true, false);
+        renderMain();
+      } else if (state.view === 'library') {
+        await loadLibrary();
+        renderMain();
+      }
     }
   } catch (err) { state.takeoutError = err.message; }
   if (state.view === 'takeout') renderMain();
 }
 
 setInterval(() => { if (state.view === 'takeout' && live && state.unlocked) refreshTakeout(); }, 4000);
+setInterval(async () => {
+  if (state.view !== 'photos' || !live || !state.unlocked) return;
+  try {
+    state.photoPreparation = await engine.photoPreparation();
+    const prep = state.photoPreparation;
+    const status = document.querySelector('[data-photo-prep-status]');
+    const button = document.querySelector('[data-action="photo-preparation"]');
+    if (status) status.textContent = prep.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}${prep.failed ? ` · ${prep.failed} failed` : ''}${prep.error ? ` · ${prep.error}` : ''}` : 'Prepare previews';
+    if (button) {
+      const active = prep.enabled && ['queued', 'running', 'paused_storage'].includes(prep.status);
+      button.dataset.prepAction = active ? 'pause' : 'resume';
+      button.textContent = active ? 'Pause preparation' : 'Prepare previews';
+      let retry = document.querySelector('[data-prep-action="retry"]');
+      if (prep.failed && !retry) {
+        retry = document.createElement('button');
+        retry.className = 'secondary';
+        retry.dataset.action = 'photo-preparation';
+        retry.dataset.prepAction = 'retry';
+        retry.textContent = 'Retry failed previews';
+        button.after(retry);
+      } else if (!prep.failed) retry?.remove();
+    }
+  } catch {}
+}, 5000);
 
 function startLibraryEvents() {
   libraryEventSource?.close();
@@ -1168,7 +1383,11 @@ function startLibraryEvents() {
 
 async function loadQuota() {
   if (!live) return;
-  try { state.quota = await engine.quota(); } catch (err) { toast(err.message); }
+  const username = state.username;
+  try {
+    const quota = await engine.quota();
+    if (state.unlocked && state.username === username) { state.quota = quota; renderDeck(); }
+  } catch (err) { if (state.username === username) toast(err.message); }
 }
 
 async function loadTrash() {
@@ -1183,6 +1402,9 @@ async function loadTrash() {
 
 function openDesk() {
   state.unlocked = true;
+  state.photoItems = [];
+  state.photoCursor = '';
+  state.photoPreparation = null;
   state.photoAlbums = [];
   state.photoAlbumsLoaded = false;
   state.photoAlbumsError = '';
@@ -1193,7 +1415,14 @@ function openDesk() {
   renderMain();
   renderDeck();
   startLibraryEvents();
-  if (state.view === 'photos') loadPhotoAlbums();
+  if (state.view === 'photos') {
+    loadPhotoAlbums();
+    loadPhotoPreparation();
+    loadPhotoPage(true);
+  } else if (state.view === 'library') {
+    loadLibrary().then(() => { if (state.view === 'library') renderMain(); }).catch(err => toast(err.message));
+  }
+  if (live) void Promise.allSettled([loadQuota(), loadCapsules(), refreshPlaces(), loadAccessRequests(), setUploadStorageUser(state.username)]);
 }
 
 async function loadAccessRequests() {
@@ -1273,7 +1502,7 @@ async function runMenu(act) {
   if (kind === 'details-folder') detailsFolder(key);
   if (kind === 'paste') { await pasteClipboard(); }
   if (kind === 'download') {
-    const f = files.find(x => x.id === key);
+    const f = fileByID(key);
     const path = filePath(key);
     if (live) {
       try { await engine.downloadLibrary(path, f?.title || key); }
@@ -1289,8 +1518,8 @@ async function runMenu(act) {
     else toast('Renamed in the connected node.');
   }
   if (kind === 'delete-file' || kind === 'delete-folder') {
-    const f = files.find(x => x.id === key);
-    const path = kind === 'delete-folder' ? key : (f ? f.folders.concat(f.title).join('/') : key);
+    const f = fileByID(key);
+    const path = kind === 'delete-folder' ? key : (f ? filePath(key) : key);
     if (!confirm(`Move ${path} to Trash? It remains recoverable for ${state.trashRetention} days.`)) return;
     if (live) {
       try {
@@ -1342,6 +1571,14 @@ document.addEventListener('click', e => {
   if (b.dataset.uploadRetry !== undefined) { retryFailedUploads(); return; }
   if (b.dataset.uploadReselect !== undefined) { uploadPrefix = ''; $('#upload').click(); return; }
   if (b.dataset.uploadCancel !== undefined) { cancelUploads(); return; }
+  if (b.dataset.libraryFilters !== undefined) { state.libraryFiltersOpen = !state.libraryFiltersOpen; renderMain(); return; }
+  if (b.dataset.libraryClearFilter) {
+    const key = {scope: 'libraryScope', type: 'libraryType', date: 'libraryDate', size: 'librarySize'}[b.dataset.libraryClearFilter];
+    if (key) state[key] = 'all';
+    if (live && state.unlocked && state.view === 'library') loadLibrary(true).catch(err => toast(err.message));
+    else renderMain();
+    return;
+  }
   if (b.dataset.archiveDownload) { engine.downloadArchive(b.dataset.archiveDownload); return; }
   if (b.dataset.archiveCancel) { engine.cancelArchive(b.dataset.archiveCancel).then(() => renderUploadTray()).catch(err => toast(err.message)); return; }
   if (b.dataset.trashRestore) {
@@ -1365,7 +1602,12 @@ document.addEventListener('click', e => {
   if (b.dataset.view) navigate(b.dataset.view);
   if (b.dataset.openFolder) { setLibraryPath(b.dataset.openFolder); }
   if (b.dataset.libraryPath !== undefined) { setLibraryPath(b.dataset.libraryPath); }
-  if (b.dataset.librarySortDir !== undefined) { state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc'; renderMain(); }
+  if (b.dataset.libraryMore !== undefined) { loadLibrary(false).catch(err => toast(err.message)); }
+  if (b.dataset.librarySortDir !== undefined) {
+    state.librarySortDir = state.librarySortDir === 'asc' ? 'desc' : 'asc';
+    if (live && state.unlocked && state.view === 'library') loadLibrary(true).catch(err => toast(err.message));
+    else renderMain();
+  }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.batch) { runBatchAction(b.dataset.batch); return; }
   if (b.dataset.selectFile) {
@@ -1390,7 +1632,16 @@ document.addEventListener('click', e => {
     engine.cancelTakeout(b.dataset.cancelZip).then(() => { toast('Stopping import.'); refreshTakeout(); }).catch(err => toast(err.message));
     return;
   }
-  if (b.dataset.action === 'photos-more') { state.photosShown = (state.photosShown || 60) + 60; renderMain(); return; }
+  if (b.dataset.action === 'photos-more') {
+    if (state.photosMode === 'albums' && !state.photosAlbum) { state.photosShown = (state.photosShown || 60) + 60; renderMain(); }
+    else loadPhotoPage(false);
+    return;
+  }
+  if (b.dataset.action === 'photo-preparation') {
+    const action = b.dataset.prepAction || 'start';
+    engine.setPhotoPreparation(action).then(result => { state.photoPreparation = result; renderMain(); toast(action === 'pause' ? 'Preview preparation paused.' : 'Preview preparation started.'); }).catch(err => toast(err.message));
+    return;
+  }
   if (b.dataset.photosMode || b.dataset.photoAlbum) {
     stopMediaPlayback();
     clearFileSelection();
@@ -1468,12 +1719,17 @@ document.addEventListener('change', e => {
   }
   if (e.target.dataset.librarySort !== undefined) {
     state.librarySort = e.target.value;
-    renderMain();
+    if (live && state.unlocked && state.view === 'library') loadLibrary(true).catch(err => toast(err.message));
+    else renderMain();
   }
   if (e.target.dataset.libraryFilter) {
     const key = e.target.dataset.libraryFilter;
     const stateKey = {scope: 'libraryScope', type: 'libraryType', date: 'libraryDate', size: 'librarySize'}[key];
-    if (stateKey) { state[stateKey] = e.target.value; renderMain(); }
+    if (stateKey) {
+      state[stateKey] = e.target.value;
+      if (live && state.unlocked && state.view === 'library') loadLibrary(true).catch(err => toast(err.message));
+      else renderMain();
+    }
   }
 });
 
@@ -1486,6 +1742,10 @@ document.addEventListener('input', e => {
     const caret = e.target.selectionStart;
     state.librarySearch = e.target.value;
     renderMain();
+    clearTimeout(librarySearchTimer);
+    librarySearchTimer = setTimeout(() => {
+      if (live && state.unlocked && state.view === 'library') loadLibrary(true).catch(err => toast(err.message));
+    }, 300);
     const search = document.querySelector('[data-library-search]');
     search?.focus();
     search?.setSelectionRange(caret, caret);
@@ -1497,16 +1757,6 @@ $('#account').onclick = vaultCard;
 $('#lock').onclick = lockVault;
 $('#send-now').onclick = () => { state.view === 'send' ? mint() : (state.selected ? navigate('send') : navigate('library')); };
 $('#cancel').onclick = () => { stopWork(); toast('Cancelled in this preview.'); };
-$('#side-action').onclick = () => {
-  if (state.view === 'send' || state.view === 'library') {
-    state.selected = null;
-    state.minted = null;
-    renderMain();
-    renderDeck();
-    return;
-  }
-  navigate('places');
-};
 
 function setForgeMode(on) {
   state.forging = !!on;
@@ -1523,6 +1773,13 @@ function setForgeMode(on) {
 }
 
 function setVaultOnly(on) {
+  if (on) {
+    state.photoItems = [];
+    state.photoCursor = '';
+    state.photoAlbums = [];
+    state.photoAlbumsLoaded = false;
+    state.photoPreparation = null;
+  }
   const row = $('#username-row');
   const username = $('#username-row input');
   const forge = $('#forge-mode');
@@ -1560,6 +1817,8 @@ $('#setup-mode').onclick = async () => {
 
 $('#unlock-form').onsubmit = async e => {
   e.preventDefault();
+  const submitButton = e.target.querySelector('.primary');
+  if (submitButton?.disabled) return;
   const form = new FormData(e.target);
   const username = String(form.get('username') || '').trim();
   const pass = String(form.get('passphrase') || '');
@@ -1571,6 +1830,8 @@ $('#unlock-form').onsubmit = async e => {
   if (state.forging && !confirm) { $('#unlock-error').textContent = 'Confirm the passphrase.'; return; }
   if (state.forging && pass !== confirm) { $('#unlock-error').textContent = 'Passphrases do not match.'; return; }
   if (live) {
+    if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Working…'; }
+    e.target.setAttribute('aria-busy', 'true');
     try {
       if (state.forging) {
         await engine.bootstrap(username, pass, pass, confirm);
@@ -1589,6 +1850,8 @@ $('#unlock-form').onsubmit = async e => {
           setVaultOnly(true);
           e.target.querySelector('[name=passphrase]').value = '';
           $('#unlock-error').textContent = 'Account signed in. Unlock this user vault with its vault passphrase.';
+          if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Unlock vault →'; }
+          e.target.removeAttribute('aria-busy');
           return;
         }
       } else {
@@ -1599,25 +1862,24 @@ $('#unlock-form').onsubmit = async e => {
       if (/already exists/i.test(msg)) {
         setForgeMode(false);
         $('#unlock-error').textContent = 'This node already has an account. Log in with the local username.';
+        if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Log in →'; }
+        e.target.removeAttribute('aria-busy');
         return;
       }
       if (/does not exist|missing/i.test(msg)) {
         setForgeMode(true);
         $('#unlock-error').textContent = 'No account yet. Create the first local account.';
+        if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Create account →'; }
+        e.target.removeAttribute('aria-busy');
         return;
       }
       $('#unlock-error').textContent = msg;
+      if (submitButton) { submitButton.disabled = false; submitButton.textContent = state.forging ? 'Create account →' : (state.authenticated ? 'Unlock vault →' : 'Log in →'); }
+      e.target.removeAttribute('aria-busy');
       return;
     }
-    try {
-      await loadLibrary();
-      await loadCapsules();
-      await refreshPlaces();
-      await loadAccessRequests();
-		await setUploadStorageUser(state.username);
-    } catch (err) {
-      toast(err.message);
-    }
+    if (submitButton) { submitButton.disabled = false; submitButton.textContent = state.forging ? 'Create account →' : (state.authenticated ? 'Unlock vault →' : 'Log in →'); }
+    e.target.removeAttribute('aria-busy');
   }
   e.target.reset();
   openDesk();
@@ -1817,7 +2079,7 @@ engine.probe().then(async s => {
     if (!s.unlocked) setVaultOnly(true);
   }
   if (s.authenticated && s.unlocked) {
-    await loadLibrary();
+    if (state.view !== 'photos' && state.view !== 'library') await loadLibrary();
     await loadCapsules();
     await refreshPlaces();
     await loadAccessRequests();

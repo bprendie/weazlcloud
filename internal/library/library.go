@@ -16,58 +16,79 @@ import (
 )
 
 type Library struct {
-	mu            sync.Mutex
-	stageMu       sync.Mutex
-	activeStages  map[string]struct{}
-	resticCommits atomic.Uint64
-	batchCommits  atomic.Uint64
-	batchMu       sync.Mutex
-	batchPending  []batchRequest
-	batchWake     chan struct{}
-	batchRunning  bool
-	batchDone     chan struct{}
-	thumbMu       sync.Mutex
-	thumbJobs     map[string]*thumbnailJob
-	changeMu      sync.RWMutex
-	changeSink    ChangeSink
-	activityMu    sync.RWMutex
-	activity      func() func()
-	repo          string
-	vault         *vault.Vault
-	catalog       *catalog.Catalog
-	backend       Backend
-	sharedStore   *sharedstore.Store
-	ownerID       string
-	sharedWrites  bool
-	albumMetadata map[string]albumMetadata
+	mu                    sync.Mutex
+	stageMu               sync.Mutex
+	activeStages          map[string]struct{}
+	resticCommits         atomic.Uint64
+	batchCommits          atomic.Uint64
+	batchMu               sync.Mutex
+	batchPending          []batchRequest
+	batchWake             chan struct{}
+	batchRunning          bool
+	batchDone             chan struct{}
+	thumbMu               sync.Mutex
+	thumbJobs             map[string]*thumbnailJob
+	changeMu              sync.RWMutex
+	changeSink            ChangeSink
+	activityMu            sync.RWMutex
+	activity              func() func()
+	previewLease          func(context.Context) (context.Context, func(), bool)
+	previewLifetime       context.Context
+	stopPreviews          context.CancelFunc
+	repo                  string
+	vault                 *vault.Vault
+	catalog               *catalog.Catalog
+	catalogSession        uint64
+	catalogLoaded         bool
+	storageSummary        StorageSummary
+	storageSummaryAt      time.Time
+	storageSummaryVersion uint64
+	storageSummaryReady   bool
+	backend               Backend
+	sharedStore           *sharedstore.Store
+	ownerID               string
+	sharedWrites          bool
+	albumMetadata         map[string]albumMetadata
+	photoMu               sync.Mutex
+	photoRows             []catalog.File
+	photoMediaRows        []catalog.File
+	photoByID             map[string]catalog.File
+	photoByPath           map[string]int
+	photoMediaByPath      map[string]int
+	photoReady            bool
+	photoEpoch            uint64
+	photoSortedEpoch      uint64
+	photoSave             *time.Timer
+	photoSaveEpoch        uint64
+	photoPrepMu           sync.Mutex
+	photoPrep             photoPreparation
+	photoPrepLoaded       bool
+	photoPrepRunning      bool
+	photoResumeWaiting    bool
+	photoPrepCancel       context.CancelFunc
+	photoPrepared         map[string]int
+	photoCacheEpoch       uint64
+	photoImports          int
+	photoFailureMu        sync.Mutex
+	photoFailureCount     int
+	photoFailuresKnown    bool
 }
 
 const TrashLifetime = 30 * 24 * time.Hour
 
-func (l *Library) SetChangeSink(sink ChangeSink) {
-	l.changeMu.Lock()
-	l.changeSink = sink
-	l.changeMu.Unlock()
-}
-
-func (l *Library) publishChange(change Change) {
-	l.changeMu.RLock()
-	sink := l.changeSink
-	l.changeMu.RUnlock()
-	if sink != nil {
-		sink.Publish(change)
-	}
-}
-
 func New(repo, catalogPath string, v *vault.Vault) *Library {
+	logPreviewPolicy()
+	previewLifetime, stopPreviews := context.WithCancel(context.Background())
 	return &Library{
-		repo:         repo,
-		vault:        v,
-		catalog:      catalog.New(catalogPath, v),
-		backend:      newResticBackend(repo, v),
-		activeStages: make(map[string]struct{}),
-		thumbJobs:    make(map[string]*thumbnailJob),
-		batchWake:    make(chan struct{}, 1),
+		previewLifetime: previewLifetime,
+		stopPreviews:    stopPreviews,
+		repo:            repo,
+		vault:           v,
+		catalog:         catalog.New(catalogPath, v),
+		backend:         newResticBackend(repo, v),
+		activeStages:    make(map[string]struct{}),
+		thumbJobs:       make(map[string]*thumbnailJob),
+		batchWake:       make(chan struct{}, 1),
 	}
 }
 
@@ -78,16 +99,6 @@ func (l *Library) Ensure(ctx context.Context) error {
 		return err
 	}
 	return l.recoverStaged(ctx)
-}
-
-func (l *Library) ensure(ctx context.Context) error {
-	if !l.vault.Unlocked() {
-		return vault.ErrLocked
-	}
-	if err := l.backend.Ensure(ctx); err != nil {
-		return err
-	}
-	return l.catalog.Load()
 }
 
 func (l *Library) Mkdir(ctx context.Context, name string) error {
@@ -226,7 +237,8 @@ func (l *Library) Delete(name string) error {
 	if !l.vault.Unlocked() {
 		return vault.ErrLocked
 	}
-	if err := l.catalog.Load(); err != nil {
+	_, session := l.vault.State()
+	if err := l.loadCatalogSession(session); err != nil {
 		return err
 	}
 	if err := l.catalog.Delete(name); err != nil {
@@ -261,28 +273,6 @@ func (l *Library) StreamTo(ctx context.Context, name string, w io.Writer) error 
 		return err
 	}
 	return l.readReference(ctx, ref, w)
-}
-
-// StreamRange reads a byte range without retaining the complete file.
-func (l *Library) StreamRange(ctx context.Context, name string, offset, length int64, w io.Writer) error {
-	name, err := cleanPath(name)
-	if err != nil {
-		return err
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return err
-	}
-	f, ok := l.catalog.Get(name)
-	if !ok || f.Folder || offset < 0 || length < 0 || offset > f.Size || length > f.Size-offset {
-		return errors.New("invalid file range")
-	}
-	ref, err := l.capture(f)
-	if err != nil {
-		return err
-	}
-	return l.readReferenceRange(ctx, ref, offset, length, w)
 }
 
 func (l *Library) ResticCommitCounts() (single, batch uint64) {

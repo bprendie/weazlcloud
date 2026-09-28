@@ -17,8 +17,12 @@ func encodeChunk(plain []byte) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
+	defer encoder.Close()
+	return encodeChunkWith(encoder, plain)
+}
+
+func encodeChunkWith(encoder *zstd.Encoder, plain []byte) ([]byte, string, error) {
 	compressed := encoder.EncodeAll(plain, nil)
-	encoder.Close()
 	if len(compressed)+64 >= len(plain) {
 		return plain, chunkRaw, nil
 	}

@@ -99,7 +99,7 @@ function fileRow(f, fullPath = false) {
   </div>`;
 }
 
-function gridFileCard(f, fullPath = false) {
+function gridFileCard(f, fullPath = false, photo = false) {
   const hit = isSelected('file', f.id) ? ' selected' : '';
   const path = f.folders.concat(f.title).join('/');
   const href = `/api/library?path=${encodeURIComponent(path)}&preview=1`;
@@ -115,7 +115,7 @@ function gridFileCard(f, fullPath = false) {
   const preview = media
     ? `<${audio ? 'audio' : 'video'} class="grid-media-player" data-media-path="${esc(path)}" data-media-kind="${audio ? 'audio' : 'video'}" aria-label="Play ${esc(f.title)}" src="/api/library?path=${encodeURIComponent(path)}&inline=1" controls preload="metadata"></${audio ? 'audio' : 'video'}>`
     : raster
-    ? `<img class="grid-preview" ${capability} data-grid-thumbnail="${esc(path)}" alt="" loading="lazy">`
+    ? `<img class="grid-preview" ${capability} ${photo ? `data-photo-thumbnail="${esc(f.entryID || f.id)}"` : `data-grid-thumbnail="${esc(path)}"`} alt="" loading="lazy">`
     : ['WEB', 'WEBP'].includes(kind)
       ? `<img class="grid-preview" ${capability} src="${href}" alt="" loading="lazy">`
       : model
@@ -137,12 +137,11 @@ function gridFileCard(f, fullPath = false) {
 }
 
 function folderRow(child) {
-  const n = countNode(child);
   const on = isSelected('folder', child.path);
-  if (state.libraryView === 'grid') return `<div class="library-card folder-card${on ? ' selected' : ''}" data-ctx-folder="${esc(child.path)}"><button class="grid-open" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><div class="grid-folder-preview"><span class="kind type-dir">DIR</span></div></button><div class="grid-card-info"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong><span class="grid-meta">${n} ${n === 1 ? 'item' : 'items'}</span></div><button class="icon-button menu-btn grid-menu" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button></div>`;
+  if (state.libraryView === 'grid') return `<div class="library-card folder-card${on ? ' selected' : ''}" data-ctx-folder="${esc(child.path)}"><button class="grid-open" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><div class="grid-folder-preview"><span class="kind type-dir">DIR</span></div></button><div class="grid-card-info"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong><span class="grid-meta">Folder</span></div><button class="icon-button menu-btn grid-menu" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button></div>`;
   return `<div class="tree-row${on ? ' highlight' : ''}" data-ctx-folder="${esc(child.path)}">
     <button class="tree-toggle" data-open-folder="${esc(child.path)}" aria-label="Open ${esc(child.name)}"><span class="kind type-dir">DIR</span><strong>${esc(child.name)}</strong></button>
-    <span class="library-modified">${esc(modifiedLabel(child.mtime))}</span><span class="ver-count">${n} ${n === 1 ? 'item' : 'items'}</span>
+    <span class="library-modified">${esc(modifiedLabel(child.mtime))}</span><span class="ver-count">Folder</span>
     <button class="icon-button menu-btn" data-menu-folder="${esc(child.path)}" aria-label="Folder actions">⋯</button>
   </div>`;
 }
@@ -229,22 +228,22 @@ function library() {
   const parent = state.currentPath.split('/').slice(0, -1).join('/');
   const searching = state.librarySearch.trim().length > 0;
   const rows = searching ? librarySearchRows() : libraryRows(node);
-  return head('WEAZLCLOUD / LIBRARY', 'A file is present or it is not.', 'Right-click a file (or ⋯) to send a grab link, download, or delete. Upload lands in the library.') +
-    `<div class="library-workspace" data-ctx-tree="1">${libraryBreadcrumb()}
-    <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><label class="library-filter">Scope<select data-library-filter="scope"><option value="all" ${state.libraryScope === 'all' ? 'selected' : ''}>All my files</option><option value="folder" ${state.libraryScope === 'folder' ? 'selected' : ''}>This folder</option></select></label><label class="library-filter">Type<select data-library-filter="type"><option value="all" ${state.libraryType === 'all' ? 'selected' : ''}>Any type</option><option value="image" ${state.libraryType === 'image' ? 'selected' : ''}>Images</option><option value="video" ${state.libraryType === 'video' ? 'selected' : ''}>Video</option><option value="audio" ${state.libraryType === 'audio' ? 'selected' : ''}>Audio</option><option value="document" ${state.libraryType === 'document' ? 'selected' : ''}>Documents</option><option value="archive" ${state.libraryType === 'archive' ? 'selected' : ''}>Archives</option></select></label><label class="library-filter">Modified<select data-library-filter="date"><option value="all" ${state.libraryDate === 'all' ? 'selected' : ''}>Any time</option><option value="7d" ${state.libraryDate === '7d' ? 'selected' : ''}>Past 7 days</option><option value="30d" ${state.libraryDate === '30d' ? 'selected' : ''}>Past 30 days</option><option value="365d" ${state.libraryDate === '365d' ? 'selected' : ''}>Past year</option></select></label><label class="library-filter">Size<select data-library-filter="size"><option value="all" ${state.librarySize === 'all' ? 'selected' : ''}>Any size</option><option value="small" ${state.librarySize === 'small' ? 'selected' : ''}>Under 1 MB</option><option value="medium" ${state.librarySize === 'medium' ? 'selected' : ''}>1–100 MB</option><option value="large" ${state.librarySize === 'large' ? 'selected' : ''}>Over 100 MB</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button><button class="text-button" data-action="toggle-favorite">${state.favorites?.includes(state.currentPath) ? 'Unpin folder' : 'Pin folder'}</button></div>
+  const activeFilters = [['scope', state.libraryScope, {folder: 'This folder'}], ['type', state.libraryType, {image: 'Images', video: 'Video', audio: 'Audio', document: 'Documents', archive: 'Archives'}], ['date', state.libraryDate, {'7d': 'Past 7 days', '30d': 'Past 30 days', '365d': 'Past year'}], ['size', state.librarySize, {small: 'Under 1 MB', medium: '1–100 MB', large: 'Over 100 MB'}]].filter(([, value]) => value !== 'all');
+  const chips = activeFilters.map(([key, value, labels]) => `<button class="filter-chip" data-library-clear-filter="${key}" title="Clear ${esc(labels[value] || value)}">${esc(labels[value] || value)} ×</button>`).join('');
+  const filterMenu = `<div class="library-filter-menu" ${state.libraryFiltersOpen ? '' : 'hidden'}>
+      <label class="library-filter">Scope<select data-library-filter="scope"><option value="all" ${state.libraryScope === 'all' ? 'selected' : ''}>All my files</option><option value="folder" ${state.libraryScope === 'folder' ? 'selected' : ''}>This folder</option></select></label>
+      <label class="library-filter">Type<select data-library-filter="type"><option value="all" ${state.libraryType === 'all' ? 'selected' : ''}>Any type</option><option value="image" ${state.libraryType === 'image' ? 'selected' : ''}>Images</option><option value="video" ${state.libraryType === 'video' ? 'selected' : ''}>Video</option><option value="audio" ${state.libraryType === 'audio' ? 'selected' : ''}>Audio</option><option value="document" ${state.libraryType === 'document' ? 'selected' : ''}>Documents</option><option value="archive" ${state.libraryType === 'archive' ? 'selected' : ''}>Archives</option></select></label>
+      <label class="library-filter">Modified<select data-library-filter="date"><option value="all" ${state.libraryDate === 'all' ? 'selected' : ''}>Any time</option><option value="7d" ${state.libraryDate === '7d' ? 'selected' : ''}>Past 7 days</option><option value="30d" ${state.libraryDate === '30d' ? 'selected' : ''}>Past 30 days</option><option value="365d" ${state.libraryDate === '365d' ? 'selected' : ''}>Past year</option></select></label>
+      <label class="library-filter">Size<select data-library-filter="size"><option value="all" ${state.librarySize === 'all' ? 'selected' : ''}>Any size</option><option value="small" ${state.librarySize === 'small' ? 'selected' : ''}>Under 1 MB</option><option value="medium" ${state.librarySize === 'medium' ? 'selected' : ''}>1–100 MB</option><option value="large" ${state.librarySize === 'large' ? 'selected' : ''}>Over 100 MB</option></select></label>
+    </div>`;
+  return `<div class="library-workspace" data-ctx-tree="1"><div class="library-action-bar">${libraryBreadcrumb()}<div class="library-core-actions"><button class="primary" data-action="upload">Upload…</button><button class="secondary" data-action="upload-folder">Upload folder…</button><button class="secondary" data-action="new-folder">New folder</button><button class="secondary" data-library-filters aria-expanded="${state.libraryFiltersOpen}">Filters${activeFilters.length ? ` · ${activeFilters.length}` : ''}</button></div></div>
+    <div class="library-controls"><label class="search library-search"><span>⌕</span><input type="search" data-library-search placeholder="Search the entire library" value="${esc(state.librarySearch)}"></label><label class="library-sort">Sort<select data-library-sort><option value="name" ${state.librarySort === 'name' ? 'selected' : ''}>Name</option><option value="modified" ${state.librarySort === 'modified' ? 'selected' : ''}>Date modified</option><option value="size" ${state.librarySort === 'size' ? 'selected' : ''}>File size</option><option value="type" ${state.librarySort === 'type' ? 'selected' : ''}>File type</option></select></label><button class="secondary sort-direction" data-library-sort-dir>${state.librarySortDir === 'asc' ? 'A → Z' : 'Z → A'}</button><button class="text-button" data-action="toggle-favorite">${state.favorites?.includes(state.currentPath) ? 'Unpin folder' : 'Pin folder'}</button></div>${filterMenu}${chips ? `<div class="filter-chips" aria-label="Active filters">${chips}</div>` : ''}
     ${state.favorites?.length ? `<div class="library-favorites" aria-label="Pinned folders">${state.favorites.map(path => `<button class="text-button" data-library-path="${esc(path)}">${esc(path || 'LIBRARY')}</button>`).join('')}</div>` : ''}
     ${selectedCount ? `<div class="selection-toolbar" role="toolbar" aria-label="Selected files"><strong>${selectedCount} selected</strong><button class="secondary" data-batch="move">Move to…</button><button class="secondary" data-batch="download">Download</button><button class="secondary" data-batch="delete">Delete</button><button class="text-button" data-batch="clear">Clear</button></div>` : ''}
-    <div class="hero-actions">
-      <button class="primary" data-view="send" ${sel && selectedCount === 1 ? '' : 'disabled'}>Send ${selectedCount > 1 ? `${selectedCount} files` : sel ? esc(sel.split('/').pop()) : 'selection'} →</button>
-      ${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}
-      <button class="secondary" data-action="upload">Upload…</button>
-      <button class="secondary" data-action="upload-folder">Upload folder…</button>
-      <button class="secondary" data-action="new-folder">New folder</button>
-      <button class="text-button" data-view="trash">Trash</button>
-    </div>
+    <div class="hero-actions library-secondary-actions"><button class="primary" data-view="send" ${sel && selectedCount === 1 ? '' : 'disabled'}>Send ${selectedCount > 1 ? `${selectedCount} files` : sel ? esc(sel.split('/').pop()) : 'selection'} →</button>${state.currentPath ? `<button class="secondary" data-library-path="${esc(parent)}">..</button>` : ''}<button class="text-button" data-view="trash">Trash</button></div>
     ${searching ? `<p class="library-result-count">Search results across the library</p>` : ''}
     <div class="view-toggle"><span>VIEW</span><button class="${state.libraryView === 'list' ? 'active' : ''}" data-library-view="list">☷ List</button><button class="${state.libraryView === 'grid' ? 'active' : ''}" data-library-view="grid">▦ Grid</button></div>
-    <div class="${state.libraryView === 'grid' ? 'library-grid' : 'tree'}">${state.libraryView === 'list' ? libraryHeader() : ''}${rows || `<p class="empty">${searching ? 'No matching files.' : 'This folder is empty. Upload a weazldoc.'}</p>`}</div></div>`;
+    <div class="${state.libraryView === 'grid' ? 'library-grid' : 'tree'}">${state.libraryView === 'list' ? libraryHeader() : ''}${rows || `<p class="empty">${state.libraryLoading ? 'Loading library…' : searching ? 'No matching files.' : 'This folder is empty. Upload a weazldoc.'}</p>`}</div>${state.libraryNextCursor ? `<div class="library-load-more"><button class="secondary" data-library-more ${state.libraryLoading ? 'disabled' : ''}>${state.libraryLoading ? 'Loading…' : 'Load more'}</button></div>` : ''}</div>`;
 }
 
 function send() {
@@ -267,7 +266,7 @@ function send() {
     </div>` : '';
   return head('WEAZLCLOUD / SEND', kind === 'folder' ? 'Send this folder.' : 'Send this file.', 'Sealed at mint. Later edits do not change recipient’s link. Read-only. Burn-after-read is the default.') +
     result +
-    `<div class="panel active-place" style="margin-bottom:22px"><div class="panel-top"><span>${kind === 'folder' ? 'DIR' : 'FILE'}</span><span>SELECTED</span></div><h3>${esc(name)}</h3><p>${kind === 'folder' ? `${filesInFolder(state.selected.path).length} files sealed together.` : 'One file. Bytes recipient can open.'}</p></div>` +
+    `<div class="panel active-place" style="margin-bottom:22px"><div class="panel-top"><span>${kind === 'folder' ? 'DIR' : 'FILE'}</span><span>SELECTED</span></div><h3>${esc(name)}</h3><p>${kind === 'folder' ? 'This folder and its contents are included.' : 'One file. Bytes recipient can open.'}</p></div>` +
     `<form id="send-form" class="policy">
       <fieldset><legend>How recipient gets in</legend>
         <label class="choice"><input type="radio" name="gate" value="open" ${state.gate === 'open' ? 'checked' : ''}><span><strong>Open</strong><small>URL is the capability. No extra phrase.</small></span></label>
@@ -379,17 +378,26 @@ function photos() {
     if (!state.photoAlbumsLoaded) return heading + tabs + '<p class="empty">Loading albums…</p>';
     if (state.photoAlbumsError) return heading + tabs + `<p class="empty" role="alert">${esc(state.photoAlbumsError)}</p>`;
     const shown = albums.slice(0, state.photosShown || 60);
-    return heading + tabs + (shown.length ? `<div class="library-grid photo-albums">${shown.map(album => `<button class="photo-album-card" data-photo-album="${esc(album.path)}" aria-label="Open album ${esc(album.title)}"><div class="photo-album-cover">${album.cover ? `<img class="grid-preview" data-grid-thumbnail="${esc(album.cover)}" alt="" loading="lazy">` : '<span aria-hidden="true">▧</span>'}</div><strong>${esc(album.title)}</strong><small>${album.count} ${album.count === 1 ? 'item' : 'items'}</small>${album.description ? `<p>${esc(album.description)}</p>` : ''}${album.metadata_warning ? '<small>Using folder name · album details unavailable</small>' : ''}</button>`).join('')}</div>` : '<p class="empty">No albums yet. Named Takeout albums appear here as their files arrive; yearly collections stay in All photos.</p>') + (shown.length < albums.length ? '<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more albums</button></div>' : '');
+    return heading + tabs + (shown.length ? `<div class="library-grid photo-albums">${shown.map(album => `<button class="photo-album-card" data-photo-album="${esc(album.path)}" aria-label="Open album ${esc(album.title)}"><div class="photo-album-cover">${album.cover_id ? `<img class="grid-preview" data-photo-thumbnail="${esc(album.cover_id)}" alt="" loading="lazy">` : '<span aria-hidden="true">▧</span>'}</div><strong>${esc(album.title)}</strong><small>${album.count} ${album.count === 1 ? 'item' : 'items'}</small>${album.description ? `<p>${esc(album.description)}</p>` : ''}${album.metadata_warning ? '<small>Using folder name · album details unavailable</small>' : ''}</button>`).join('')}</div>` : '<p class="empty">No albums yet. Named Takeout albums appear here as their files arrive; yearly collections stay in All photos.</p>') + (shown.length < albums.length ? '<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more albums</button></div>' : '');
   }
   if (state.photosAlbum && !selected) {
     return heading + tabs + `<p class="empty">${state.photoAlbumsError ? esc(state.photoAlbumsError) : !state.photoAlbumsLoaded ? 'Loading album…' : 'This album is no longer in the library.'}</p>`;
   }
-  const media = files.filter(f => !f.folder && /^Photos\//.test(f.folders.concat(f.title).join('/')) && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?|mp4|mov|m4v|webm|mkv)$/i.test(f.title) && (!selected || f.folders.concat(f.title).join('/').startsWith(selected.path + '/')));
-  media.sort((a, b) => (b.mtime || '').localeCompare(a.mtime || '') || a.title.localeCompare(b.title));
-  const shown = media.slice(0, state.photosShown || 60);
-  const title = selected ? head('PHOTOS / ALBUM', esc(selected.title), esc(selected.description || `${media.length} photos and videos`)) : heading;
+  const media = state.photoItems || [];
+  const columns = Math.max(1, state.photoColumns || 4);
+  const start = Math.min(media.length, state.photoWindowStart || 0);
+  const end = Math.min(media.length, Math.max(start, state.photoWindowEnd || Math.min(media.length, columns * 8)));
+  const topRows = Math.floor(start / columns);
+  const bottomRows = Math.ceil((media.length - end) / columns);
+  const spacer = rows => rows > 0 ? `<div class="photo-virtual-spacer" aria-hidden="true" style="height:${Math.max(0, rows * 272 - 12)}px"></div>` : '';
+  const prep = state.photoPreparation;
+  const prepLabel = prep?.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}` : 'Prepare previews';
+  const prepActive = prep?.enabled && ['queued', 'running', 'paused_storage'].includes(prep.status);
+  const tools = `<div class="hero-actions photo-tools"><button class="secondary" data-action="photo-preparation" data-prep-action="${prepActive ? 'pause' : 'resume'}">${prepActive ? 'Pause preparation' : 'Prepare previews'}</button>${prep?.failed ? '<button class="secondary" data-action="photo-preparation" data-prep-action="retry">Retry failed previews</button>' : ''}<small data-photo-prep-status>${esc(prepLabel)}${prep?.failed ? ` · ${prep.failed} failed` : ''}${prep?.error ? ` · ${esc(prep.error)}` : ''}</small></div>`;
+  const title = selected ? head('PHOTOS / ALBUM', esc(selected.title), esc(selected.description || `${selected.count} photos and videos`)) : heading;
   return title + tabs + (selected ? '<button class="text-button" data-photos-mode="albums">← All albums</button>' : '') +
-    (media.length ? `<div class="library-grid">${shown.map(f => gridFileCard(f, false)).join('')}</div>${shown.length < media.length ? `<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more · ${media.length - shown.length} left</button></div>` : ''}` : `<p class="empty">${selected ? 'No media in this album yet. More files may arrive in the next ZIP.' : 'Photos will appear here after the Google Takeout import.'}</p>`);
+    tools + (state.photoError ? `<p class="empty" role="alert">${esc(state.photoError)}</p>` : '') +
+    (media.length ? `<div class="library-grid photo-grid">${spacer(topRows)}${media.slice(start, end).map(f => gridFileCard(f, false, true)).join('')}${spacer(bottomRows)}</div>${state.photoHasMore ? `<div class="hero-actions"><button class="secondary" data-photo-load-more data-action="photos-more" ${state.photoLoading ? 'disabled' : ''}>${state.photoLoading ? 'Loading…' : 'Load more photos'}</button></div>` : ''}` : `<p class="empty">${state.photoLoading ? 'Loading photos…' : selected ? 'No media in this album yet. More files may arrive in the next ZIP.' : 'Photos will appear here after the Google Takeout import.'}</p>`);
 }
 
 function check() {
@@ -464,27 +472,7 @@ export function renderMain() {
     if (active) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
-  renderSide();
   requestAnimationFrame(restoreMediaPlayback);
-}
-
-export function renderSide() {
-  const sendView = state.view === 'send';
-  const picking = (state.view === 'library' || sendView) && state.selected;
-  $('#side-title').innerHTML = picking || sendView ? 'This grab' : 'This node';
-  $('#side-eyebrow').textContent = sendView ? 'SEALED AT MINT.' : picking ? 'THEN SEND.' : 'WHAT HAPPENS NEXT.';
-  $('#side-action').textContent = (sendView || state.view === 'library') ? 'Clear' : 'Places';
-  if (state.selected) {
-    const name = selectedName();
-    const kind = state.selected.type === 'folder' ? 'DIR' : 'FILE';
-    $('#queue').innerHTML = `<div class="side-row"><span class="kind">${kind}</span><span><strong>${esc(name.split('/').pop())}</strong><small>${esc(name)}</small></span></div>`;
-    return;
-  }
-  const grabHost = state.grabBase ? state.grabBase.replace(/^https:\/\//, '') : 'not set';
-  const davHost = state.driveBase ? state.driveBase.replace(/^davs:\/\//, '') : 'not set';
-  $('#queue').innerHTML = `<div class="side-row"><span class="kind">GRAB</span><span><strong>${esc(grabHost)}</strong><small>phone reachability</small></span></div>
-    <div class="side-row"><span class="kind">DAV</span><span><strong>${esc(davHost)}</strong><small>Files · no FUSE</small></span></div>
-    <div class="side-row"><span class="kind">LIVE</span><span><strong>${liveCapsules().length} capsules</strong><small>burn-after-read default</small></span></div>`;
 }
 
 export function renderDeck() {
@@ -505,21 +493,7 @@ export function renderDeck() {
   if (quotaNumber) quotaNumber.textContent = quota ? `${quotaPercent}%` : '—';
   const quotaCaption = $('#quota-caption');
   if (quotaCaption) quotaCaption.textContent = quota ? `${formatBytes(quota.used)} physical · ${formatBytes(quota.logical_bytes || 0)} library · ${formatBytes(quota.available_bytes || 0)} available` : 'Waiting for vault';
-  const unit = $('#dedupe-unit');
-  const heading = $('#dedupe-heading');
-  if (state.engine && !busy) {
-    $('#dedupe-n').textContent = String(files.length);
-    if (unit) unit.textContent = '';
-    if (heading) heading.textContent = 'IN THE LIBRARY';
-    $('#dedupe-tag').textContent = 'LIBRARY';
-    $('#dedupe-caption').textContent = 'FILES ON THIS NODE';
-  } else {
-    $('#dedupe-n').textContent = String(dedupe);
-    if (unit) unit.textContent = '%';
-    if (heading) heading.textContent = 'ALREADY IN THE STORE';
-    $('#dedupe-tag').textContent = ingest ? 'INGEST' : minting ? 'MINT' : `DEDUPE ${dedupe}%`;
-    $('#dedupe-caption').textContent = ingest ? 'NOT STORED TWICE · THIS DUMP' : 'NOT STORED TWICE · RESTIC';
-  }
+  $('#dedupe-tag').textContent = ingest ? 'INGEST' : minting ? 'MINT' : `DEDUPE ${dedupe}%`;
   $('#source').textContent = state.unlocked ? (busy ? (ingest ? 'INGESTING' : 'MINTING') : 'VAULT OPEN') : 'LOCKED';
   $('#strip-status').textContent = $('#source').textContent;
   $('#cancel').hidden = !busy;

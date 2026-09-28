@@ -56,10 +56,21 @@ type tree struct {
 }
 
 type Catalog struct {
-	mu    sync.Mutex
-	path  string
-	vault *vault.Vault
-	files []File
+	mu           sync.Mutex
+	path         string
+	vault        *vault.Vault
+	files        []File
+	children     map[string][]File
+	byPath       map[string]File
+	summary      catalogSummary
+	summaryReady bool
+	version      uint64
+	diskInfo     os.FileInfo
+}
+
+type catalogSummary struct {
+	logical, unique, trash int64
+	trashCount             int
 }
 
 func New(path string, v *vault.Vault) *Catalog {
@@ -78,9 +89,13 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = nil
+	c.children = nil
+	c.byPath = nil
+	c.summaryReady = false
 	b, err := os.ReadFile(c.path)
 	if os.IsNotExist(err) {
 		c.files = nil
+		c.diskInfo = nil
 		return nil
 	}
 	if err != nil {
@@ -105,6 +120,10 @@ func (c *Catalog) load(persistUpgrade bool) error {
 		}
 	}
 	c.files = files
+	c.children = indexChildren(files)
+	c.byPath = indexPaths(files)
+	c.diskInfo, _ = os.Stat(c.path)
+	c.version++
 	return nil
 }
 
@@ -140,17 +159,6 @@ func (c *Catalog) Trash() []File {
 		}
 	}
 	return out
-}
-
-func (c *Catalog) Get(path string) (File, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, f := range c.files {
-		if f.Path == path && f.Present {
-			return cloneFile(f), true
-		}
-	}
-	return File{}, false
 }
 
 func (c *Catalog) Mkdir(path string) error {
@@ -236,5 +244,13 @@ func (c *Catalog) saveFilesLocked(files []File) error {
 	if err != nil {
 		return err
 	}
-	return cryptox.AtomicWrite(c.path, append(raw, '\n'), 0o600)
+	if err := cryptox.AtomicWrite(c.path, append(raw, '\n'), 0o600); err != nil {
+		return err
+	}
+	c.diskInfo, _ = os.Stat(c.path)
+	c.summaryReady = false
+	c.children = indexChildren(files)
+	c.byPath = indexPaths(files)
+	c.version++
+	return nil
 }

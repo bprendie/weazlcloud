@@ -25,7 +25,7 @@ try:
         for filename,entries in {
             'takeout-smoke-1-001.zip':{'Takeout/Drive/good.txt':b'keep this','Takeout/Drive/bad.txt':b'unique-payload'},
             'takeout-smoke-1-002.zip':{'Takeout/Google Photos/Album/photo.jpg':b'photo','Takeout/Google Photos/Album/metadata.json':b'{"title":"Smoke album"}'},
-            'takeout-smoke-2-001.zip':{'Takeout/Drive/last.txt':b'last file'},
+            'takeout-smoke-2-001.zip':{'Takeout/Drive/last.txt':b'last file', 'Takeout/Drive/ last.txt':b'another version', 'Takeout/Drive/tree':b'original file', 'Takeout/Drive/tree/child.txt':b'child preserved', 'Takeout/Drive/tree/sub/leaf.txt':b'nested preserved', 'Takeout/Drive/after.txt':b'kept going'},
         }.items():
             with zipfile.ZipFile(stage/filename,'w',compression=zipfile.ZIP_STORED) as z:
                 for path,body in entries.items():z.writestr(path,body)
@@ -53,14 +53,16 @@ try:
         else:raise AssertionError('batch did not finish')
         report=json.loads((work/'report.json').read_text())
         errors=json.loads((work/'corrupt-files.json').read_text())
-        assert report['landed_files']==4,report
+        assert report['landed_files']==9,report
         assert report['skipped_corrupt_files']==1,report
         assert report['physical_repository_bytes']>0,report
         assert errors['files'][0]['path']=='Takeout/Drive/bad.txt',errors
-        assert [p.name for p in stage.iterdir()]==['takeout-smoke-1-001.zip'],'corrupt ZIP must be retained'
-        assert report['retained_archives']==['takeout-smoke-1-001.zip']
+        assert sorted(p.name for p in stage.iterdir())==['takeout-smoke-1-001.zip','takeout-smoke-2-001.zip'],'problem ZIPs must be retained'
+        assert report['retained_archives']==['takeout-smoke-1-001.zip','takeout-smoke-2-001.zip']
+        assert len(report['archives']['takeout-smoke-2-001.zip']['summary']['renamed'])==1
+        assert len(report['archives']['takeout-smoke-2-001.zip']['summary']['directories'])==1
         assert report['archives']['takeout-smoke-1-001.zip']['status']=='retained'
-        assert all(x['status']=='removed' for n,x in report['archives'].items() if n!='takeout-smoke-1-001.zip')
-        print('PASS: wait gate, skip corrupt entry, Drive/Photos import, stored hash verification, resumable watcher, cleanup and disk report')
+        assert report['archives']['takeout-smoke-1-002.zip']['status']=='removed'
+        print('PASS: wait gate, skip corrupt entry, preserve conflicting versions, continue later files, Drive/Photos import, stored hash verification, resumable watcher, safe cleanup and disk report')
 finally:
     subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

@@ -123,6 +123,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listLibrary(w, r)
 	case r.URL.Path == "/api/library/thumbnail" && r.Method == http.MethodGet:
 		h.thumbnailLibrary(w, r)
+	case r.URL.Path == "/api/library/page" && r.Method == http.MethodGet:
+		h.listFolderPage(w, r)
+	case r.URL.Path == "/api/library/search/page" && r.Method == http.MethodGet:
+		h.searchFolderPage(w, r)
 	case r.URL.Path == "/api/library/capability" && r.Method == http.MethodGet:
 		h.capabilityLibrary(w, r)
 	case r.URL.Path == "/api/library/events" && r.Method == http.MethodGet:

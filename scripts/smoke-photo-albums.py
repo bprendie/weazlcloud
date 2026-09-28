@@ -8,17 +8,30 @@ import shutil
 import subprocess
 import tempfile
 import time
+from urllib.parse import urlparse
 import uuid
 import zipfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 from smoke_music_grid import smoke_music
+from smoke_library_ui import smoke_library_ui
+from smoke_photo_preparation import smoke_photo_preparation
 
 name = 'weazl-albums-' + uuid.uuid4().hex[:10]
 volume = name + '-data'
 port = int(os.environ.get('WEAZLCLOUD_ALBUM_PORT', '19380'))
 base = f'http://127.0.0.1:{port}'
 image = os.environ.get('WEAZLCLOUD_IMAGE', 'weazlcloud:album-smoke')
+storage_backend = os.environ.get('WEAZLCLOUD_SMOKE_STORAGE_BACKEND', 'restic')
+host_network = os.environ.get('WEAZLCLOUD_SMOKE_HOST_NETWORK') == '1'
+network_args = ['--network', 'host'] if host_network else ['-p', f'127.0.0.1:{port}:7272']
+resource_args = []
+for setting, flag in [('WEAZLCLOUD_SMOKE_CPUS', '--cpus'), ('WEAZLCLOUD_SMOKE_MEMORY', '--memory')]:
+    if os.environ.get(setting):
+        resource_args += [flag, os.environ[setting]]
+desk_addr = f'127.0.0.1:{port}' if host_network else ':7272'
+share_addr = f'127.0.0.1:{port+1}' if host_network else ':7273'
+drive_addr = f'127.0.0.1:{port+2}' if host_network else ':7274'
 headers = {'X-Weazl-Desk': '1'}
 png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
 
@@ -44,9 +57,10 @@ try:
                 for path, content in entries.items():
                     z.writestr(path, content)
             os.chmod(Path(root)/filename, 0o644)
-        docker('run', '-d', '--name', name, '-p', f'127.0.0.1:{port}:7272',
-               '-e', 'WEAZLCLOUD_DATA=/data', '-e', 'WEAZLCLOUD_DESK_ADDR=:7272',
-               '-e', 'WEAZLCLOUD_SHARE_ADDR=:7273', '-e', 'WEAZLCLOUD_DRIVE_ADDR=:7274',
+        docker('run', '-d', '--name', name, *network_args, *resource_args,
+               '-e', 'WEAZLCLOUD_DATA=/data', '-e', f'WEAZLCLOUD_DESK_ADDR={desk_addr}',
+               '-e', f'WEAZLCLOUD_SHARE_ADDR={share_addr}', '-e', f'WEAZLCLOUD_DRIVE_ADDR={drive_addr}',
+               '-e', f'WEAZLCLOUD_STORAGE_BACKEND={storage_backend}',
                '-e', 'WEAZLCLOUD_IMPORT_DIR=/import', '-e', 'WEAZLCLOUD_IMPORT_OWNER=albums',
                '-v', volume+':/data', '-v', root+':/import:ro', image)
         with sync_playwright() as p:
@@ -54,10 +68,13 @@ try:
             context = browser.new_context(base_url=base, viewport={'width': 1440, 'height': 1000})
             for _ in range(80):
                 try:
-                    if context.request.get('/ready').ok: break
+                    if context.request.get('/ready', timeout=2000).ok: break
                 except Exception: pass
                 time.sleep(.25)
             else: raise AssertionError('container not ready')
+            if os.environ.get('WEAZLCLOUD_SMOKE_CPUS') == '2' and os.environ.get('WEAZLCLOUD_SMOKE_MEMORY') == '4g':
+                logs = docker('logs', name)
+                assert 'cpu workers=2 background=1 readers=1 memory=536870912' in logs.stdout + logs.stderr, logs
             def post(path, data):
                 response = context.request.post(path, data=data, headers=headers)
                 assert response.ok, response.text()
@@ -66,7 +83,9 @@ try:
             post('/api/unlock', {'passphrase':'album-test-pass'})
             page = context.new_page()
             errors = []
+            requests = []
             page.on('pageerror', lambda error: errors.append(str(error)))
+            page.on('request', lambda request: requests.append(request.url))
             page.goto(base+'/#takeout')
             # Clicking navigation also exercises the normal page loading path.
             page.locator('nav [data-view="takeout"]').click()
@@ -106,16 +125,39 @@ try:
             page.locator('.dialog-close').click()
             page.locator('nav [data-view="takeout"]').click()
             import_zip('part2.zip')
-            page.locator('nav [data-view="photos"]').click()
+            requests.clear()
+            photo_started = time.perf_counter()
+            page.goto(base+'/#photos')
+            expect(page.locator('.photo-grid .library-card')).to_have_count(4)
+            first_screen_ms = (time.perf_counter() - photo_started) * 1000
+            photo_dom_cards = page.locator('.photo-grid .library-card').count()
+            photo_requests = list(requests)
+            assert not any(urlparse(url).path == '/api/library' for url in photo_requests), photo_requests
+            assert page.locator('.photo-grid .library-card').count() <= 40
+            photo_thumb = page.locator('.photo-grid [data-photo-thumbnail]').first
+            photo_thumb.wait_for(state='attached')
+            page.wait_for_function('''() => {
+                const img = document.querySelector('.photo-grid [data-photo-thumbnail]');
+                return img && img.complete && img.naturalWidth > 0;
+            }''')
+            first_thumbnail_ms = (time.perf_counter() - photo_started) * 1000
+            page.locator('[data-action="photo-preparation"]').click()
+            for _ in range(120):
+                preparation = context.request.get('/api/photos/preparation', headers=headers).json()
+                if preparation.get('status') == 'complete': break
+                time.sleep(.25)
+            else: raise AssertionError(f'photo preparation did not finish: {preparation}')
+            assert preparation.get('ready') == 4 and preparation.get('failed') == 0, preparation
             page.locator('[data-photos-mode="albums"]').first.click()
             expect(page.locator('.photo-album-card')).to_have_count(2)
             page.locator('[data-photo-album="Photos/Trip"]').click()
             expect(page.locator('.library-card')).to_have_count(2)
             page.screenshot(path='/tmp/weazl-photo-albums-smoke.png', full_page=True)
+            post('/api/photos/preparation', {'action': 'pause'})
             docker('restart', name)
             for _ in range(80):
                 try:
-                    if context.request.get('/ready').ok: break
+                    if context.request.get('/ready', timeout=2000).ok: break
                 except Exception: pass
                 time.sleep(.25)
             post('/api/login', {'username':'albums','password':'album-test-pass'})
@@ -123,11 +165,15 @@ try:
             page.reload()
             expect(page.locator('.library-card')).to_have_count(2)
             assert not errors, errors
+            smoke_photo_preparation(context, page, post, png)
+            smoke_library_ui(page, storage_backend)
+            assert not errors, errors
             smoke_music(context, page, post)
             assert not errors, errors
             assert (Path(root)/'part1.zip').exists()
             browser.close()
-            print('PASS: split ZIP albums, metadata titles, duplicate titles stay separate, covers, preview, deep links, restart; ZIPs retained')
+            print(f'PHOTOS SMOKE: first 4 cards {first_screen_ms:.0f} ms; first thumbnail {first_thumbnail_ms:.0f} ms; DOM cards {photo_dom_cards}')
+            print(f'PASS ({storage_backend}): paginated Photos without full-library listing, thumbnail IDs, preview preparation, split albums, metadata titles, covers, deep links and restart; ZIPs retained')
 finally:
     subprocess.run(['docker','rm','-f',name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['docker','volume','rm',volume], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

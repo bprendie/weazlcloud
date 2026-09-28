@@ -31,7 +31,7 @@ func (r *Registry) CleanupExpiredTrashBytes(ctx context.Context) (int64, error) 
 		}
 		cleanupErr := func() error {
 			if lockedForMaintenance {
-				defer resource.Vault.Lock()
+				defer resource.LockVault()
 			}
 			bytes, err := resource.Lib.CleanupTrash(ctx, cutoff)
 			reclaimed += bytes

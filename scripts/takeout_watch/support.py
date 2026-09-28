@@ -13,6 +13,7 @@ import urllib.request
 import zipfile
 import zlib
 from pathlib import Path
+from conflicts import entry_key, verify_renames, verify_directories, routed_destination
 
 
 def atomic_json(path, value):
@@ -190,15 +191,20 @@ def verify(path, prepared, summary, api):
     library = {f['path']:f for f in api.json('/api/library')['files']}
     checked = 0
     with zipfile.ZipFile(path) as z:
+        directories = verify_directories(z, summary, destination)
+        renamed = verify_renames(z, summary, api, destination, digest, directories)
         for f in z.infolist():
             if f.is_dir() or f.filename in errors:
                 continue
-            stored = library.get(destination(f.filename))
+            target = renamed.get(entry_key(f), {}).get('path', routed_destination(destination(f.filename), directories))
+            stored = library.get(target)
             if not stored or stored.get('folder') or stored['size'] != f.file_size:
                 raise RuntimeError('library entry missing or wrong size: '+f.filename)
             checked += 1
     for sample in prepared['samples']:
-        with api.open('/api/library?path='+urllib.parse.quote(sample['path'],safe='')) as stream:
+        original = routed_destination(sample['path'], directories)
+        target = next((r['path'] for r in renamed.values() if r['original'] == original and r['sha256'] == sample['sha256']), original)
+        with api.open('/api/library?path='+urllib.parse.quote(target,safe='')) as stream:
             sha, size = digest(stream)
         if sha != sample['sha256'] or size != sample['bytes']:
             raise RuntimeError('stored file hash mismatch: '+sample['path'])

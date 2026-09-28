@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 const PhotosRoot = "Photos/"
@@ -23,6 +24,7 @@ type PhotoAlbum struct {
 	Description     string `json:"description,omitempty"`
 	Count           int    `json:"count"`
 	Cover           string `json:"cover,omitempty"`
+	CoverID         string `json:"cover_id,omitempty"`
 	Source          string `json:"source"`
 	MetadataWarning bool   `json:"metadata_warning,omitempty"`
 }
@@ -39,6 +41,15 @@ func photoMedia(name string) bool {
 		return true
 	}
 	return false
+}
+
+func photoRaster(name string) bool {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".jpg", ".jpeg", ".png", ".gif":
+		return true
+	default:
+		return false
+	}
 }
 
 func albumMetadataName(name string) bool {
@@ -74,12 +85,16 @@ func parseAlbumMetadata(raw []byte) albumMetadata {
 func (l *Library) PhotoAlbums(ctx context.Context) ([]PhotoAlbum, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
+	if !l.vault.Unlocked() {
+		return nil, vault.ErrLocked
+	}
+	entries, err := l.photoEntriesLocked(ctx)
+	if err != nil {
 		return nil, err
 	}
 	groups := make(map[string]*PhotoAlbum)
 	metadata := make(map[string]catalog.File)
-	for _, f := range l.catalog.List() {
+	for _, f := range entries {
 		if !strings.HasPrefix(f.Path, PhotosRoot) {
 			continue
 		}
@@ -107,7 +122,7 @@ func (l *Library) PhotoAlbums(ctx context.Context) ([]PhotoAlbum, error) {
 			album.Count++
 			// Prefer a still image; videos remain playable inside the album.
 			if !isPhotoVideo(f.Path) && (album.Cover == "" || f.Path < album.Cover) {
-				album.Cover = f.Path
+				album.Cover, album.CoverID = f.Path, f.EntryID
 			}
 		}
 	}

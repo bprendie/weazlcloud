@@ -63,6 +63,7 @@ func (h *Handler) rekeyVault(w http.ResponseWriter, r *http.Request) {
 		apiError(w, err)
 		return
 	}
+	res.Lib.ForgetVaultSession()
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "vault rekeyed"})
 }
 
@@ -70,11 +71,17 @@ func (h *Handler) multiStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{"setup": h.users.Count() > 0, "users": h.users.Count(), "authenticated": false}
 	if u, err := h.users.Current(r); err == nil {
 		ctx, release, ok := h.registry.Enter(r.Context(), u.ID)
-		if !ok { writeJSON(w, http.StatusOK, out); return }
+		if !ok {
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
 		defer release()
 		r = r.WithContext(ctx)
 		current, exists := h.users.User(u.ID)
-		if !exists || current.Disabled || current.Deleting { writeJSON(w, http.StatusOK, out); return }
+		if !exists || current.Disabled || current.Deleting {
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
 		out["authenticated"] = true
 		out["username"] = u.Username
 		out["admin"] = u.Admin

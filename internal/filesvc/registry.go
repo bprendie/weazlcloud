@@ -21,6 +21,12 @@ type Resource struct {
 	Archives *ArchiveManager
 }
 
+// LockVault locks the owner's key and immediately drops decrypted library data.
+func (r *Resource) LockVault() {
+	r.Vault.Lock()
+	r.Lib.ForgetVaultSession()
+}
+
 type Registry struct {
 	users        *users.Store
 	quota        *quota.Manager
@@ -74,7 +80,7 @@ func (r *Registry) ReconcileShared(ctx context.Context) error {
 		}
 		err := resource.Lib.ReconcileShared(ctx)
 		if locked {
-			resource.Vault.Lock()
+			resource.LockVault()
 		}
 		if err != nil {
 			return err
@@ -129,6 +135,7 @@ func (r *Registry) For(u users.User) *Resource {
 	}
 	item := &Resource{Vault: v, Lib: l, Changes: changes, Archives: NewArchiveManager(l, reserve)}
 	item.Lib.SetActivityTracker(r.activity)
+	item.Lib.SetPreviewLease(func(ctx context.Context) (context.Context, func(), bool) { return r.Enter(ctx, u.ID) })
 	item.Archives.SetActivityTracker(r.activity)
 	r.items[u.ID] = item
 	return item

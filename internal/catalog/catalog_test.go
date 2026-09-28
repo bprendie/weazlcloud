@@ -152,3 +152,26 @@ func TestCatalogSaveFailureDoesNotPublishMemoryState(t *testing.T) {
 		t.Fatal("committed catalog entry disappeared after failed save")
 	}
 }
+
+func TestSummaryCountsLiveUniqueAndTrashBytes(t *testing.T) {
+	c := testCatalog(t)
+	c.files = []File{
+		{Path: "one", Size: 10, Hash: "same", Present: true},
+		{Path: "two", Size: 10, Hash: "same", Present: true},
+		{Path: "gone", Size: 7, Hash: "old", Present: false, DeletedAt: timePtr(time.Now())},
+		{Path: "folder", Folder: true, Present: false, DeletedAt: timePtr(time.Now())},
+	}
+	logical, unique, trash, count := c.Summary()
+	if logical != 20 || unique != 10 || trash != 7 || count != 1 {
+		t.Fatalf("summary logical=%d unique=%d trash=%d count=%d", logical, unique, trash, count)
+	}
+	if err := c.Put(File{Path: "three", Size: 5, Hash: "new", Present: true}); err != nil {
+		t.Fatal(err)
+	}
+	logical, unique, trash, count = c.Summary()
+	if logical != 25 || unique != 15 || trash != 7 || count != 1 {
+		t.Fatalf("summary after commit logical=%d unique=%d trash=%d count=%d", logical, unique, trash, count)
+	}
+}
+
+func timePtr(t time.Time) *time.Time { return &t }

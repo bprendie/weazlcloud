@@ -19,7 +19,8 @@ func (l *Library) commitSharedStaged(ctx context.Context, stage stagedUpload) (c
 	if err := l.backend.Ensure(ctx); err != nil {
 		return catalog.File{}, err
 	}
-	if err := l.catalog.Load(); err != nil {
+	_, session := l.vault.State()
+	if err := l.loadCatalogSession(session); err != nil {
 		return catalog.File{}, err
 	}
 	if stage.EntryID == "" || stage.Revision == 0 {

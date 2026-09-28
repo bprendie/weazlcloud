@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
+	"github.com/klauspost/compress/zstd"
 	"github.com/restic/chunker"
 )
 
@@ -111,6 +112,13 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 	}
 	c := chunker.New(contextReader{ctx, stage}, chunkPol, chunker.WithBoundaries(chunkMin, chunkMax), chunker.WithAverageBits(chunkAvgBits))
 	buffer := make([]byte, chunkMax)
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderCRC(true))
+	if err != nil {
+		plain.Close()
+		cryptox.Zero(key)
+		return "", nil, err
+	}
+	defer encoder.Close()
 	var count uint64
 	var offset int64
 	for {
@@ -128,7 +136,7 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 			cryptox.Zero(key)
 			return "", nil, ErrFormat
 		}
-		chunkKey, objectID, chunkErr := s.writeChunk(ctx, op, id, chunk.Data)
+		chunkKey, objectID, chunkErr := s.writeChunk(ctx, op, id, encoder, chunk.Data)
 		if chunkErr != nil {
 			plain.Close()
 			cryptox.Zero(key)
@@ -209,8 +217,8 @@ func (s *Store) removeClaimedObject(id string) error {
 	return err
 }
 
-func (s *Store) writeChunk(ctx context.Context, op, parent string, data []byte) ([]byte, string, error) {
-	encoded, encoding, err := encodeChunk(data)
+func (s *Store) writeChunk(ctx context.Context, op, parent string, encoder *zstd.Encoder, data []byte) ([]byte, string, error) {
+	encoded, encoding, err := encodeChunkWith(encoder, data)
 	if err != nil {
 		return nil, "", err
 	}
