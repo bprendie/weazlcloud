@@ -72,6 +72,9 @@ The dry run reads sources and persists its own encrypted checkpoint/report; it
 does not change catalog dates or revisions. It checkpoints processing batches
 of up to 100 results, so examined counts may remain unchanged during source reads.
 Source reads have noticeable Restic startup/index overhead on this repository.
+The first durable batch checkpoint at **23:49:08 UTC** reports 100 examined,
+98 recoverable updates and two failed reads. These are dry-run candidates, not
+applied catalog dates. Both failures remain recorded and did not stop processing.
 No completion time is promised from a partial first batch.
 
 A detached one-time supervisor runs on the host, independent of SSH/browser
