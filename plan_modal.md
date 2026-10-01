@@ -725,3 +725,14 @@ The executable follow-up is now defined in
 Its T0–T6 phases cover metadata repair integration, scoped direct seeking, the
 desktop/mobile rail, local acceptance checks and a separately authorized rollout.
 Additional Immich-style features are ranked proposals, not added implementation scope.
+
+## October 1 timeline rollout
+
+The approved `4ca6cf2` timeline release is live, preserving the complete Library,
+photo identities, 16 albums, settings and sampled original bytes. The dedicated
+[timeline rollout record](docs/photos-timeline-rollout-2026-10-01.md) records the
+fresh checkpoint, healthy services and live browser evidence. Capture-date
+backfill is **running, not complete**: a detached owner-authenticated supervisor
+waits for the full dry run, inspects coverage/errors, applies recoverable dates,
+and reconciles originals/memberships. Final live date counts and dated UI checks
+remain open.

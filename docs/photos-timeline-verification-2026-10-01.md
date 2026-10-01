@@ -123,7 +123,13 @@ Real cold production unlock/index cost, sustained mixed upload/render/repair RSS
 real-library frames and actual iOS Safari remain separate measurement gates. Chromium touch emulation does not establish Apple-device
 compatibility. No SQLCipher/database cutover or storage migration is included.
 
-Production release and existing-data repair remain a separate T6 gate. Preserve
-image/config and a consistent data checkpoint, run a private dry run, inspect its
-source coverage/ambiguities, then apply and reconcile source identities and album
-memberships. An earlier deployment checkpoint is not a backup of later writes.
+Published source: `4ca6cf287770e4fa642d3f071775fefea83eae03`.
+[GitHub CI run 36925632808](https://github.com/bprendie/weazlcloud/actions/runs/36925632808)
+passed checks (including native sanitizer), container and browser jobs.
+
+Bob subsequently authorized production release and existing-data repair (T6).
+The network restriction was resolved. The tested release is live, with a fresh
+consistent checkpoint and passed preservation/HTTPS/desktop-mobile browser
+checks. A supervised owner-private full dry run is running; apply follows
+inspection of its completed report. Final live date counts and dated browser
+verification remain open. See [the production timeline rollout record](photos-timeline-rollout-2026-10-01.md).

@@ -1,7 +1,7 @@
 # Photos production rollout — October 1, 2026
 
 Bob authorized production deployment after the local release checks and publication.
-Production now runs `weazlcloud:release-2c4cede`, built from source revision
+The earlier modal rollout ran `weazlcloud:release-2c4cede`, built from source revision
 `2c4cede8a1b34707a7e7c34cc6a847fab60df6f6`. Its GitHub CI run
 [36797709993](https://github.com/bprendie/weazlcloud/actions/runs/36797709993)
 passed. Both API and isolated photo-worker containers are healthy.
@@ -60,3 +60,12 @@ New derivative identities require preview regeneration; the older preparation
 had 31,683 ready and 685 failed of 32,368 entries. New cache readiness counters
 reset during reconciliation and should not be interpreted as lost originals.
 The resumed job is a server background task, independent of browser lifetime.
+
+## Later timeline release
+
+The same-day timeline release `4ca6cf2` now supersedes `2c4cede` on production.
+It adds the durable encrypted date-repair API and scoped rail. Fresh checkpoint,
+full preservation reconciliation, live browser checks and the running supervised
+dry-run/apply are recorded in [the timeline rollout record](photos-timeline-rollout-2026-10-01.md).
+The unknown-date counts above describe the earlier baseline, not a final repair
+result.

@@ -6,7 +6,7 @@ Owner: Bob
 
 Implementer: Luna
 
-Status: T0–T4 local gates passed; T5 automated acceptance and documentation complete. Manual Safari/real-library measurements and T6 live rollout/repair remain pending.
+Status: T0–T4 local gates passed; T5 automated acceptance and documentation complete. Manual Safari/real-library measurements remain open. T6 deployment verified; supervised live dry-run/apply and final reconciliation are in progress.
 
 ## What Bob should be able to do
 
@@ -314,12 +314,16 @@ and measurements honestly distinguish synthetic, tiny-fixture and real-library r
 
 ## T6 — authorized rollout and existing-data repair
 
-This phase stays pending until the session authorizes this release on production.
+Bob authorized production deployment and live repair on October 1. Execution
+access was restored and the tested release is live with a fresh consistent
+checkpoint and verified preservation. See [the live rollout record](docs/photos-timeline-rollout-2026-10-01.md).
+A detached supervisor is running the dry-run → inspect → apply → reconcile
+sequence; completion and real dated browser gates remain open.
 
-- [ ] Preserve current image/config and a consistent rollback checkpoint. Check
+- [x] Preserve current image/config and a consistent rollback checkpoint. Check
   active imports, uploads and preview jobs; follow the release runbook without
   wiping a vault or blindly restoring an old writer over newer metadata.
-- [ ] Deploy the tested image, verify readiness/public HTTPS and confirm that
+- [x] Deploy the tested image, verify readiness/public HTTPS and confirm that
   account/settings/originals/albums still reconcile. Retain the original backend.
 - [ ] Run an owner-private dry run against the live selected roots and retain its
   report. Inspect source coverage and ambiguity before the apply job.
@@ -370,8 +374,8 @@ without notifications or a feed imposed on the user.
 | T2 | Local gate passed | Conventional/supplemental and validated-title matches; ambiguity/size bounds; 1-TiB synthetic prefix cancellation; automatic late-sidecar repair and byte preservation. No additional embedded formats claimed. |
 | T3 | Local gate passed | Scoped month/day ranks, nearest-day and rank seeks, bounded before/after pages, filtered and cross-owner cursors. Warm metadata-only p95: 0.336 ms at 37,082 rows; 0.132 ms at 100,000. |
 | T4 | Local gate passed | Desktop and Chromium-touch pointer release, keyboard/date picker/Unknown, viewer/history/mode restoration, canceled seeks and tray clearance pass on both backends. Safari remains separate. |
-| T5 | Automated acceptance passed; manual measurements open | Full normal/race/check, container restart/migration, browser, Photos and recovery pass. Rail cards p95: 72.01/73.45 ms; HTTP pair: 4.18/4.08 ms (Restic/shared). Actual Safari, cold index and real-library sustained resource gates remain open. |
-| T6 | Pending later deployment instruction | No live backfill or new rollout under this workbook. |
+| T5 | Automated acceptance passed; manual measurements open | Full normal/race/check, container restart/migration, browser, Photos and recovery pass. Rail cards p95: 72.01/73.45 ms; HTTP pair: 4.18/4.08 ms (Restic/shared). GitHub CI run 36925632808 passed checks, container and browser. Actual Safari, cold index and real-library sustained resource gates remain open. |
+| T6 | Live deployment passed; repair in progress | Fresh 275,048-file checkpoint; original mounts/backend/limits retained. 96,971 Library entries, 37,082 media and 16 albums reconcile; sample originals unchanged. HTTPS and desktop/mobile Chromium pass. Supervised dry-run/apply and final source/date reconciliation remain running/open. |
 
 After each phase, record changed behavior, tests, measurements and limitations.
 Leave failed gates open. A photo missing metadata is not a reason to stop the
