@@ -25,6 +25,9 @@ func wrapKey(dir string, key, phrase []byte) error {
 }
 
 func (s *Store) Meta(id string) (Record, error) {
+	if !validGalleryToken(id) {
+		return Record{}, ErrGone
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rec, err := readMeta(filepath.Join(s.root, id))
@@ -47,6 +50,9 @@ func (s *Store) Grab(id, phrase string) ([]byte, Record, error) {
 }
 
 func (s *Store) grabLocked(id, phrase string) ([]byte, Record, error) {
+	if !validGalleryToken(id) {
+		return nil, Record{}, ErrGone
+	}
 	dir := filepath.Join(s.root, id)
 	rec, err := readMeta(dir)
 	if err != nil {
@@ -96,6 +102,10 @@ func (s *Store) grabLocked(id, phrase string) ([]byte, Record, error) {
 		return nil, rec, ErrStorage
 	}
 	if terminal {
+		if err := cleanupGallery(dir); err != nil {
+			cryptox.Zero(plain)
+			return nil, rec, ErrStorage
+		}
 		for _, name := range []string{"open.key", "pass.wrap", "payload"} {
 			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 				cryptox.Zero(plain)
@@ -107,6 +117,9 @@ func (s *Store) grabLocked(id, phrase string) ([]byte, Record, error) {
 }
 
 func (s *Store) Revoke(id string) error {
+	if !validGalleryToken(id) {
+		return ErrGone
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dir := filepath.Join(s.root, id)
@@ -118,7 +131,15 @@ func (s *Store) Revoke(id string) error {
 }
 
 func (s *Store) revokeDir(dir string, rec Record) error {
+	s.cancelGalleryLocked(rec.ID)
 	rec.Revoked = true
+	delete(s.galleryCache, rec.ID)
+	if err := writeMeta(dir, rec); err != nil {
+		return err
+	}
+	if err := cleanupGallery(dir); err != nil {
+		return err
+	}
 	for _, name := range []string{"open.key", "pass.wrap", "payload"} {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return err
@@ -176,7 +197,12 @@ func (s *Store) CleanupExpiredBytes(now time.Time) (int, int64, error) {
 		if err != nil {
 			return cleaned, reclaimed, err
 		}
-		if rec.Revoked || now.Before(rec.Expires) {
+		if !rec.Revoked && now.Before(rec.Expires) {
+			continue
+		}
+		// A final admitted transfer closes admission immediately, but retains
+		// frozen bytes until every already-admitted transfer has finished.
+		if now.Before(rec.Expires) && len(s.galleryStreams[rec.ID]) != 0 {
 			continue
 		}
 		bytes, err := capsulePayloadBytes(dir)
@@ -191,13 +217,35 @@ func (s *Store) CleanupExpiredBytes(now time.Time) (int, int64, error) {
 			return cleaned, reclaimed, err
 		}
 		reclaimed += bytes
-		cleaned++
+		if bytes > 0 {
+			cleaned++
+		}
 	}
 	return cleaned, reclaimed, nil
 }
 
 func capsulePayloadBytes(dir string) (int64, error) {
 	var total int64
+	galleryErr := filepath.WalkDir(filepath.Join(dir, "gallery"), func(name string, entry os.DirEntry, err error) error {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	if galleryErr != nil {
+		return total, galleryErr
+	}
 	for _, name := range []string{"open.key", "pass.wrap", "payload"} {
 		info, err := os.Stat(filepath.Join(dir, name))
 		if os.IsNotExist(err) {

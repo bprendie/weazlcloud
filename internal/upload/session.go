@@ -15,18 +15,19 @@ import (
 )
 
 type session struct {
-	ID          string    `json:"id"`
-	OwnerID     string    `json:"owner_id"`
-	Path        string    `json:"path"`
-	Size        int64     `json:"size"`
-	Offset      int64     `json:"offset"`
-	Expected    string    `json:"expected_hash,omitempty"`
-	Hash        string    `json:"hash,omitempty"`
-	ChunkHashes []string  `json:"chunk_hashes,omitempty"`
-	PendingHash string    `json:"pending_hash,omitempty"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	OwnerID         string    `json:"owner_id"`
+	Path            string    `json:"path"`
+	Size            int64     `json:"size"`
+	Offset          int64     `json:"offset"`
+	Expected        string    `json:"expected_hash,omitempty"`
+	IdempotencyHash string    `json:"idempotency_hash,omitempty"`
+	Hash            string    `json:"hash,omitempty"`
+	ChunkHashes     []string  `json:"chunk_hashes,omitempty"`
+	PendingHash     string    `json:"pending_hash,omitempty"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 var componentRE = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -87,7 +88,7 @@ func (m *Manager) readSessionLocked(owner, id string) (session, error) {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return session{}, ErrCorrupt
 	}
-	if s.ID != id || s.OwnerID != owner || s.Size < 0 || s.Offset < 0 || s.Offset > s.Size {
+	if s.ID != id || s.OwnerID != owner || s.Size < 0 || s.Offset < 0 || s.Offset > s.Size || len(s.IdempotencyHash) > 64 {
 		return session{}, ErrCorrupt
 	}
 	return s, nil

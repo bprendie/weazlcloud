@@ -4,11 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"github.com/bprendie/weazlcloud/internal/capsule"
+	"github.com/bprendie/weazlcloud/internal/quota"
+	"github.com/bprendie/weazlcloud/internal/users"
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/cookiejar"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
@@ -16,10 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/bprendie/weazlcloud/internal/capsule"
-	"github.com/bprendie/weazlcloud/internal/quota"
-	"github.com/bprendie/weazlcloud/internal/users"
 )
 
 func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
@@ -83,14 +81,18 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	}
 	h := NewMulti(us, capsule.New(filepath.Join(root, "capsules")), quota.New(root), "", "", root)
 	h.EnableTakeout(stage, "alice")
-	s := httptest.NewServer(h)
-	defer s.Close()
+	base := "http://takeout.test"
+	t.Cleanup(func() {
+		for _, user := range us.Users() {
+			h.registry.For(user).LockVault()
+		}
+	})
 	jar, _ := cookiejar.New(nil)
-	c := &http.Client{Jar: jar}
+	c := &http.Client{Jar: jar, Transport: handlerTransport{handler: h}}
 	post := func(url string, body any) *http.Response {
 		t.Helper()
 		raw, _ := json.Marshal(body)
-		req, _ := http.NewRequest(http.MethodPost, s.URL+url, bytes.NewReader(raw))
+		req, _ := http.NewRequest(http.MethodPost, base+url, bytes.NewReader(raw))
 		req.Header.Set("X-Weazl-Desk", "1")
 		req.Header.Set("Content-Type", "application/json")
 		res, err := c.Do(req)
@@ -116,7 +118,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	res.Body.Close()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
-		res, err = c.Get(s.URL + "/api/takeout")
+		res, err = c.Get(base + "/api/takeout")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +143,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	res, err = c.Get(s.URL + "/api/library?path=" + "Photos%2FPhotos%20from%202020%2Fpic.jpg")
+	res, err = c.Get(base + "/api/library?path=" + "Photos%2FPhotos%20from%202020%2Fpic.jpg")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("imported photo %d", res.StatusCode)
 	}
-	musicURL := s.URL + "/api/library/music?path=Music%2Fsong.mp3"
+	musicURL := base + "/api/library/music?path=Music%2Fsong.mp3"
 	res, err = c.Get(musicURL)
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +169,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		t.Fatalf("create bob %d", res.StatusCode)
 	}
 	res.Body.Close()
-	res, err = c.Get(s.URL + "/api/photos/albums")
+	res, err = c.Get(base + "/api/photos/albums")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,55 +186,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || len(albums.Albums) != 1 || albums.Albums[0].Title != "Summer holiday" || albums.Albums[0].Count != 1 {
 		t.Fatalf("albums %+v status %d", albums, res.StatusCode)
 	}
-	res, err = c.Get(s.URL + "/api/photos?limit=1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var photoPage struct {
-		Items      []map[string]any `json:"items"`
-		NextCursor string           `json:"next_cursor"`
-	}
-	if err = json.NewDecoder(res.Body).Decode(&photoPage); err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK || len(photoPage.Items) != 1 || photoPage.NextCursor == "" {
-		t.Fatalf("photo page %+v status %d", photoPage, res.StatusCode)
-	}
-	photoID, _ := photoPage.Items[0]["id"].(string)
-	if photoID == "" {
-		t.Fatal("photo page omitted entry ID")
-	}
-	res, err = c.Get(s.URL + "/api/library/thumbnail?id=" + url.QueryEscape(photoID) + "&size=320")
-	if err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("photo ID thumbnail status %d", res.StatusCode)
-	}
-	res = post("/api/photos/preparation", map[string]string{"action": "start"})
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("start photo preparation %d", res.StatusCode)
-	}
-	res = post("/api/photos/preparation", map[string]string{"action": "pause"})
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("pause photo preparation %d", res.StatusCode)
-	}
-	aliceCursor := photoPage.NextCursor
-	res, err = c.Get(s.URL + "/api/photos?limit=1&cursor=" + url.QueryEscape(aliceCursor))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = json.NewDecoder(res.Body).Decode(&photoPage); err != nil {
-		t.Fatal(err)
-	}
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK || len(photoPage.Items) != 1 {
-		t.Fatalf("photo page continuation %+v status %d", photoPage, res.StatusCode)
-	}
+	aliceCursor := smokeTakeoutPhotos(t, c, base, post)
 	res = post("/api/logout", map[string]any{})
 	res.Body.Close()
 	res = post("/api/login", map[string]string{"username": "bob", "password": "bob-pass"})
@@ -240,7 +194,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		t.Fatalf("bob login %d", res.StatusCode)
 	}
 	res.Body.Close()
-	res, err = c.Get(s.URL + "/api/takeout")
+	res, err = c.Get(base + "/api/takeout")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +212,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 		t.Fatalf("bob unlock %d", res.StatusCode)
 	}
 	res.Body.Close()
-	res, err = c.Get(s.URL + "/api/photos/albums?owner=alice")
+	res, err = c.Get(base + "/api/photos/albums?owner=alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +223,7 @@ func TestTakeoutOwnerJobAndIsolation(t *testing.T) {
 	if res.StatusCode != http.StatusOK || len(albums.Albums) != 0 {
 		t.Fatalf("cross-user albums %+v", albums)
 	}
-	res, err = c.Get(s.URL + "/api/photos?limit=1&cursor=" + url.QueryEscape(aliceCursor))
+	res, err = c.Get(base + "/api/photos?limit=1&cursor=" + url.QueryEscape(aliceCursor))
 	if err != nil {
 		t.Fatal(err)
 	}

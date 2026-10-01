@@ -15,10 +15,12 @@ func (s *Store) SetDisabled(id string, disabled bool) error {
 		return errors.New("cannot disable the last active administrator")
 	}
 	old := s.users[idx]
+	oldDevices := s.devices
 	s.users[idx].Disabled = disabled
 	if disabled {
 		s.users[idx].DisablePending = true
 		s.users[idx].DisableError = ""
+		s.removeOwnerDevicesLocked(id)
 	}
 	if !disabled && (s.users[idx].DisableError != "" || s.users[idx].DisablePending) {
 		s.users[idx] = old
@@ -26,6 +28,7 @@ func (s *Store) SetDisabled(id string, disabled bool) error {
 	}
 	if err := s.saveLocked(); err != nil {
 		s.users[idx] = old
+		s.devices = oldDevices
 		return err
 	}
 	if disabled {
@@ -65,10 +68,12 @@ func (s *Store) BeginDelete(id string) (User, error) {
 		return User{}, errors.New("cannot delete the last active administrator")
 	}
 	old := u
+	oldDevices := s.removeOwnerDevicesLocked(id)
 	u.Disabled, u.Deleting, u.DeleteError = true, true, ""
 	s.users[idx] = u
 	if err := s.saveLocked(); err != nil {
 		s.users[idx] = old
+		s.devices = oldDevices
 		return User{}, err
 	}
 	s.invalidateSessionsLocked(id)
@@ -99,8 +104,10 @@ func (s *Store) CompleteDelete(id string) error {
 		return nil
 	}
 	old := s.users[idx]
+	oldDevices := s.removeOwnerDevicesLocked(id)
 	s.users = append(s.users[:idx], s.users[idx+1:]...)
 	if err := s.saveLocked(); err != nil {
+		s.devices = oldDevices
 		s.users = append(s.users, User{})
 		copy(s.users[idx+1:], s.users[idx:])
 		s.users[idx] = old

@@ -11,6 +11,10 @@ import (
 func (c *Catalog) Clear() {
 	c.mu.Lock()
 	c.files, c.children, c.byPath = nil, nil, nil
+	c.albums = nil
+	c.savedAlbums = nil
+	c.journal = Journal{}
+	c.checkpoints = nil
 	c.summaryReady = false
 	c.version++
 	c.mu.Unlock()

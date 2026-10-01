@@ -123,7 +123,17 @@ func Import(ctx context.Context, lib *library.Library, name string, z *zip.Reade
 			return s, err
 		}
 	}
-	return importEntries(ctx, lib, z, prefix, existing, s, reserve, progress, options)
+	result, err := importEntries(ctx, lib, z, prefix, existing, s, reserve, progress, options)
+	if err != nil {
+		return result, err
+	}
+	// Sidecars are already in the imported catalog, so capture dates can be
+	// attached without rereading every original. A later repair pass handles
+	// photos whose only metadata is embedded in the original bytes.
+	if _, metadataErr := lib.BackfillPhotoMetadata(ctx, library.PhotoMetadataOptions{Root: library.PhotosRoot, SidecarsOnly: true}); metadataErr != nil {
+		return result, metadataErr
+	}
+	return result, nil
 }
 
 func ensureParents(ctx context.Context, lib *library.Library, existing map[string]catalog.File, target string) error {

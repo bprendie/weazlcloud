@@ -252,8 +252,12 @@ func (l *Library) setStageActive(id string, active bool) {
 	} else {
 		delete(l.activeStages, id)
 	}
-	idle := len(l.activeStages) == 0
+	idle := len(l.activeStages) == 0 && l.photoImports == 0
+	pending := l.takePendingPhotoIngestLocked()
 	l.stageMu.Unlock()
+	if len(pending) > 0 {
+		go l.queuePhotoIngestFiles(pending)
+	}
 	if !active && idle {
 		l.resumePhotoPreparation()
 	}

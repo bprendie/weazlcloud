@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	thumbnailRenderer  = "raster-v3"
+	thumbnailRenderer  = "media-v4"
 	thumbnailMaxInput  = 64 << 20
 	thumbnailMaxPixels = 32_000_000
 	thumbnailMaxOutput = 8 << 20
@@ -79,7 +79,7 @@ func logPreviewPolicy() {
 	previewLogOnce.Do(func() {
 		mode, helper, _ := previewRenderer()
 		log.Printf("photo preview renderer: mode=%s native_available=%t", mode, helper != "")
-		log.Printf("photo preview resources: cpu workers=%d background=%d readers=%d memory=%d reason=%s", previewPolicy.RenderWorkers, previewPolicy.BackgroundWorkers, previewPolicy.SourceReaders, previewPolicy.MemoryBytes, previewPolicy.Reason)
+		log.Printf("photo preview resources: cpu ceiling=%d workers=%d background=%d readers=%d memory=%d reason=%s", previewPolicy.CPUBudget, previewPolicy.RenderWorkers, previewPolicy.BackgroundWorkers, previewPolicy.SourceReaders, previewPolicy.MemoryBytes, previewPolicy.Reason)
 	})
 }
 
@@ -87,6 +87,33 @@ func logPreviewPolicy() {
 // stable entry ID avoids a full catalog reload for every visible photo tile.
 func (l *Library) PhotoThumbnail(ctx context.Context, entryID string, size int) ([]byte, string, error) {
 	return l.photoThumbnail(ctx, entryID, size, false)
+}
+
+// PhotoThumbnailVisible applies the normal-versus-Hidden Photos visibility
+// boundary before resolving a derivative by asset ID.
+func (l *Library) PhotoThumbnailVisible(ctx context.Context, entryID string, size int, hiddenView bool) ([]byte, string, error) {
+	if entryID == "" || len(entryID) > 128 {
+		return nil, "", ErrThumbnailUnavailable
+	}
+	l.mu.Lock()
+	if !l.vault.Unlocked() {
+		l.mu.Unlock()
+		return nil, "", errors.New("vault is locked")
+	}
+	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
+		l.mu.Unlock()
+		return nil, "", err
+	}
+	l.photoMu.Lock()
+	indexed, found := l.photoByID[entryID]
+	hidden := found && l.photoPathHiddenLocked(indexed.Path)
+	l.photoMu.Unlock()
+	current, exists := l.catalog.Get(indexed.Path)
+	l.mu.Unlock()
+	if !found || hidden != hiddenView || !exists || current.EntryID != indexed.EntryID || current.Revision != indexed.Revision || current.Hash != indexed.Hash || current.Folder || !photoMedia(current.Path) {
+		return nil, "", ErrThumbnailUnavailable
+	}
+	return l.thumbnailFor(ctx, current, size, false)
 }
 
 func (l *Library) photoThumbnail(ctx context.Context, entryID string, size int, background bool) ([]byte, string, error) {
@@ -168,6 +195,9 @@ func (l *Library) generateThumbnail(ctx context.Context, f catalog.File, size in
 	var releaseMemory func()
 	job.body, job.contentType, releaseMemory, err = l.renderThumbnail(ctx, f, size, background)
 	defer releaseMemory()
+	if err == nil && f.UserRotation != 0 {
+		job.body, job.contentType, err = rotatePreview(ctx, job.body, job.contentType, f.UserRotation)
+	}
 	if err == nil {
 		l.mu.Lock()
 		err = l.validatePreviewLocked(ctx, f)
@@ -193,6 +223,12 @@ func thumbnailKey(v *vault.Vault, f catalog.File, size int) (string, error) {
 	identity := f.Hash
 	if identity == "" {
 		identity = f.EntryID + ":" + strconv.FormatUint(f.Revision, 10)
+	}
+	if photoPreviewKind(f.Path) == "raster" && f.Orientation > 1 {
+		identity += "\x00exif-v1:" + strconv.Itoa(f.Orientation)
+	}
+	if f.UserRotation != 0 {
+		identity += "\x00rotation:" + strconv.Itoa(f.UserRotation)
 	}
 	key, err := v.Fingerprint("thumbnail", []byte(thumbnailRenderer+"\x00"+strconv.Itoa(size)+"\x00"+identity))
 	if err != nil {

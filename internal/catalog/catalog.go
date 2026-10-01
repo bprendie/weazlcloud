@@ -37,22 +37,47 @@ type Reference struct {
 }
 
 type File struct {
-	EntryID   string     `json:"entry_id,omitempty"`
-	Revision  uint64     `json:"revision,omitempty"`
-	Path      string     `json:"path"`
-	Folder    bool       `json:"folder,omitempty"`
-	Size      int64      `json:"size"`
-	Mtime     time.Time  `json:"mtime"`
-	Hash      string     `json:"hash"`
-	Snap      string     `json:"snap"`
-	Object    string     `json:"object,omitempty"`
-	Reference *Reference `json:"reference,omitempty"`
-	Present   bool       `json:"present"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	PhotoProcessingPending bool             `json:"photo_processing_pending,omitempty"`
+	PhotoParentID          string           `json:"photo_parent_id,omitempty"`
+	PhotoComponents        []PhotoComponent `json:"photo_components,omitempty"`
+	DeviceID               string           `json:"device_id,omitempty"`
+	DeviceAssetID          string           `json:"device_asset_id,omitempty"`
+	SourceRevision         string           `json:"source_revision,omitempty"`
+	EntryID                string           `json:"entry_id,omitempty"`
+	Revision               uint64           `json:"revision,omitempty"`
+	Path                   string           `json:"path"`
+	Folder                 bool             `json:"folder,omitempty"`
+	Hidden                 bool             `json:"hidden,omitempty"`
+	Size                   int64            `json:"size"`
+	Mtime                  time.Time        `json:"mtime"`
+	ImportedAt             time.Time        `json:"imported_at,omitempty"`
+	CaptureTime            *time.Time       `json:"capture_time,omitempty"`
+	CaptureOffsetMinutes   *int             `json:"capture_offset_minutes,omitempty"`
+	CaptureSource          string           `json:"capture_source,omitempty"`
+	CaptureUserCorrected   bool             `json:"capture_user_corrected,omitempty"`
+	Width                  int              `json:"width,omitempty"`
+	Height                 int              `json:"height,omitempty"`
+	DurationMillis         int64            `json:"duration_millis,omitempty"`
+	Orientation            int              `json:"orientation,omitempty"`
+	PreferredPhoto         bool             `json:"preferred_photo,omitempty"`
+	Camera                 string           `json:"camera,omitempty"`
+	UserRotation           int              `json:"user_rotation,omitempty"`
+	Favorite               bool             `json:"favorite,omitempty"`
+	Archived               bool             `json:"archived,omitempty"`
+	Caption                string           `json:"caption,omitempty"`
+	Hash                   string           `json:"hash"`
+	Snap                   string           `json:"snap"`
+	Object                 string           `json:"object,omitempty"`
+	Reference              *Reference       `json:"reference,omitempty"`
+	Present                bool             `json:"present"`
+	DeletedAt              *time.Time       `json:"deleted_at,omitempty"`
 }
 
 type tree struct {
-	Files []File `json:"files"`
+	Files       []File                  `json:"files"`
+	Albums      []Album                 `json:"albums,omitempty"`
+	Journal     Journal                 `json:"journal,omitempty"`
+	Checkpoints map[string]SyncPosition `json:"device_checkpoints,omitempty"`
 }
 
 type Catalog struct {
@@ -60,6 +85,10 @@ type Catalog struct {
 	path         string
 	vault        *vault.Vault
 	files        []File
+	albums       []Album
+	savedAlbums  []Album
+	journal      Journal
+	checkpoints  map[string]SyncPosition
 	children     map[string][]File
 	byPath       map[string]File
 	summary      catalogSummary
@@ -89,6 +118,10 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = nil
+	c.albums = nil
+	c.savedAlbums = nil
+	c.journal = Journal{}
+	c.checkpoints = nil
 	c.children = nil
 	c.byPath = nil
 	c.summaryReady = false
@@ -114,6 +147,10 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	if err != nil {
 		return err
 	}
+	c.albums = cloneAlbums(t.Albums)
+	c.savedAlbums = cloneAlbums(t.Albums)
+	c.journal = cloneJournal(t.Journal)
+	c.checkpoints = t.Checkpoints
 	if changed && persistUpgrade {
 		if err := c.saveFilesLocked(files); err != nil {
 			return err
@@ -207,7 +244,7 @@ func (c *Catalog) Rename(oldPath, newPath string) error {
 		if !f.Present || f.Path == oldPath || strings.HasPrefix(f.Path, oldPath+"/") {
 			continue
 		}
-		if f.Path == newPath || strings.HasPrefix(f.Path, newPath+"/") || strings.HasPrefix(newPath, f.Path+"/") {
+		if f.Path == newPath || strings.HasPrefix(f.Path, newPath+"/") || (!f.Folder && strings.HasPrefix(newPath, f.Path+"/")) {
 			return ErrConflict
 		}
 	}
@@ -235,7 +272,11 @@ func (c *Catalog) saveLocked() error {
 }
 
 func (c *Catalog) saveFilesLocked(files []File) error {
-	plain, err := json.Marshal(tree{Files: files})
+	journal, err := c.nextJournalLocked(files)
+	if err != nil {
+		return err
+	}
+	plain, err := json.Marshal(tree{Files: files, Albums: c.albums, Journal: journal, Checkpoints: c.checkpoints})
 	if err != nil {
 		return err
 	}
@@ -248,6 +289,8 @@ func (c *Catalog) saveFilesLocked(files []File) error {
 		return err
 	}
 	c.diskInfo, _ = os.Stat(c.path)
+	c.journal = journal
+	c.savedAlbums = cloneAlbums(c.albums)
 	c.summaryReady = false
 	c.children = indexChildren(files)
 	c.byPath = indexPaths(files)

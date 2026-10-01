@@ -7,6 +7,8 @@ import (
 	"github.com/bprendie/weazlcloud/internal/catalog"
 )
 
+var ErrFileNotFound = errors.New("file is not in the library")
+
 func (l *Library) List() []catalog.File {
 	return l.catalog.List()
 }
@@ -36,7 +38,7 @@ func (l *Library) Metadata(ctx context.Context, name string) (catalog.File, erro
 	}
 	f, ok := l.catalog.Get(name)
 	if !ok {
-		return catalog.File{}, errors.New("file is not in the library")
+		return catalog.File{}, ErrFileNotFound
 	}
 	return f, nil
 }

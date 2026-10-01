@@ -30,7 +30,7 @@ func (l *Library) decodePhotoCursor(raw string) (photoCursor, error) {
 		return cursor, ErrPhotoCursor
 	}
 	defer clear(plain)
-	if json.Unmarshal(plain, &cursor) != nil || cursor.Generation == 0 || cursor.Offset < 1 || cursor.Offset > 1_000_000 {
+	if json.Unmarshal(plain, &cursor) != nil || cursor.Generation == 0 || (cursor.AfterID == "") == (cursor.BeforeID == "") || len(cursor.AfterID) > 128 || len(cursor.BeforeID) > 128 {
 		return photoCursor{}, ErrPhotoCursor
 	}
 	return cursor, nil

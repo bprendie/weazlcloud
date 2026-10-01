@@ -1,7 +1,8 @@
 import {files, filePath, filesInFolder, folderLabel, folderName, takeouts, state, selectedName, liveCapsules, fileMatches, matchQuery, escapeHTML as esc} from './data.js';
+import {layoutPhotos, photoRowWindow} from './photo-layout.js';
 
 const $ = s => document.querySelector(s);
-const head = (label, title, description) => `<div class="page-head"><span class="eyebrow">${label}</span><h1>${title}</h1><p>${description}</p></div>`;
+const head = (label, title, description) => `<div class="page-head"><span class="eyebrow">${label}</span><h1>${title}</h1>${description ? `<p>${description}</p>` : ''}</div>`;
 const kindClass = kind => `type-${String(kind || 'file').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
 function qrMarkup(token) {
@@ -72,7 +73,7 @@ function folderNode(node, path) {
   return path.split('/').reduce((current, part) => current?.folders?.[part], node) || {folders: {}, files: []};
 }
 
-function modifiedLabel(value) {
+export function modifiedLabel(value) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString([], {year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
@@ -131,7 +132,7 @@ function gridFileCard(f, fullPath = false, photo = false) {
   return `<div class="library-card${hit}" data-ctx-file="${f.id}" data-drag-file="${esc(path)}" draggable="true">
     ${opener}
     ${audio ? '<div class="grid-music-details" data-music-details hidden></div>' : ''}
-    <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong title="${esc(f.title)}">${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(modifiedLabel(f.mtime))}</span></div>
+    <div class="grid-card-info"><span class="kind ${kindClass(f.kind)}">${esc(f.kind)}</span><strong title="${esc(f.title)}">${esc(f.title)}</strong>${fullPath ? `<small>${esc(path)}</small>` : ''}<span class="grid-meta">${esc(f.size)} · ${esc(photo ? (f.captureTime ? modifiedLabel(f.captureTime) : 'Date unknown') : modifiedLabel(f.mtime))}</span></div>
     <button class="icon-button menu-btn grid-menu" data-menu-file="${f.id}" aria-label="File actions">⋯</button>
   </div>`;
 }
@@ -369,35 +370,97 @@ function takeout() {
     <p class="eyebrow" style="margin-top:22px">STRETCH GOAL. THE DUMP COMES HERE. WEAZL DOES NOT GO THERE.</p>`;
 }
 
+function photoRowMarkup(row, items) {
+  if (!row.tiles.length) {
+    const label = row.day === 'unknown' ? 'Date unknown' : new Date(`${row.day}T12:00:00`).toLocaleDateString(undefined, {weekday:'long',year:'numeric',month:'long',day:'numeric'});
+    return `<h3 class="photo-day-heading" data-photo-row-key="${esc(row.key)}" style="height:${row.height}px"><span>${state.photosMode==='recent' ? 'Added ' : ''}${esc(label)}</span>${state.photosMode==='recent' ? '' : `<button class="text-button" data-photo-select-day="${esc(row.day)}">Select day</button>`}</h3>`;
+  }
+  return `<div class="photo-justified-row" data-photo-row-key="${esc(row.key)}" style="height:${row.height.toFixed(3)}px">${row.tiles.map(tile => {
+    const file = items[tile.index];
+    const video = file.mediaType?.startsWith('video/') || /\.(?:mp4|mov|m4v|webm|mkv)$/i.test(file.path || '');
+    const selected = isSelected('file', file.id);
+    return `<div class="library-card photo-tile${selected ? ' selected' : ''}" style="width:${tile.width.toFixed(3)}px" data-ctx-file="${esc(file.id)}" data-drag-file="${esc(file.path)}" draggable="true"><button class="grid-open" data-select-file="${esc(file.id)}" aria-label="Open ${esc(file.title)}"><img class="grid-preview" data-photo-thumbnail="${esc(file.entryID || file.id)}" alt="" width="${Math.round(tile.width)}" height="${Math.round(row.height)}" loading="lazy">${video ? '<span class="photo-video-badge" aria-hidden="true">▶</span>' : ''}${file.favorite ? '<span class="photo-favorite-badge" aria-hidden="true">★</span>' : ''}</button><div class="grid-card-info"><strong title="${esc(file.title)}">${esc(file.title)}</strong></div><button class="icon-button menu-btn grid-menu" data-menu-file="${esc(file.id)}" aria-label="Photo actions">⋯</button></div>`;
+  }).join('')}</div>`;
+}
+
+function photoGridLayout(width) {
+  const items = state.photoItems || [];
+  const grid = document.querySelector('.photo-grid');
+  const layout = layoutPhotos(items, width || grid?.clientWidth || Math.max(160, ($('#content')?.clientWidth || 900) - 80), state.photoDensity,state.photosMode==='recent'?'recent':'capture');
+  const gridTop = grid ? grid.getBoundingClientRect().top + window.scrollY : window.scrollY;
+  let offset = Math.max(0, window.scrollY - gridTop);
+  if (state.photoViewportRestore?.id) {
+    const index = items.findIndex(item=>item.id === state.photoViewportRestore.id);
+    const row = layout.rows.find(row=>row.tiles.some(tile=>tile.index === index));
+    if (row) offset = row.top;
+  }
+  return {layout, visible:photoRowWindow(layout,offset,window.innerHeight), items};
+}
+
+function photoGridMarkup() {
+  const {visible, items} = photoGridLayout();
+  return `<div class="photo-grid density-${state.photoDensity || 'comfortable'}"><div class="photo-virtual-spacer" data-photo-spacer="top" aria-hidden="true" style="height:${visible.top}px"></div>${visible.rows.map(row=>photoRowMarkup(row,items)).join('')}<div class="photo-virtual-spacer" data-photo-spacer="bottom" aria-hidden="true" style="height:${visible.bottom}px"></div></div>`;
+}
+
+// Scroll updates only the small keyed row window. Chrome, filters, selection
+// controls and retained thumbnail nodes stay mounted.
+export function refreshPhotoGrid() {
+  const grid = document.querySelector('.photo-grid');
+  if (!grid || state.view !== 'photos') return;
+  const {visible, items} = photoGridLayout(grid.clientWidth);
+  const key = `${visible.start}:${visible.end}:${grid.clientWidth}:${state.photoDensity}`;
+  if (grid.dataset.windowKey === key) return;
+  grid.dataset.windowKey = key;
+  const old = new Map([...grid.querySelectorAll(':scope > [data-photo-row-key]')].map(node=>[node.dataset.photoRowKey,node]));
+  const wanted = new Set(visible.rows.map(row=>row.key));
+  for (const [rowKey,node] of old) if (!wanted.has(rowKey)) node.remove();
+  const top = grid.querySelector('[data-photo-spacer="top"]'), bottom = grid.querySelector('[data-photo-spacer="bottom"]');
+  top.style.height = `${visible.top}px`; bottom.style.height = `${visible.bottom}px`;
+  for (const row of visible.rows) {
+    let node = old.get(row.key);
+    if (!node) { const template = document.createElement('template'); template.innerHTML = photoRowMarkup(row,items); node = template.content.firstElementChild; }
+    node.style.height = `${row.height}px`;
+    row.tiles.forEach((tile,index)=> { const card = node.children[index]; if (card) card.style.width = `${tile.width}px`; });
+    grid.insertBefore(node,bottom);
+  }
+}
+
 function photos() {
   const albums = state.photoAlbums || [];
   const selected = albums.find(album => album.path === state.photosAlbum);
-  const tabs = `<div class="hero-actions photos-tabs" aria-label="Photo views"><button class="${state.photosMode === 'all' ? 'primary' : 'secondary'}" data-photos-mode="all" aria-pressed="${state.photosMode === 'all'}">All photos</button><button class="${state.photosMode === 'albums' ? 'primary' : 'secondary'}" data-photos-mode="albums" aria-pressed="${state.photosMode === 'albums'}">Albums${state.photoAlbumsLoaded ? ` · ${albums.length}` : ''}</button></div>`;
-  const heading = head('LIBRARY / PHOTOS', 'Your photos.', 'Browse your photos and the albums you brought from Google Takeout.');
+  const dateMonths = state.photoDateSummary?.months || [];
+  const years = new Map();
+  for (const bucket of dateMonths) years.set(bucket.month.slice(0, 4), (years.get(bucket.month.slice(0, 4)) || 0) + bucket.count);
+  const yearOptions = [...years].sort(([a], [b]) => b.localeCompare(a)).map(([year, count]) => `<option value="${year}" ${state.photoDate === year ? 'selected' : ''}>${year} · ${count}</option>`).join('');
+  const selectedYear = state.photoDate.length >= 4 ? state.photoDate.slice(0, 4) : '';
+  const monthOptions = dateMonths.filter(bucket => !selectedYear || bucket.month.startsWith(selectedYear)).map(bucket => `<option value="${esc(bucket.month)}" ${state.photoDate === bucket.month ? 'selected' : ''}>${esc(new Date(`${bucket.month}-15T12:00:00`).toLocaleDateString(undefined, {year: 'numeric', month: 'long'}))} · ${bucket.count}</option>`).join('');
+  const filters = `<details class="photo-search-filters" ${state.photoFiltersOpen ? 'open' : ''}><summary>Filter photos</summary><div><label>Type<select data-photo-filter="photoSearchType"><option value="">All media</option><option value="image" ${state.photoSearchType==='image'?'selected':''}>Images</option><option value="video" ${state.photoSearchType==='video'?'selected':''}>Videos</option></select></label><label>Camera<input data-photo-filter="photoCamera" value="${esc(state.photoCamera || '')}" maxlength="120" placeholder="Any camera"></label><label>From<input data-photo-filter="photoFrom" type="date" value="${esc(state.photoFrom || '')}"></label><label>Through<input data-photo-filter="photoTo" type="date" value="${esc(state.photoTo || '')}"></label><label><input type="checkbox" data-photo-filter="photoOutsideAlbums" ${state.photoOutsideAlbums?'checked':''}>Outside albums</label></div></details>`;
+  const tabs = `${filters}<label class="photo-search">Search photos<input id="photo-search" data-photo-search type="search" value="${esc(state.photoQuery || '')}" placeholder="Name, caption, or wildcard"></label><div class="photos-toolbar"><div class="photos-tabs" role="tablist" aria-label="Photo views"><button class="${state.photosMode === 'all' && !state.photoDate ? 'primary' : 'secondary'}" data-photos-mode="all" aria-pressed="${state.photosMode === 'all' && !state.photoDate}">Timeline</button><button class="${state.photosMode === 'recent' ? 'primary' : 'secondary'}" data-photos-mode="recent" aria-pressed="${state.photosMode === 'recent'}">Recently added</button><button class="${state.photosMode === 'favorites' ? 'primary' : 'secondary'}" data-photos-mode="favorites" aria-pressed="${state.photosMode === 'favorites'}">Favorites</button><button class="${state.photosMode === 'archived' ? 'primary' : 'secondary'}" data-photos-mode="archived" aria-pressed="${state.photosMode === 'archived'}">Archive</button><button class="${state.photosMode === 'albums' ? 'primary' : 'secondary'}" data-photos-mode="albums" aria-pressed="${state.photosMode === 'albums'}">Albums${state.photoAlbumsLoaded ? ` · ${albums.length}` : ''}</button><button class="${state.photosMode === 'hidden' ? 'primary' : 'secondary'}" data-photos-mode="hidden" aria-pressed="${state.photosMode === 'hidden'}">Hidden</button><button class="secondary" data-view="trash">Trash</button></div>${state.photosMode !== 'albums' ? `<div class="photo-date-jump"><label>Year<select data-photo-date aria-label="Jump to year"><option value="">All years</option>${yearOptions}</select></label><label>Month<select data-photo-date aria-label="Jump to month"><option value="">All months</option>${monthOptions}</select></label><label>Density<select data-photo-density aria-label="Timeline density"><option value="comfortable" ${state.photoDensity === 'comfortable' ? 'selected' : ''}>Comfortable</option><option value="compact" ${state.photoDensity === 'compact' ? 'selected' : ''}>Compact</option></select></label></div>` : ''}</div>`;
+  const dateHeading = state.photoDate.length === 4 ? state.photoDate : state.photoDate ? new Date(`${state.photoDate.slice(0, 7)}-15T12:00:00`).toLocaleDateString(undefined, {year: 'numeric', month: 'long'}) : '';
+  const heading = head('PHOTOS', state.photosMode === 'albums' ? 'Albums' : state.photosMode === 'recent' ? 'Recently added' : state.photosMode === 'hidden' ? 'Hidden' : state.photosMode === 'archived' ? 'Archive' : dateHeading || 'Timeline', '');
   if (state.photosMode === 'albums' && !state.photosAlbum) {
     if (!state.photoAlbumsLoaded) return heading + tabs + '<p class="empty">Loading albums…</p>';
     if (state.photoAlbumsError) return heading + tabs + `<p class="empty" role="alert">${esc(state.photoAlbumsError)}</p>`;
     const shown = albums.slice(0, state.photosShown || 60);
-    return heading + tabs + (shown.length ? `<div class="library-grid photo-albums">${shown.map(album => `<button class="photo-album-card" data-photo-album="${esc(album.path)}" aria-label="Open album ${esc(album.title)}"><div class="photo-album-cover">${album.cover_id ? `<img class="grid-preview" data-photo-thumbnail="${esc(album.cover_id)}" alt="" loading="lazy">` : '<span aria-hidden="true">▧</span>'}</div><strong>${esc(album.title)}</strong><small>${album.count} ${album.count === 1 ? 'item' : 'items'}</small>${album.description ? `<p>${esc(album.description)}</p>` : ''}${album.metadata_warning ? '<small>Using folder name · album details unavailable</small>' : ''}</button>`).join('')}</div>` : '<p class="empty">No albums yet. Named Takeout albums appear here as their files arrive; yearly collections stay in All photos.</p>') + (shown.length < albums.length ? '<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more albums</button></div>' : '');
+    const cards = shown.map(album => `<article class="photo-album-card"><button class="photo-album-open" data-photo-album="${esc(album.path)}" aria-label="Open album ${esc(album.title)}"><div class="photo-album-cover">${album.cover_id ? `<img class="grid-preview" data-photo-thumbnail="${esc(album.cover_id)}" alt="" loading="lazy">` : '<span aria-hidden="true">▧</span>'}</div><strong>${esc(album.title)}</strong><small>${album.count} ${album.count === 1 ? 'item' : 'items'}</small>${album.description ? `<p>${esc(album.description)}</p>` : ''}${album.metadata_warning ? '<small>Using folder name · album details unavailable</small>' : ''}</button><div class="photo-album-actions"><button class="text-button" data-action="share-photo-album" data-album-path="${esc(album.path)}">Share as grab</button></div>${album.source === 'custom' ? `<div class="photo-album-actions"><button class="text-button" data-action="edit-photo-album" data-album-id="${esc(album.id)}">Edit</button><button class="text-button" data-action="delete-photo-album" data-album-id="${esc(album.id)}" data-album-revision="${album.revision}">Delete</button></div>` : ''}</article>`).join('');
+    return heading + tabs + '<div class="hero-actions"><button class="secondary" data-action="new-photo-album">New album</button></div>' + (cards ? `<div class="library-grid photo-albums">${cards}</div>` : '<p class="empty">No albums yet. Create an album, or wait for named Takeout albums to arrive.</p>') + (shown.length < albums.length ? '<div class="hero-actions"><button class="secondary" data-action="photos-more">Show more albums</button></div>' : '');
   }
   if (state.photosAlbum && !selected) {
     return heading + tabs + `<p class="empty">${state.photoAlbumsError ? esc(state.photoAlbumsError) : !state.photoAlbumsLoaded ? 'Loading album…' : 'This album is no longer in the library.'}</p>`;
   }
   const media = state.photoItems || [];
-  const columns = Math.max(1, state.photoColumns || 4);
-  const start = Math.min(media.length, state.photoWindowStart || 0);
-  const end = Math.min(media.length, Math.max(start, state.photoWindowEnd || Math.min(media.length, columns * 8)));
-  const topRows = Math.floor(start / columns);
-  const bottomRows = Math.ceil((media.length - end) / columns);
-  const spacer = rows => rows > 0 ? `<div class="photo-virtual-spacer" aria-hidden="true" style="height:${Math.max(0, rows * 272 - 12)}px"></div>` : '';
   const prep = state.photoPreparation;
-  const prepLabel = prep?.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}` : 'Prepare previews';
+  const prepWork = prep?.working ? ` · ${prep.working} rendering · ${prep.work_progress}% avg` : '';
+  const prepLabel = prep?.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}${prepWork}` : 'Prepare previews';
   const prepActive = prep?.enabled && ['queued', 'running', 'paused_storage'].includes(prep.status);
-  const tools = `<div class="hero-actions photo-tools"><button class="secondary" data-action="photo-preparation" data-prep-action="${prepActive ? 'pause' : 'resume'}">${prepActive ? 'Pause preparation' : 'Prepare previews'}</button>${prep?.failed ? '<button class="secondary" data-action="photo-preparation" data-prep-action="retry">Retry failed previews</button>' : ''}<small data-photo-prep-status>${esc(prepLabel)}${prep?.failed ? ` · ${prep.failed} failed` : ''}${prep?.error ? ` · ${esc(prep.error)}` : ''}</small></div>`;
+  const tools = `<div class="hero-actions photo-tools"><button class="secondary" data-action="photo-duplicates">Review duplicates</button><button class="secondary" data-action="photo-preparation" data-prep-action="${prepActive ? 'pause' : 'resume'}">${prepActive ? 'Pause preparation' : 'Prepare previews'}</button>${prep?.failed ? '<button class="secondary" data-action="photo-preparation" data-prep-action="retry">Retry failed previews</button>' : ''}<small data-photo-prep-status>${esc(prepLabel)}${prep?.failed ? ` · ${prep.failed} failed` : ''}${prep?.error ? ` · ${esc(prep.error)}` : ''}</small></div>`;
+  const selectedPhotos = state.photoSelection?.count || (state.selectedFiles || []).length;
+  const selectionTools = selectedPhotos ? `<div class="selection-toolbar"><strong>${selectedPhotos} selected</strong><button class="secondary" data-action="photos-share-selected">Share as grab</button><button class="secondary" data-action="photos-add-selected-to-album">Add to album</button>${selected?.source === 'custom' ? '<button class="secondary" data-action="photos-remove-selected-from-album">Remove from album</button>' : ''}<button class="secondary" data-batch="download">Download</button><button class="secondary" data-batch="delete">Move to Trash</button><button class="text-button" data-batch="clear">Clear</button></div>` : '';
+  const earlier = state.photoPreviousCursor ? '<button class="secondary photo-earlier" data-action="photos-earlier">Load earlier photos</button>' : '';
   const title = selected ? head('PHOTOS / ALBUM', esc(selected.title), esc(selected.description || `${selected.count} photos and videos`)) : heading;
-  return title + tabs + (selected ? '<button class="text-button" data-photos-mode="albums">← All albums</button>' : '') +
-    tools + (state.photoError ? `<p class="empty" role="alert">${esc(state.photoError)}</p>` : '') +
-    (media.length ? `<div class="library-grid photo-grid">${spacer(topRows)}${media.slice(start, end).map(f => gridFileCard(f, false, true)).join('')}${spacer(bottomRows)}</div>${state.photoHasMore ? `<div class="hero-actions"><button class="secondary" data-photo-load-more data-action="photos-more" ${state.photoLoading ? 'disabled' : ''}>${state.photoLoading ? 'Loading…' : 'Load more photos'}</button></div>` : ''}` : `<p class="empty">${state.photoLoading ? 'Loading photos…' : selected ? 'No media in this album yet. More files may arrive in the next ZIP.' : 'Photos will appear here after the Google Takeout import.'}</p>`);
+  return title + tabs + (selected ? '<button class="text-button" data-photos-mode="albums">← All albums</button>' : '') + earlier +
+    selectionTools + tools + (state.photoError ? `<p class="empty" role="alert">${esc(state.photoError)}</p>` : '') +
+    (media.length ? `${photoGridMarkup()}${state.photoHasMore ? `<div class="hero-actions"><button class="secondary" data-photo-load-more data-action="photos-more" ${state.photoLoading ? 'disabled' : ''}>${state.photoLoading ? 'Loading…' : 'Load more photos'}</button></div>` : ''}` : `<p class="empty">${state.photoLoading ? 'Loading photos…' : (state.photoQuery || state.photoDate) ? 'No photos match these filters.' : selected ? 'No media in this album yet. More files may arrive in the next ZIP.' : 'Photos will appear here after the Google Takeout import.'}</p>`);
 }
 
 function check() {
@@ -423,7 +486,7 @@ function trash() {
   const items = state.trash || [];
   return head('WEAZLCLOUD / TRASH', 'Recoverable for a while.', `Deleted items stay here for ${state.trashRetention} days before permanent cleanup. Restoring checks for newer conflicts.`) +
     `<div class="hero-actions"><button class="secondary" data-action="trash-cleanup">Permanently clean expired items</button><button class="text-button" data-view="library">Back to Library</button></div>` +
-    (items.length ? `<div class="file-list">${items.map(item => `<div class="file-row"><span class="kind ${item.folder ? 'type-dir' : 'type-file'}">${item.folder ? 'DIR' : 'FILE'}</span><span class="file-name"><strong>${esc(item.path)}</strong><small>${item.folder ? 'Folder' : formatBytes(item.size)} · deleted ${esc(modifiedLabel(item.deleted_at))}</small></span><button class="text-button" data-trash-restore="${esc(item.path)}">Restore</button></div>`).join('')}</div>` : '<p class="empty">Trash is empty.</p>');
+    (items.length ? `<div class="file-list">${items.map(item => `<div class="file-row"><span class="kind ${item.folder ? 'type-dir' : 'type-file'}">${item.folder ? 'DIR' : 'FILE'}</span><span class="file-name"><strong>${esc(item.path)}</strong><small>${item.folder ? 'Folder' : formatBytes(item.size)} · deleted ${esc(modifiedLabel(item.deleted_at))}</small></span><button class="text-button" data-trash-restore="${esc(item.path)}" data-trash-id="${esc(item.id || '')}">Restore</button></div>`).join('')}</div>` : '<p class="empty">Trash is empty.</p>');
 }
 
 function admin() {
@@ -471,6 +534,11 @@ export function renderMain() {
     b.classList.toggle('active', active);
     if (active) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
+  });
+  document.querySelectorAll('.mode-switch [data-view]').forEach(b => {
+    const active = b.dataset.view === state.view;
+    b.classList.toggle('mode-active', active);
+    b.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
   requestAnimationFrame(restoreMediaPlayback);
 }

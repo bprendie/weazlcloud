@@ -1,6 +1,8 @@
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
-import {renderMain, renderDeck, renderUploadTray} from './views.js';
+import {renderMain, renderDeck, renderUploadTray, refreshPhotoGrid, modifiedLabel} from './views.js';
 import * as engine from './engine.js';
+import {ModeMemory} from './mode-memory.js';
+const modeMemory = new ModeMemory();
 
 const $ = s => document.querySelector(s);
 let noticeTimer, frame, live = false, uploadPrefix = '';
@@ -25,20 +27,22 @@ function libraryPath() {
 }
 
 function filePath(id) {
-  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id);
+  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id) || state.photoSelectedItems?.get(id);
   return f ? f.folders.concat(f.title).filter(Boolean).join('/') : id;
 }
 
 function fileByID(id) {
-  return files.find(file => file.id === id) || state.photoItems?.find(file => file.id === id);
+  return files.find(file => file.id === id) || state.photoItems?.find(file => file.id === id) || state.photoSelectedItems?.get(id);
 }
 
 function selectedFileRows() {
   const ids = state.selectedFiles?.length ? state.selectedFiles : state.selected?.type === 'file' ? [state.selected.id] : [];
-  return ids.map(id => files.find(file => file.id === id) || state.photoItems?.find(file => file.id === id)).filter(Boolean);
+  return ids.map(fileByID).filter(Boolean);
 }
 
 function clearFileSelection() {
+  state.photoSelection = null;
+  state.photoSelectedItems = new Map();
   state.selectedFiles = [];
   state.selectionAnchor = '';
   state.selected = null;
@@ -119,7 +123,7 @@ function pumpGridThumbnails() {
       pumpGridThumbnails();
     };
     gridPreviewRequests.set(el, {controller, cancel: () => { el.src = ''; done(); }});
-    el.src = photoID ? `/api/library/thumbnail?id=${encodeURIComponent(photoID)}&size=320` : `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
+    el.src = photoID ? `/api/v1/photos/assets/${encodeURIComponent(photoID)}/thumbnail?size=320${state.photosMode === 'hidden' ? '&hidden=1' : ''}` : `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
       if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
@@ -274,23 +278,7 @@ function hydrateGridTextPreviews() {
 
 function updatePhotoGridWindow() {
   photoWindowFrame = 0;
-  const grid = document.querySelector('.photo-grid');
-  if (!grid || state.view !== 'photos') return;
-  const columns = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(' ').length);
-  const rowHeight = 272;
-  const top = grid.getBoundingClientRect().top + window.scrollY;
-  const firstVisible = Math.max(0, Math.floor((window.scrollY - top) / rowHeight) - 2);
-  const visibleRows = Math.min(10, Math.ceil(window.innerHeight / rowHeight) + 5);
-  const start = firstVisible * columns;
-  const end = Math.min(state.photoItems.length, start + visibleRows * columns);
-  if (state.photoWindowStart === start && state.photoWindowEnd === end && state.photoColumns === columns) return;
-  const focused = document.activeElement;
-  const focusFile = focused?.dataset?.selectFile || focused?.dataset?.menuFile || '';
-  state.photoWindowStart = start;
-  state.photoWindowEnd = end;
-  state.photoColumns = columns;
-  renderMain();
-  if (focusFile) requestAnimationFrame(() => document.querySelector(`[data-select-file="${CSS.escape(focusFile)}"], [data-menu-file="${CSS.escape(focusFile)}"]`)?.focus({preventScroll: true}));
+  refreshPhotoGrid();
 }
 
 function schedulePhotoGridWindow() {
@@ -300,7 +288,7 @@ function schedulePhotoGridWindow() {
 window.addEventListener('scroll', schedulePhotoGridWindow, {passive: true});
 window.addEventListener('resize', schedulePhotoGridWindow, {passive: true});
 
-const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); hydratePhotoPager(); });
+const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); hydratePhotoPager(); schedulePhotoGridWindow(); });
 contentObserver.observe($('#content'), {childList: true, subtree: true});
 
 function isWarmableRaster(path) {
@@ -370,6 +358,13 @@ function fileMenu(id) {
 }
 
 function folderMenu(path) {
+  const folder = files.find(file => file.folder && file.path === path);
+  const photoVisibility = path.startsWith('Photos/')
+    ? [{sep: true}, {act: `photo-folder-hidden:${path}`, label: folder?.hidden ? 'Show in Photos' : 'Hide from Photos'}]
+    : [];
+  const addToPhotos = path !== 'Photos' && !path.startsWith('Photos/')
+    ? [{sep: true}, {act: `photos-add-folder:${path}`, label: 'Add folder to Photos'}]
+    : [];
   return [
     {act: `send-folder:${path}`, label: 'Share this'},
     {act: `download-folder:${path}`, label: 'Download'},
@@ -377,6 +372,8 @@ function folderMenu(path) {
     {act: `details-folder:${path}`, label: 'Details'},
     {act: `upload-here:${path}`, label: 'Upload into'},
     {act: `rename-folder:${path}`, label: 'Rename'},
+    ...photoVisibility,
+    ...addToPhotos,
     {sep: true},
     {act: `delete-folder:${path}`, label: 'Delete'}
   ];
@@ -424,7 +421,8 @@ async function resolveLibraryOperation(operation, target) {
 }
 
 function chooseRange(id) {
-  const ids = [...document.querySelectorAll('[data-select-file]')].map(button => button.dataset.selectFile);
+  state.photoSelection = null;
+  const ids = state.view === 'photos' ? state.photoItems.map(item => item.id) : [...document.querySelectorAll('[data-select-file]')].map(button => button.dataset.selectFile);
   const start = ids.indexOf(state.selectionAnchor || id);
   const end = ids.indexOf(id);
   if (start < 0 || end < 0) return selectFile(id);
@@ -436,6 +434,7 @@ function chooseRange(id) {
 }
 
 function toggleFileSelection(id) {
+  if (state.photoSelection) { clearFileSelection(); toast('Day selection cleared; selecting individual photos.'); }
   const selected = new Set(state.selectedFiles || []);
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
@@ -447,6 +446,15 @@ function toggleFileSelection(id) {
 }
 
 async function runBatchAction(action) {
+  if (state.view === 'photos' && state.photoSelection) {
+    const selection = state.photoSelection;
+    if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
+    if (action === 'delete' && !confirm(`Move ${selection.count} selected photos to Trash?`)) return;
+    if (action === 'download' && selection.hidden && !confirm(`Download ${selection.count} selected hidden photos?`)) return;
+    const result = await engine.photoSelectionAction({selection_id:selection.id,hidden:selection.hidden,confirm_hidden:selection.hidden,action:action === 'download' ? 'archive' : action});
+    if (action === 'download') { await createArchiveJob([],result); return; }
+    clearFileSelection(); await loadPhotoPage(true); await loadPhotoAlbums(false); renderMain(); renderDeck(); toast(`${result.deleted} photos moved to Trash.`); return;
+  }
   const rows = selectedFileRows();
   if (!rows.length) return;
   if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
@@ -470,7 +478,7 @@ async function runBatchAction(action) {
   }
   state.selectedFiles = (state.selectedFiles || []).filter(id => !completed.includes(id));
   state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
-  await loadLibrary();
+  if (state.view === 'photos') await loadPhotoPage(true); else await loadLibrary();
   renderMain();
   renderDeck();
   if (failed.length) toast(`${completed.length} completed; ${failed.length} failed. ${failed[0]}`);
@@ -557,9 +565,9 @@ async function undoLast() {
   } catch (err) { toast(`Undo failed: ${err.message}. A later change may have caused a conflict.`); }
 }
 
-async function createArchiveJob(paths) {
+async function createArchiveJob(paths, preparedJob = null) {
   try {
-    const job = await engine.createArchive(paths);
+    const job = preparedJob || await engine.createArchive(paths);
     state.archiveJobs.unshift(job);
     renderUploadTray();
     for (let attempt = 0; attempt < 120; attempt++) {
@@ -583,7 +591,7 @@ async function createArchiveJob(paths) {
 }
 
 async function previewFile(id) {
-  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id); if (!f || f.folder) return;
+  const f = files.find(x => x.id === id) || state.photoItems?.find(x => x.id === id) || state.photoSelectedItems?.get(id); if (!f || f.folder) return;
   const path = filePath(id);
   if (!live) { toast('Preview is available when the node is connected.'); return; }
   if (f.entryID && /\.(?:jpe?g|png|gif|webp|heic|heif|avif|tiff?)$/i.test(f.title)) {
@@ -623,6 +631,199 @@ async function previewFile(id) {
     }, {once: true});
     $('#modal').addEventListener('close', () => URL.revokeObjectURL(url), {once: true});
   } catch (err) { toast(err.message); }
+}
+
+let photoViewerIndex = -1;
+let photoViewerHistoryPushed = false;
+let photoRouteViewerID = '';
+let photoViewerReturnHash = '#photos';
+function openPhotoViewer(id, pushHistory = true) {
+  const index = state.photoItems.findIndex(item => item.id === id);
+  if (index < 0) return previewFile(id);
+  if (pushHistory && !photoViewerHistoryPushed) {
+    const returnHash = location.hash || '#photos';
+    history.pushState({photoViewer: true, photoID: id, returnHash}, '', '#photos/view/' + encodeURIComponent(id));
+    photoViewerHistoryPushed = true;
+  }
+  photoViewerIndex = index;
+  state.selected = {type: 'file', id};
+  state.selectedFiles = [id];
+  state.selectionAnchor = id;
+  state.photoViewerInfo = false;
+  state.photoZoom = 1;
+  renderPhotoViewer();
+  const hiddenMode = state.photosMode === 'hidden';
+  engine.photoDetail(id, hiddenMode).then(detail => {
+    const current = state.photoItems[photoViewerIndex];
+    if (!current || current.id !== id) return;
+    Object.assign(current, engine.toFixture(detail));
+    renderPhotoViewer();
+  }).catch(() => {});
+}
+
+function closePhotoViewer() {
+  if (photoViewerHistoryPushed) {
+    history.back();
+    return;
+  }
+  $('#modal').close();
+  if (location.hash.startsWith('#photos/view/')) history.replaceState({}, '', photoViewerReturnHash || '#photos');
+}
+
+async function showPhotoInLibrary() {
+  const item = state.photoItems[photoViewerIndex];
+  if (!item?.path) return;
+  const parent = item.path.includes('/') ? item.path.slice(0, item.path.lastIndexOf('/')) : '';
+  photoViewerHistoryPushed = false;
+  $('#modal').close();
+  setLibraryPath(parent, false);
+  history.replaceState({}, '', routeHash('library'));
+}
+
+async function restorePhotoViewerRoute(id) {
+  if (!id || state.view !== 'photos') return;
+  let item = state.photoItems.find(row => row.id === id);
+  if (!item) {
+    try {
+      const detail = await engine.photoDetail(id, state.photosMode === 'hidden');
+      item = engine.toFixture(detail);
+      state.photoItems = [item];
+      state.photoCursor = '';
+      state.photoHasMore = false;
+    } catch (err) {
+      if (location.hash.startsWith('#photos/view/')) history.replaceState({}, '', photoViewerReturnHash || '#photos');
+      photoRouteViewerID = '';
+      toast('That photo is no longer available. Returning to Photos.');
+      return;
+    }
+  }
+  openPhotoViewer(id, false);
+}
+
+function renderPhotoViewer() {
+  const item = state.photoItems[photoViewerIndex];
+  if (!item) { $('#modal').close(); return; }
+  const path = item.path || filePath(item.id);
+  const video = /\.(?:mp4|mov|m4v|webm|mkv)$/i.test(path);
+  const hiddenParam = state.photosMode === 'hidden' ? '&hidden=1' : '';
+  const date = item.captureTime ? modifiedLabel(item.captureTime) : 'Date unknown';
+  const source = video
+    ? `<video class="photo-viewer-media" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original${state.photosMode === 'hidden' ? '?hidden=1' : ''}" controls autoplay playsinline preload="metadata"></video>`
+    : `<img class="photo-viewer-media" style="--photo-zoom:${state.photoZoom || 1}" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/thumbnail?size=1280${hiddenParam}" alt="${esc(item.title)}">`;
+  const caption = item.caption ? `<p>${esc(item.caption)}</p>` : '';
+  $('#modal').classList.add('photo-viewer');
+  $('#modal').classList.remove('wide');
+  $('#modal-content').innerHTML = `<div class="photo-viewer-shell" data-photo-viewer-stage>
+    <header class="photo-viewer-top"><div><strong>${esc(item.title)}</strong><small>${photoViewerIndex + 1} of ${state.photoItems.length}</small></div>
+      <div class="photo-viewer-actions"><button class="secondary" data-action="photo-show-library">Show in Library</button><button class="secondary" data-action="photo-add-to-album">Add to album</button><button class="secondary" data-action="photo-edit">Edit details</button><button class="secondary" data-action="photo-toggle-archive">${item.archived ? 'Unarchive' : 'Archive'}</button><button class="secondary" data-action="photo-toggle-favorite" aria-pressed="${item.favorite ? 'true' : 'false'}">${item.favorite ? '★ Favorite' : '☆ Favorite'}</button><button class="secondary" data-action="photo-zoom-out" aria-label="Zoom out">−</button><span class="photo-viewer-zoom">${Math.round((state.photoZoom || 1) * 100)}%</span><button class="secondary" data-action="photo-zoom-in" aria-label="Zoom in">+</button><button class="secondary" data-action="photo-viewer-info" aria-expanded="${state.photoViewerInfo ? 'true' : 'false'}">Details</button><a class="secondary button-link" href="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original?download=1${state.photosMode === 'hidden' ? '&hidden=1' : ''}" download="${esc(item.title)}">Download original</a><button class="icon-button" data-action="photo-viewer-close" aria-label="Close viewer">×</button></div>
+    </header>
+    <button class="photo-viewer-nav previous" data-action="photo-viewer-prev" aria-label="Previous photo" ${photoViewerIndex === 0 ? 'disabled' : ''}>‹</button>
+    <div class="photo-viewer-stage">${source}</div>
+    <button class="photo-viewer-nav next" data-action="photo-viewer-next" aria-label="Next photo" ${photoViewerIndex >= state.photoItems.length - 1 && !state.photoHasMore ? 'disabled' : ''}>›</button>
+    <footer class="photo-viewer-caption"><span>${esc(date)}</span>${caption}</footer>
+    <aside class="photo-viewer-info" ${state.photoViewerInfo ? '' : 'hidden'}><strong>Details</strong><dl><dt>Capture date</dt><dd>${esc(date)}</dd><dt>File</dt><dd>${esc(path)}</dd><dt>Size</dt><dd>${esc(item.size)}</dd>${item.captureSource ? `<dt>Date source</dt><dd>${esc(item.captureSource)}</dd>` : ''}</dl></aside>
+  </div>`;
+  if (!$('#modal').open) $('#modal').showModal();
+  const stage = $('#modal [data-photo-viewer-stage]');
+  let touchStart = null;
+  stage?.addEventListener('pointerdown', event => { touchStart = event.clientX; });
+  stage?.addEventListener('pointerup', event => {
+    if (touchStart === null) return;
+    const delta = event.clientX - touchStart;
+    touchStart = null;
+    if (Math.abs(delta) > 70) movePhotoViewer(delta < 0 ? 1 : -1);
+  });
+  prefetchPhotoViewerNeighbors();
+}
+
+function editPhotoDetails() {
+  const item = state.photoItems[photoViewerIndex];
+  if (!item) return;
+  const captured = item.captureTime ? item.captureTime.slice(0,16) : '';
+  const offset = item.captureOffsetMinutes === undefined || item.captureOffsetMinutes === null ? '' : item.captureOffsetMinutes === 0 ? '+00:00' : `${item.captureOffsetMinutes < 0 ? '-' : '+'}${String(Math.floor(Math.abs(item.captureOffsetMinutes)/60)).padStart(2,'0')}:${String(Math.abs(item.captureOffsetMinutes)%60).padStart(2,'0')}`;
+  modal(`<span class="eyebrow purple">PHOTO / DETAILS</span><h2>Edit details</h2><form id="photo-edit-form" class="auth-form"><label>Caption<textarea name="caption" maxlength="4096">${esc(item.caption || '')}</textarea></label><label>Capture date and time<input name="captured_at" type="datetime-local" value="${esc(captured)}"></label><label>UTC offset (leave blank if unknown)<input name="capture_offset" value="${esc(offset)}" placeholder="+00:00" pattern="[+-][0-9]{2}:[0-9]{2}"></label><label>Rotation<select name="rotation">${[0,90,180,270].map(rotation=>`<option value="${rotation}" ${rotation === (item.userRotation || 0) ? 'selected' : ''}>${rotation}°</option>`).join('')}</select></label><p class="eyebrow">Changing the date affects Photos ordering. The original file stays unchanged.</p><div class="dialog-actions"><button class="primary">Save details</button><button class="secondary" type="button" data-action="photo-edit-cancel">Cancel</button></div></form>`, true);
+}
+
+function photoAlbumByID(id) { return (state.photoAlbums || []).find(album => album.id === id && album.source === 'custom'); }
+function editPhotoAlbum(id = '', initialIDs = state.selectedFiles || [], selection = state.photoSelection) {
+  const album = id ? photoAlbumByID(id) : null;
+  if (id && !album) return;
+  photoAlbumPendingIDs = [...new Set(initialIDs)].filter(Boolean);
+  photoAlbumPendingSelection = id ? null : selection;
+  modal(`<span class="eyebrow purple">PHOTOS / ALBUM</span><h2>${album ? 'Edit album' : 'New album'}</h2><form id="photo-album-form" class="auth-form"><input type="hidden" name="id" value="${esc(album?.id || '')}"><input type="hidden" name="revision" value="${album?.revision || 0}"><label>Title<input name="title" required maxlength="200" value="${esc(album?.title || '')}"></label><label>Description<textarea name="description" maxlength="4000">${esc(album?.description || '')}</textarea></label><label>Album order<input name="position" type="number" min="0" max="100000" value="${album?.position || 0}"></label>${album ? `<label>Cover<select name="cover_id">${[...new Set([album.cover_id, ...(album.asset_ids || []).slice(0,100)].filter(Boolean))].map((id,index)=>`<option value="${esc(id)}" ${id === album.cover_id ? 'selected' : ''}>${esc(fileByID(id)?.title || `Photo ${index+1}`)}</option>`).join('')}</select></label>` : ''}<p class="eyebrow">${album ? `${album.count} visible photos in this album.` : `${photoAlbumPendingSelection?.count || initialIDs.length} selected photos will be added.`}</p><div class="dialog-actions"><button class="primary">Save album</button><button class="secondary" type="button" data-action="photo-edit-cancel">Cancel</button></div></form>`, true);
+}
+
+let photoAlbumPendingIDs = [];
+let photoAlbumPendingSelection = null;
+function addPhotosToAlbum(ids, selection = null) {
+  photoAlbumPendingSelection = selection;
+  photoAlbumPendingIDs = [...new Set(ids || [])].filter(Boolean);
+  const albums = (state.photoAlbums || []).filter(album => album.source === 'custom');
+  if (!photoAlbumPendingIDs.length && !selection?.count) { toast('Select at least one photo.'); return; }
+  if (!albums.length) { editPhotoAlbum('', photoAlbumPendingIDs, selection); return; }
+  modal(`<span class="eyebrow purple">PHOTOS / ORGANIZE</span><h2>Add to album</h2><form id="photo-album-members-form" class="auth-form">${albums.map(album => `<label class="choice"><input type="radio" name="album_id" value="${esc(album.id)}" required><span><strong>${esc(album.title)}</strong><small>${album.count} visible items</small></span></label>`).join('')}<div class="dialog-actions"><button class="primary">Add ${selection?.count || photoAlbumPendingIDs.length} ${(selection?.count || photoAlbumPendingIDs.length) === 1 ? 'photo' : 'photos'}</button><button class="secondary" type="button" data-action="photo-edit-cancel">Cancel</button></div></form>`, true);
+}
+
+
+let photoDuplicateCursor='';
+async function reviewPhotoDuplicates(cursor='') {
+  if (!live || !state.unlocked) return;
+  const username=state.username, hidden=state.photosMode==='hidden';
+  const page=await engine.listPhotoDuplicates(cursor,hidden);
+  if (!state.unlocked || state.username!==username || hidden!==(state.photosMode==='hidden')) return;
+  photoDuplicateCursor=page.next_cursor || '';
+  modal(`<h2>Exact duplicates</h2><p>Choose a preferred copy for this review. Originals and album membership stay intact.</p>${(page.groups || []).map(group=>`<section class="duplicate-group"><h3>${group.count} copies</h3>${group.items.map(item=>`<div class="file-row"><span class="file-name"><strong>${esc(item.path)}</strong><small>${formatBytes(item.size)}${item.preferred_photo?' · preferred':''}</small></span><button class="text-button" data-photo-prefer="${esc(item.id)}" ${item.preferred_photo?'disabled':''}>Prefer this copy</button></div>`).join('')}${group.has_more_items?'<p>Showing the first 200 copies. All originals remain in Library.</p>':''}</section>`).join('') || '<p>No exact duplicates in this view.</p>'}<div class="dialog-actions">${photoDuplicateCursor?'<button class="secondary" data-action="photo-duplicates-more">More groups</button>':''}<button class="secondary" type="button" data-close>Done</button></div>`);
+}
+let photoGrabIDs = [];
+let photoGrabSelection = null;
+function sharePhotos(ids = state.selectedFiles || [], title = 'Photos', selection = state.photoSelection) {
+  photoGrabSelection = selection;
+  photoGrabIDs = [...new Set(ids)].filter(Boolean);
+  if (!photoGrabIDs.length && !selection?.count) { toast('Select photos to share.'); return; }
+  const hidden = selection?.hidden ?? (state.photosMode === 'hidden');
+  modal(`<h2>Share photos</h2><form id="photo-grab-form" class="auth-form"><label>Title<input name="title" maxlength="200" value="${esc(title)}" required></label><label>Passphrase (optional)<input name="passphrase" type="password" autocomplete="new-password"></label><label>Expires<select name="expiry"><option value="24h">24 hours</option><option value="3d">3 days</option><option value="7d">7 days</option></select></label><label>Download transfers<input name="grabs" type="number" min="1" max="10000" value="3" required></label>${hidden ? '<label class="choice"><input name="confirm_hidden" type="checkbox" required>Share these selected hidden photos with anyone who has this grab link.</label>' : ''}<p>${selection?.count || photoGrabIDs.length} selected photos. The link freezes this selection. Browsing uses no retries; each requested download uses one.</p><p>Original downloads may contain embedded location metadata.</p><div class="dialog-actions"><button class="primary">Create grab</button><button class="secondary" type="button" data-close>Cancel</button></div></form>`, true);
+}
+async function sharePhotoAlbum(path) {
+  const album = (state.photoAlbums || []).find(item=>item.path === path);
+  if (!album) return;
+  const username = state.username;
+  const selection = await engine.createPhotoSelection({filter:{album:path},mode:'all'});
+  if (!state.unlocked || state.username !== username) return;
+  sharePhotos([],album.title,selection);
+}
+
+function prefetchPhotoViewerNeighbors() {
+  for (const item of [state.photoItems[photoViewerIndex - 1], state.photoItems[photoViewerIndex + 1]]) {
+    if (item && !/\.(?:mp4|mov|m4v|webm|mkv)$/i.test(item.path || '')) {
+      const image = new Image();
+      image.src = `/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/thumbnail?size=1280${state.photosMode === 'hidden' ? '&hidden=1' : ''}`;
+    }
+  }
+}
+
+function movePhotoViewer(delta) {
+  const next = photoViewerIndex + delta;
+  if (next < 0) {
+    if (state.photoPreviousCursor && !state.photoLoading) {
+      const before = state.photoItems.length;
+      loadPhotoPage(false, false, 'before').then(() => {
+        const added = state.photoItems.length - before;
+        if (added > 0) { photoViewerIndex = Math.max(0, added - 1); renderPhotoViewer(); }
+      });
+    }
+    return;
+  }
+  if (next >= state.photoItems.length) {
+    if (state.photoHasMore && !state.photoLoading) loadPhotoPage(false, false).then(() => {
+      if (photoViewerIndex + delta < state.photoItems.length) { photoViewerIndex += delta; renderPhotoViewer(); }
+    });
+    return;
+  }
+  photoViewerIndex = next;
+  state.selected = {type: 'file', id: state.photoItems[next].id};
+  state.selectedFiles = [state.photoItems[next].id];
+  state.selectionAnchor = state.photoItems[next].id;
+  renderPhotoViewer();
 }
 
 function newUploadID() {
@@ -901,6 +1102,7 @@ function toast(message) {
 
 function modal(html, wide = false) {
   $('#modal').classList.toggle('wide', wide);
+  $('#modal').classList.remove('photo-viewer');
   $('#modal-content').innerHTML = html;
   $('#modal').showModal();
 }
@@ -915,7 +1117,12 @@ function vaultCard() {
 }
 
 function routeHash(view = state.view) {
-  if (view === 'photos') return state.photosAlbum ? '#photos/album/' + encodeURIComponent(state.photosAlbum) : state.photosMode === 'albums' ? '#photos/albums' : '#photos';
+  if (view === 'photos') {
+    if (state.photoQuery) return state.photosMode === 'hidden' ? '#photos/hidden/search/' + encodeURIComponent(state.photoQuery) : '#photos/search/' + encodeURIComponent(state.photoQuery);
+    if (state.photosAlbum) return '#photos/album/' + encodeURIComponent(state.photosAlbum);
+    if (state.photoDate) return '#photos/date/' + encodeURIComponent(state.photoDate);
+    return state.photosMode === 'all' ? '#photos' : '#photos/' + encodeURIComponent(state.photosMode);
+  }
   return `#${view}${view === 'library' && state.currentPath ? '/' + encodeURIComponent(state.currentPath) : ''}`;
 }
 
@@ -931,9 +1138,24 @@ function setLibraryPath(path, push = true) {
 }
 
 function applyRoute() {
+  if ($('#modal').classList.contains('photo-viewer') && !history.state?.photoViewer) {
+    photoViewerHistoryPushed = false;
+    $('#modal').close();
+    return;
+  }
   const raw = location.hash.replace(/^#/, '') || 'home';
-  const [view, encoded] = raw.split('/');
+  const routeParts = raw.split('/');
+  const photoRouteViewer = routeParts[0] === 'photos' && routeParts[1] === 'view';
+  photoViewerReturnHash = String(history.state?.returnHash || '#photos');
+  const sourceRoute = photoRouteViewer ? String(history.state?.returnHash || '#photos').replace(/^#/, '') : raw;
+  const [view, encoded] = sourceRoute.split('/');
   const allowed = new Set(['home', 'library', 'photos', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
+  const previous=state.view, switching=previous !== (allowed.has(view)?view:'home');
+  if(switching){
+    const anchor=previous==='photos'?[...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top})).find(row=>row.top>=0&&row.top<window.innerHeight):null;
+    modeMemory.remember(previous,state,window.scrollY,anchor);stopMediaPlayback();
+    if(previous==='photos'){photoPageController?.abort();photoPageRequest++;state.photoLoading=false;photoSelectionRequest++;}
+  }
   state.view = allowed.has(view) ? view : 'home';
   if (state.view !== 'library' && libraryLoadController) {
     libraryPageRequest++;
@@ -944,17 +1166,34 @@ function applyRoute() {
     try { state.currentPath = encoded ? decodeURIComponent(encoded) : ''; } catch { state.currentPath = ''; }
   }
   if (state.view === 'photos') {
-    state.photosMode = encoded === 'albums' || encoded === 'album' ? 'albums' : 'all';
-    try { state.photosAlbum = encoded === 'album' ? decodeURIComponent(raw.split('/')[2] || '') : ''; } catch { state.photosAlbum = ''; }
+    const parts = sourceRoute.split('/');
+    const hiddenSearch = encoded === 'hidden' && parts[2] === 'search';
+    const regularSearch = encoded === 'search';
+    state.photosMode = hiddenSearch ? 'hidden' : regularSearch ? 'all' : ['albums', 'favorites', 'recent', 'hidden', 'archived'].includes(encoded) || encoded === 'album' ? (encoded === 'album' ? 'albums' : encoded) : 'all';
+    try { state.photoQuery = hiddenSearch ? decodeURIComponent(parts[3] || '') : regularSearch ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photoQuery = ''; }
+    try { state.photosAlbum = encoded === 'album' ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photosAlbum = ''; }
+    try { state.photoDate = encoded === 'date' ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photoDate = ''; }
     state.photosShown = 60;
     state.photoItems = [];
     state.photoCursor = '';
+    state.photoPreviousCursor = '';
     loadPhotoAlbums();
+    loadPhotoDates();
     loadPhotoPreparation();
-    loadPhotoPage(true);
+    try { photoRouteViewerID = photoRouteViewer ? decodeURIComponent(routeParts[2] || '') : ''; } catch { photoRouteViewerID = ''; }
+    const restored=switching?modeMemory.restore('photos',state):null;
+    if(switching&&!restored)clearFileSelection();
+    state.photoAnchor = photoRouteViewerID || restored?.anchor?.id || '';
+    loadPhotoPage(true).then(() => {
+      state.photoModeDirty=false;
+      if(restored) requestAnimationFrame(()=>{window.scrollTo({top:restored.scroll,behavior:'auto'});schedulePhotoGridWindow();});
+      if (photoRouteViewerID) restorePhotoViewerRoute(photoRouteViewerID);
+    }).catch(err => toast(err.message));
   }
   if (state.view === 'library' && live && state.unlocked) {
-    loadLibrary(true).catch(err => toast(err.message));
+    const restored=switching?modeMemory.restore('library',state):null;
+    if(switching&&!restored)clearFileSelection();
+    loadLibrary(true).then(()=>{if(restored&&state.view==='library')requestAnimationFrame(()=>window.scrollTo({top:restored.scroll,behavior:'auto'}));}).catch(err => toast(err.message));
   }
   renderMain();
   renderDeck();
@@ -963,35 +1202,43 @@ function applyRoute() {
 }
 
 function navigate(view, replace = false) {
-  if (state.view !== view) stopMediaPlayback();
-  if (view !== 'library' && libraryLoadController) {
-    libraryPageRequest++;
-    libraryLoadController.abort();
-    libraryLoadController = null;
+  const previous = state.view, switching = previous !== view;
+  if (switching) {
+    const anchor = previous === 'photos' ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top})).find(row=>row.top>=0&&row.top<window.innerHeight) : null;
+    modeMemory.remember(previous,state,window.scrollY,anchor);
   }
-  state.view = view;
-  if (view === 'photos') {
-    state.photoItems = [];
-    state.photoCursor = '';
-    state.photoLoading = false;
-    state.photoWindowStart = 0;
-    state.photoWindowEnd = 0;
+  if (previous === 'photos' && view !== 'photos') { photoPageController?.abort(); photoPageRequest++; state.photoLoading=false; photoSelectionRequest++; }
+  if (view === 'trash' && previous !== 'trash') {
+    state.trashScope=previous === 'photos' ? 'photos' : 'library'; state.trashHidden=state.photosMode==='hidden'; state.trash=[];
   }
-  renderMain();
-  if (view === 'trash') loadTrash();
-  if (view === 'takeout') refreshTakeout();
-  if (view === 'library' && live && state.unlocked) {
-    loadLibrary().then(() => { if (state.view === 'library') renderMain(); }).catch(err => toast(err.message));
+  if (switching) stopMediaPlayback();
+  if (view !== 'library' && libraryLoadController) { libraryPageRequest++; libraryLoadController.abort(); libraryLoadController=null; }
+  state.view=view;
+  const restored=switching ? modeMemory.restore(view,state) : null;
+  if (switching && ['library','photos'].includes(view) && !restored) clearFileSelection();
+  const cachedPhotos=view==='photos' && switching && !state.photoModeDirty && state.photoItems.length>0;
+  if (view==='photos' && !cachedPhotos) {
+    state.photoItems=[]; state.photoCursor=state.photoPreviousCursor=''; state.photoLoading=false; state.photoWindowStart=state.photoWindowEnd=0;
+    state.photoAnchor=restored?.anchor?.id || '';
   }
-  if (view === 'photos') {
-    state.photoItems = [];
-    state.photoCursor = '';
-    state.photoLoading = false;
-    loadPhotoAlbums();
-    loadPhotoPreparation();
-    loadPhotoPage(true);
+  renderMain(); renderDeck();
+  if (view==='trash') loadTrash();
+  if (view==='takeout') refreshTakeout();
+  const restoreScroll=()=>{
+    if(state.view!==view) return;
+    requestAnimationFrame(()=>{
+      const anchor=restored?.anchor && [...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor.id);
+      if(anchor)window.scrollBy({top:anchor.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});
+      else window.scrollTo({top:restored?.scroll || 0,behavior:'auto'});
+      if(view==='photos')schedulePhotoGridWindow();
+    });
+  };
+  if(view==='library' && live && state.unlocked) loadLibrary().then(()=>{if(state.view==='library'){renderMain();restoreScroll();}}).catch(err=>toast(err.message));
+  if(view==='photos') {
+    loadPhotoAlbums(false); loadPhotoPreparation();
+    if(cachedPhotos)restoreScroll(); else loadPhotoPage(true).then(()=>{state.photoModeDirty=false;restoreScroll();});
   }
-  history[replace ? 'replaceState' : 'pushState']({}, '', routeHash(view));
+  history[replace?'replaceState':'pushState']({},'',routeHash(view));
 }
 
 let activeMedia = null;
@@ -1022,6 +1269,7 @@ document.addEventListener('error', event => {
 }, true);
 
 function selectFile(id) {
+  state.photoSelection = null;
   state.selected = {type: 'file', id};
   state.selectedFiles = [id];
   state.selectionAnchor = id;
@@ -1158,6 +1406,7 @@ function ingest() {
 }
 
 async function lockVault() {
+  modeMemory.clear();
   stopWork();
   libraryLoadController?.abort();
   stopMediaPlayback();
@@ -1167,7 +1416,18 @@ async function lockVault() {
   if (live) {
     try { await engine.lock(); } catch (err) { toast(err.message); return; }
   }
+  clearFileSelection();
+  photoSelectionRequest++;
+  photoPageController?.abort();
+  state.photoCamera=state.photoSearchType=state.photoFrom=state.photoTo='';
+  state.photoOutsideAlbums=false;
   state.unlocked = false;
+  if (state.photosMode === 'hidden') {
+    state.photosMode = 'all';
+    state.photosAlbum = '';
+    state.photoDate = '';
+    if (location.hash.startsWith('#photos/hidden') || history.state?.returnHash === '#photos/hidden') history.replaceState({}, '', '#photos');
+  }
   $('.app').hidden = true;
   $('#unlock-screen').hidden = false;
   $('#unlock-form').reset();
@@ -1187,7 +1447,7 @@ async function loadLibrary(reset = true) {
   const controller = new AbortController();
   libraryLoadController = controller;
   const filtered = !!state.librarySearch.trim() || state.libraryType !== 'all' || state.libraryDate !== 'all' || state.librarySize !== 'all' || state.libraryScope !== 'all';
-  if (reset) {
+    if (reset) {
     state.libraryCursor = '';
     state.libraryNextCursor = '';
     files.splice(0, files.length);
@@ -1229,33 +1489,83 @@ async function loadLibrary(reset = true) {
   }
 }
 
+let photoSelectionRequest = 0;
+async function selectPhotoDay(day) {
+  if (!live || !state.unlocked || state.view !== 'photos') return;
+  const request = ++photoSelectionRequest, username = state.username;
+  const mode = state.photosMode, album = state.photosAlbum || '', query = state.photoQuery || '';
+  const filterKey = JSON.stringify([state.photoCamera,state.photoSearchType,state.photoFrom,state.photoTo,state.photoOutsideAlbums]);
+  toast('Selecting the full day…');
+  const filter = {camera:state.photoCamera,type:state.photoSearchType,outside_albums:state.photoOutsideAlbums,q:query,album:state.photoOutsideAlbums?'':album,from:day === 'unknown' ? '' : day,to:day === 'unknown' ? '' : day,unknown:day === 'unknown',favorite:mode === 'favorites',hidden:mode === 'hidden',archived:mode === 'archived'};
+  const selection = await engine.createPhotoSelection({filter,search:hasPhotoSearchFilters(),mode:['recent','favorites','hidden','archived'].includes(mode)?mode:'all',date:day});
+  if (request !== photoSelectionRequest || username !== state.username || !state.unlocked || state.view !== 'photos' || mode !== state.photosMode || album !== (state.photosAlbum || '') || query !== (state.photoQuery || '') || filterKey !== JSON.stringify([state.photoCamera,state.photoSearchType,state.photoFrom,state.photoTo,state.photoOutsideAlbums])) return;
+  state.photoSelection = selection;
+  state.photoSelectedItems = new Map();
+  state.selectedFiles = state.photoItems.filter(item => day === 'unknown' ? !item.captureTime : String(item.captureTime || '').startsWith(day)).map(item=>item.id);
+  state.selected = state.selectedFiles.length ? {type:'file',id:state.selectedFiles[0]} : null;
+  renderMain(); renderDeck(); toast(`${selection.count} photos selected across the full day.`);
+}
+
 let photoAlbumsRequest = 0;
 let photoPageRequest = 0;
-async function loadPhotoPage(reset = false, render = true) {
+let photoPageController;
+const hasPhotoSearchFilters = () => Boolean(state.photoQuery || state.photoCamera || state.photoSearchType || state.photoFrom || state.photoTo || state.photoOutsideAlbums);
+let photoSearchTimer = 0;
+async function loadPhotoPage(reset = false, render = true, direction = 'next') {
   if (!live || !state.unlocked || state.view !== 'photos' || state.photosMode === 'albums' && !state.photosAlbum) return;
   if (state.photoLoading && !reset) return;
   const request = ++photoPageRequest, username = state.username;
+  photoPageController?.abort();
+  photoPageController = new AbortController();
+  const signal = photoPageController.signal;
+  const previousViewportAnchor = !reset
+    ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top})).find(row => row.top >= 0 && row.top < window.innerHeight)
+    : null;
   if (reset) {
     state.photoItems = [];
     state.photoCursor = '';
+    state.photoPreviousCursor = '';
     state.photoHasMore = false;
     state.photoError = '';
   }
   state.photoLoading = true;
   if (render) renderMain();
   try {
-    const page = await engine.listPhotos(state.photoCursor, state.photosAlbum || '');
+    const photoMode = ['recent', 'favorites', 'hidden', 'archived'].includes(state.photosMode) ? state.photosMode : 'all';
+    const around = reset ? state.photoAnchor : '';
+    const requestCursor = direction === 'before' ? state.photoPreviousCursor : state.photoCursor;
+    const dateFrom = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-01-01` : state.photoDate.length === 7 ? `${state.photoDate}-01` : state.photoDate) : '';
+    const dateTo = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-12-31` : state.photoDate.length === 7 ? `${state.photoDate}-${new Date(Number(state.photoDate.slice(0,4)), Number(state.photoDate.slice(5,7)), 0).getDate()}` : state.photoDate) : '';
+    const page = hasPhotoSearchFilters()
+      ? await engine.searchPhotos(requestCursor, {signal, camera:state.photoCamera, type:state.photoSearchType, outside_albums:state.photoOutsideAlbums, q:state.photoQuery, album:state.photoOutsideAlbums ? '' : state.photosAlbum, from:state.photoFrom || dateFrom, to:state.photoTo || dateTo, favorite:state.photosMode === 'favorites', hidden:state.photosMode === 'hidden', archived:state.photosMode === 'archived'})
+      : await engine.listPhotos(requestCursor, state.photosAlbum || '', {mode: photoMode, date: state.photoDate, around, signal});
     if (request !== photoPageRequest || username !== state.username || !state.unlocked || state.view !== 'photos') return;
-    state.photoItems.push(...(page.items || []).map(engine.toFixture));
-    state.photoCursor = page.next_cursor || '';
-    state.photoHasMore = Boolean(page.next_cursor);
+    const incoming = (page.items || []).map(engine.toFixture);
+    if (direction === 'before') {
+      state.photoItems.unshift(...incoming);
+      if (photoViewerIndex >= 0) photoViewerIndex += incoming.length;
+    } else state.photoItems.push(...incoming);
+    if (reset) state.photoAnchor = '';
+    if (state.photoItems.length > 2000) {
+      const trim = state.photoItems.length - 2000;
+      if (direction === 'before') state.photoItems.splice(2000, trim);
+      else {
+        state.photoItems.splice(0, trim);
+        photoViewerIndex = Math.max(-1, photoViewerIndex - trim);
+      }
+    }
+    if (direction !== 'before') state.photoCursor = page.next_cursor || '';
+    state.photoPreviousCursor = page.previous_cursor || (direction === 'before' ? '' : state.photoPreviousCursor);
+    state.photoHasMore = Boolean(state.photoCursor);
     state.photoGeneration = page.generation || 0;
     state.photoError = '';
   } catch (err) {
-    if (request !== photoPageRequest || username !== state.username) return;
+    if (request !== photoPageRequest || username !== state.username || err.name === 'AbortError') return;
     if (err.message?.includes('photo library changed')) {
       state.photoItems = [];
       state.photoCursor = '';
+      state.photoPreviousCursor = '';
+      state.photoAnchor = '';
       state.photoLoading = false;
       state.photoError = '';
       return loadPhotoPage(true, render);
@@ -1264,8 +1574,30 @@ async function loadPhotoPage(reset = false, render = true) {
   } finally {
     if (request === photoPageRequest) state.photoLoading = false;
   }
-  if (request === photoPageRequest && render && state.view === 'photos') renderMain();
+    if (request === photoPageRequest && render && state.view === 'photos') {
+    state.photoViewportRestore = previousViewportAnchor;
+    renderMain();
+    if (previousViewportAnchor) requestAnimationFrame(() => {
+      const el = [...document.querySelectorAll('.photo-grid [data-select-file]')].find(node => node.dataset.selectFile === previousViewportAnchor.id);
+      if (el) window.scrollBy({top: el.getBoundingClientRect().top - previousViewportAnchor.top, behavior: 'auto'});
+      state.photoViewportRestore = null;
+    });
+  }
   if (request === photoPageRequest && state.view === 'photos') schedulePhotoGridWindow();
+}
+
+async function loadPhotoDates() {
+  if (!live || !state.unlocked) return;
+  const username = state.username;
+  try {
+    const summary = await engine.listPhotoDates(state.photosMode === 'hidden');
+    if (username !== state.username || !state.unlocked) return;
+    state.photoDateSummary = summary;
+  } catch {
+    if (username !== state.username) return;
+    state.photoDateSummary = null;
+  }
+  if (state.view === 'photos') renderMain();
 }
 
 async function loadPhotoPreparation() {
@@ -1276,14 +1608,14 @@ async function loadPhotoPreparation() {
 
 async function loadPhotoAlbums(render = true) {
   if (!live || !state.unlocked) return;
-  const request = ++photoAlbumsRequest, username = state.username;
+  const request = ++photoAlbumsRequest, username = state.username, hidden = state.photosMode === 'hidden';
   try {
-    const result = await engine.listPhotoAlbums();
-    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked) return;
+    const result = await engine.listPhotoAlbums(hidden);
+    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked || hidden !== (state.photosMode === 'hidden')) return;
     state.photoAlbums = result.albums || [];
     state.photoAlbumsError = '';
   } catch (err) {
-    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked) return;
+    if (request !== photoAlbumsRequest || username !== state.username || !state.unlocked || hidden !== (state.photosMode === 'hidden')) return;
     state.photoAlbums = [];
     state.photoAlbumsError = err.message;
   }
@@ -1301,15 +1633,29 @@ async function syncLibraryFromChange() {
   const scroll = window.scrollY;
   try {
     if (state.view === 'photos') {
+      const oldCount = state.photoItems.length;
+      const anchor = [...document.querySelectorAll('.photo-grid [data-select-file]')]
+        .map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top}))
+        .find(item => item.top >= 0 && item.top < window.innerHeight);
       await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation()]);
       await loadPhotoPage(true, false);
+      const retain = Math.min(oldCount, 2000);
+      while (state.photoItems.length < retain && state.photoHasMore && !state.photoError) {
+        await loadPhotoPage(false, false);
+      }
       renderMain();
       renderDeck();
-      requestAnimationFrame(() => window.scrollTo({top: scroll, behavior: 'auto'}));
+      if ($('#modal').classList.contains('photo-viewer')) renderPhotoViewer();
+      requestAnimationFrame(() => {
+        const restored = anchor && [...document.querySelectorAll('.photo-grid [data-select-file]')]
+          .find(el => el.dataset.selectFile === anchor.id);
+        if (restored) window.scrollBy({top: restored.getBoundingClientRect().top - anchor.top, behavior: 'auto'});
+        else window.scrollTo({top: scroll, behavior: 'auto'});
+      });
       return;
     }
     await loadLibrary();
-    state.selectedFiles = (state.selectedFiles || []).filter(id => files.some(file => file.id === id));
+    state.selectedFiles = (state.selectedFiles || []).filter(id => files.some(file => file.id === id) || state.photoSelectedItems?.has(id));
     if (state.selected?.type === 'file' && !files.some(f => f.id === state.selected.id)) state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
     if (state.view === 'library' || state.view === 'photos') {
       renderMain();
@@ -1357,7 +1703,7 @@ setInterval(async () => {
     const prep = state.photoPreparation;
     const status = document.querySelector('[data-photo-prep-status]');
     const button = document.querySelector('[data-action="photo-preparation"]');
-    if (status) status.textContent = prep.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}${prep.failed ? ` · ${prep.failed} failed` : ''}${prep.error ? ` · ${prep.error}` : ''}` : 'Prepare previews';
+    if (status) status.textContent = prep.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}${prep.working ? ` · ${prep.working} rendering · ${prep.work_progress}% avg` : ''}${prep.failed ? ` · ${prep.failed} failed` : ''}${prep.error ? ` · ${prep.error}` : ''}` : 'Prepare previews';
     if (button) {
       const active = prep.enabled && ['queued', 'running', 'paused_storage'].includes(prep.status);
       button.dataset.prepAction = active ? 'pause' : 'resume';
@@ -1378,7 +1724,18 @@ setInterval(async () => {
 function startLibraryEvents() {
   libraryEventSource?.close();
   if (!live || !state.unlocked) return;
-  libraryEventSource = engine.libraryEvents(() => syncLibraryFromChange());
+  libraryEventSource = engine.libraryEvents(change => {
+    if (state.view !== 'photos') { state.photoModeDirty=true; state.photoItems=[]; }
+    if (['photo-visibility','rename','delete','restore'].includes(change?.kind)) {
+      modeMemory.clearSelections();
+      photoSelectionRequest++;
+      clearFileSelection();
+      photoGrabIDs=[];
+      if ($('#photo-grab-form') || $('#photo-album-members-form') || $('#modal').querySelector('.duplicate-group')) $('#modal').close();
+      if ($('#modal').classList.contains('photo-viewer')) closePhotoViewer();
+    }
+    syncLibraryFromChange();
+  });
 }
 
 async function loadQuota() {
@@ -1393,7 +1750,7 @@ async function loadQuota() {
 async function loadTrash() {
   if (!live) return;
   try {
-    const result = await engine.listTrash();
+    const result = state.trashScope === 'photos' ? await engine.listPhotoTrash(state.trashHidden) : await engine.listTrash();
     state.trash = result.items || [];
     state.trashRetention = result.retention_days || 30;
     renderMain();
@@ -1401,6 +1758,8 @@ async function loadTrash() {
 }
 
 function openDesk() {
+  modeMemory.clear();
+  clearFileSelection();
   state.unlocked = true;
   state.photoItems = [];
   state.photoCursor = '';
@@ -1408,6 +1767,7 @@ function openDesk() {
   state.photoAlbums = [];
   state.photoAlbumsLoaded = false;
   state.photoAlbumsError = '';
+  state.photoDateSummary = null;
   $('#unlock-screen').hidden = true;
   $('.app').hidden = false;
   $('#admin-nav').hidden = !state.admin;
@@ -1417,6 +1777,7 @@ function openDesk() {
   startLibraryEvents();
   if (state.view === 'photos') {
     loadPhotoAlbums();
+    loadPhotoDates();
     loadPhotoPreparation();
     loadPhotoPage(true);
   } else if (state.view === 'library') {
@@ -1533,6 +1894,31 @@ async function runMenu(act) {
     } else toast('Delete is the engine. This preview does not drop files.');
   }
   if (kind === 'upload-here') { uploadPrefix = key; $('#upload-folder').click(); }
+  if (kind === 'photo-folder-hidden') {
+    const folder = files.find(file => file.folder && file.path === key);
+    try {
+      await engine.setPhotoFolderHidden(key, !folder?.hidden);
+      await loadLibrary(true);
+      renderMain();
+      toast(folder?.hidden ? 'Folder is visible in Photos.' : 'Folder hidden from Photos.');
+    } catch (err) { toast(err.message); }
+  }
+  if (kind === 'photos-add-folder') {
+    const fallback = key.split('/').pop() || 'Imported folder';
+    const name = prompt('Copy this folder into Photos as:', fallback);
+    if (!name || !live || !state.unlocked) return;
+    const clean = name.trim().replace(/^\/+|\/+$/g, '');
+    if (!clean || clean.includes('/')) { toast('Choose a single folder name.'); return; }
+    const destination = `Photos/${clean}`;
+    if (!confirm(`Copy ${key} into ${destination}? The original stays in the Library.`)) return;
+    try {
+      await engine.copyLibrary(key, destination);
+      if (state.view === 'library') await loadLibrary(true);
+      await loadPhotoAlbums(false);
+      toast('Folder copied into Photos.');
+    } catch (err) { toast(err.message); }
+    return;
+  }
   if (kind === 'upload') { uploadPrefix = state.currentPath; $('#upload').click(); }
   if (kind === 'upload-folder-root') { uploadPrefix = state.currentPath; $('#upload-folder').click(); }
   if (kind === 'new-folder-root') {
@@ -1582,7 +1968,7 @@ document.addEventListener('click', e => {
   if (b.dataset.archiveDownload) { engine.downloadArchive(b.dataset.archiveDownload); return; }
   if (b.dataset.archiveCancel) { engine.cancelArchive(b.dataset.archiveCancel).then(() => renderUploadTray()).catch(err => toast(err.message)); return; }
   if (b.dataset.trashRestore) {
-    engine.restoreTrash(b.dataset.trashRestore).then(async () => { await loadLibrary(); await loadTrash(); toast('Restored.'); }).catch(err => toast(err.message));
+    (state.trashScope === 'photos' ? engine.restorePhotoTrash(b.dataset.trashId, state.trashHidden) : engine.restoreTrash(b.dataset.trashRestore)).then(async () => { await loadLibrary(); await loadTrash(); toast('Restored.'); }).catch(err => toast(err.message));
     return;
   }
   if (b.dataset.action === 'trash-cleanup') {
@@ -1613,6 +1999,7 @@ document.addEventListener('click', e => {
   if (b.dataset.selectFile) {
     if (e.shiftKey) chooseRange(b.dataset.selectFile);
     else if (e.ctrlKey || e.metaKey) toggleFileSelection(b.dataset.selectFile);
+    else if (state.view === 'photos') openPhotoViewer(b.dataset.selectFile);
     else { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   }
   if (b.dataset.selectFolder) selectFolder(b.dataset.selectFolder);
@@ -1632,11 +2019,65 @@ document.addEventListener('click', e => {
     engine.cancelTakeout(b.dataset.cancelZip).then(() => { toast('Stopping import.'); refreshTakeout(); }).catch(err => toast(err.message));
     return;
   }
+  if (b.dataset.photoSelectDay) { selectPhotoDay(b.dataset.photoSelectDay).catch(err => toast(err.message)); return; }
+  if (b.dataset.action === 'photo-viewer-close') { closePhotoViewer(); return; }
+  if (b.dataset.action === 'photo-show-library') { showPhotoInLibrary().catch(err => toast(err.message)); return; }
+  if (b.dataset.photoPrefer) { engine.preferPhoto(b.dataset.photoPrefer,state.photosMode==='hidden').then(()=>reviewPhotoDuplicates()).catch(err=>toast(err.message)); return; }
+  if (b.dataset.action === 'photo-duplicates') { reviewPhotoDuplicates().catch(err=>toast(err.message)); return; }
+  if (b.dataset.action === 'photo-duplicates-more') { reviewPhotoDuplicates(photoDuplicateCursor).catch(err=>toast(err.message)); return; }
+  if (b.dataset.action === 'photos-share-selected') { sharePhotos(); return; }
+  if (b.dataset.action === 'share-photo-album') { sharePhotoAlbum(b.dataset.albumPath).catch(err=>toast(err.message)); return; }
+  if (b.dataset.action === 'new-photo-album') { editPhotoAlbum(); return; }
+  if (b.dataset.action === 'edit-photo-album') { editPhotoAlbum(b.dataset.albumId); return; }
+  if (b.dataset.action === 'delete-photo-album') {
+    if (!confirm('Delete this album? The photos themselves stay in the library.')) return;
+    engine.deletePhotoAlbum(b.dataset.albumId, Number(b.dataset.albumRevision)).then(async () => { await loadPhotoAlbums(false); renderMain(); toast('Album deleted.'); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'photo-add-to-album') { addPhotosToAlbum([state.photoItems[photoViewerIndex]?.entryID || state.photoItems[photoViewerIndex]?.id]); return; }
+  if (b.dataset.action === 'photos-add-selected-to-album') { addPhotosToAlbum((state.selectedFiles || []).map(id => state.photoItems.find(item => item.id === id)?.entryID || id),state.photoSelection); return; }
+  if (b.dataset.action === 'photos-remove-selected-from-album') {
+    const album = photoAlbumByID(state.photosAlbum.replace(/^album:/, ''));
+    if (!album || !(state.photoSelection?.count || state.selectedFiles?.length)) return;
+    const change = state.photoSelection ? engine.photoSelectionAction({selection_id:state.photoSelection.id,hidden:state.photoSelection.hidden,action:'remove_album',album_id:album.id,revision:album.revision}) : engine.editPhotoAlbumMembers({id:album.id, revision:album.revision, remove_ids:state.selectedFiles});
+    change.then(async () => { clearFileSelection(); await loadPhotoAlbums(false); await loadPhotoPage(true); toast('Removed from album. Originals stay in the library.'); }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'photo-viewer-prev') { movePhotoViewer(-1); return; }
+  if (b.dataset.action === 'photo-viewer-next') { movePhotoViewer(1); return; }
+  if (b.dataset.action === 'photo-viewer-info') { state.photoViewerInfo = !state.photoViewerInfo; renderPhotoViewer(); return; }
+  if (b.dataset.action === 'photo-edit') { editPhotoDetails(); return; }
+  if (b.dataset.action === 'photo-edit-cancel') { if ($('#photo-edit-form')) renderPhotoViewer(); else $('#modal').close(); return; }
+  if (b.dataset.action === 'photo-toggle-archive') {
+    const item = state.photoItems[photoViewerIndex];
+    if (!item || !live) { toast('Archive needs an unlocked connected vault.'); return; }
+    engine.updatePhoto(item.entryID || item.id, {archived:!item.archived}, state.photosMode === 'hidden').then(updated => {
+      Object.assign(item, engine.toFixture(updated)); renderPhotoViewer(); toast(item.archived ? 'Photo archived.' : 'Photo restored to Timeline.');
+    }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'photo-toggle-favorite') {
+    const item = state.photoItems[photoViewerIndex];
+    if (!item || !live) { toast('Favorites need an unlocked connected vault.'); return; }
+    const favorite = !item.favorite;
+    engine.setPhotoFavorite(item.entryID || item.id, favorite, state.photosMode === 'hidden').then(updated => {
+      Object.assign(item, engine.toFixture(updated));
+      renderPhotoViewer();
+      toast(favorite ? 'Added to Favorites.' : 'Removed from Favorites.');
+    }).catch(err => toast(err.message));
+    return;
+  }
+  if (b.dataset.action === 'photo-zoom-in' || b.dataset.action === 'photo-zoom-out') {
+    const scale = state.photoZoom || 1;
+    state.photoZoom = Math.max(1, Math.min(4, scale + (b.dataset.action === 'photo-zoom-in' ? 0.5 : -0.5)));
+    renderPhotoViewer(); return;
+  }
   if (b.dataset.action === 'photos-more') {
     if (state.photosMode === 'albums' && !state.photosAlbum) { state.photosShown = (state.photosShown || 60) + 60; renderMain(); }
     else loadPhotoPage(false);
     return;
   }
+  if (b.dataset.action === 'photos-earlier') { loadPhotoPage(false, true, 'before'); return; }
   if (b.dataset.action === 'photo-preparation') {
     const action = b.dataset.prepAction || 'start';
     engine.setPhotoPreparation(action).then(result => { state.photoPreparation = result; renderMain(); toast(action === 'pause' ? 'Preview preparation paused.' : 'Preview preparation started.'); }).catch(err => toast(err.message));
@@ -1647,6 +2088,7 @@ document.addEventListener('click', e => {
     clearFileSelection();
     state.photosMode = b.dataset.photosMode || 'albums';
     state.photosAlbum = b.dataset.photoAlbum || '';
+    state.photoDate = '';
     state.photosShown = 60;
     navigate('photos');
     return;
@@ -1712,7 +2154,28 @@ document.addEventListener('click', e => {
 
 $('.brand').addEventListener('click', e => { e.preventDefault(); navigate('home'); });
 
+document.addEventListener('toggle', e => { if(e.target.matches?.('.photo-search-filters') && e.target.isConnected) state.photoFiltersOpen=e.target.open; }, true);
+
 document.addEventListener('change', e => {
+  if (e.target.dataset.photoDensity !== undefined) {
+    state.photoDensity = e.target.value === 'compact' ? 'compact' : 'comfortable';
+    renderMain();
+  }
+  if (e.target.dataset.photoFilter) {
+    const key=e.target.dataset.photoFilter;
+    state[key]=e.target.type==='checkbox'?e.target.checked:e.target.value;
+    clearFileSelection();
+    loadPhotoPage(true).catch(err=>toast(err.message));
+    return;
+  }
+  if (e.target.dataset.photoDate !== undefined) {
+    state.photoDate = e.target.value;
+    state.photoFrom=state.photoTo='';
+    state.photosMode = 'all';
+    state.photosAlbum = '';
+    history.pushState({}, '', routeHash('photos'));
+    loadPhotoPage(true);
+  }
   if (e.target.name === 'gate') {
     state.gate = e.target.value;
     renderMain();
@@ -1731,6 +2194,24 @@ document.addEventListener('change', e => {
       else renderMain();
     }
   }
+});
+
+document.addEventListener('input', e => {
+  if (e.target.dataset.photoSearch === undefined) return;
+  state.photoQuery = String(e.target.value || '').slice(0, 256);
+  clearTimeout(photoSearchTimer);
+  const selection = e.target.selectionStart;
+  photoSearchTimer = setTimeout(async () => {
+    if (state.view !== 'photos') return;
+    state.photoAnchor = '';
+    await loadPhotoPage(true, false);
+    if (state.view !== 'photos') return;
+    history.replaceState({}, '', routeHash('photos'));
+    renderMain();
+    const search = $('#photo-search');
+    search?.focus({preventScroll:true});
+    if (selection !== null && selection !== undefined) search?.setSelectionRange(selection, selection);
+  }, 250);
 });
 
 document.addEventListener('input', e => {
@@ -1779,6 +2260,7 @@ function setVaultOnly(on) {
     state.photoAlbums = [];
     state.photoAlbumsLoaded = false;
     state.photoPreparation = null;
+    state.photoDateSummary = null;
   }
   const row = $('#username-row');
   const username = $('#username-row input');
@@ -1900,6 +2382,49 @@ $('#upload').onchange = async e => {
 $('#upload-folder').onchange = e => { const list = [...e.target.files]; e.target.value = ''; beginUpload(list, uploadPrefix); uploadPrefix = ''; };
 
 document.addEventListener('submit', e => {
+  if (e.target.id === 'photo-grab-form') {
+    e.preventDefault();
+    if (!live || !state.unlocked) return;
+    const form=e.target, data=new FormData(form), submit=form.querySelector('button.primary');
+    submit.disabled=true;submit.textContent='Preparing gallery…';
+    const passphrase=String(data.get('passphrase') || '');
+    engine.mintPhotoGrab({...(photoGrabSelection ? {selection_id:photoGrabSelection.id} : {ids:photoGrabIDs}),title:String(data.get('title') || 'Photos'),expiry:String(data.get('expiry') || '24h'),grabs:Number(data.get('grabs') || 1),gate:passphrase?'passphrase':'open',passphrase,hidden:photoGrabSelection?.hidden ?? (state.photosMode==='hidden'),confirm_hidden:data.get('confirm_hidden')==='on'}).then(async row=>{
+      await loadCapsules();
+      modal(`<h2>Gallery ready</h2><p><a href="${esc(row.url)}" target="_blank" rel="noopener">${esc(row.url)}</a></p><img class="mint-qr" src="/api/qr?url=${encodeURIComponent(row.url)}" alt="QR code for this gallery"><div class="dialog-actions"><button class="secondary" type="button" data-close>Done</button></div>`);
+    }).catch(err=>{toast(err.message);submit.disabled=false;submit.textContent='Create grab';});
+  }
+  if (e.target.matches('form#photo-album-form')) {
+    e.preventDefault();
+    if (!live) { toast('Album editing needs an unlocked connected vault.'); return; }
+    const data = new FormData(e.target), id = String(data.get('id') || '');
+    const body = {id, revision:Number(data.get('revision') || 0), title:String(data.get('title') || ''), description:String(data.get('description') || ''), position:Number(data.get('position') || 0), cover_id:String(data.get('cover_id') || '')};
+    if (!id && photoAlbumPendingSelection) { body.selection_id = photoAlbumPendingSelection.id; body.hidden = photoAlbumPendingSelection.hidden; }
+    else if (!id) body.asset_ids = photoAlbumPendingIDs.map(key => state.photoItems.find(item => item.id === key)?.entryID || key);
+    engine.savePhotoAlbum(body).then(async () => { $('#modal').close(); await loadPhotoAlbums(false); state.photosMode = 'albums'; state.photosAlbum = ''; renderMain(); toast(id ? 'Album updated.' : 'Album created.'); }).catch(err => toast(err.message));
+  }
+  if (e.target.id === 'photo-album-members-form') {
+    e.preventDefault();
+    if (!live) { toast('Album editing needs an unlocked connected vault.'); return; }
+    const albumID = String(new FormData(e.target).get('album_id') || ''), album = photoAlbumByID(albumID);
+    if (!album) { toast('That album is no longer available.'); return; }
+    const addIDs = photoAlbumPendingIDs;
+    (photoAlbumPendingSelection ? engine.photoSelectionAction({selection_id:photoAlbumPendingSelection.id,hidden:photoAlbumPendingSelection.hidden,action:'add_album',album_id:albumID,revision:album.revision}) : engine.editPhotoAlbumMembers({id:albumID, revision:album.revision, add_ids:addIDs})).then(async () => { await loadPhotoAlbums(false); $('#modal').close(); renderMain(); toast(`Added ${addIDs.length} photos to ${album.title}.`); }).catch(err => toast(err.message));
+  }
+  if (e.target.id === 'photo-edit-form') {
+    e.preventDefault();
+    const item = state.photoItems[photoViewerIndex];
+    if (!item || !live) { toast('Editing needs an unlocked connected vault.'); return; }
+    const data = new FormData(e.target);
+    const captured = String(data.get('captured_at') || '');
+    const offset = String(data.get('capture_offset') || '').trim();
+    engine.updatePhoto(item.entryID || item.id, {
+      caption:String(data.get('caption') || ''),
+      captured_at:captured ? `${captured}:00${offset || 'Z'}` : '',
+      offset_known:Boolean(offset), rotation:Number(data.get('rotation') || 0),
+    }, state.photosMode === 'hidden').then(updated => {
+      Object.assign(item, engine.toFixture(updated)); renderPhotoViewer(); toast('Photo details saved.');
+    }).catch(err => toast(err.message));
+  }
   if (e.target.id === 'send-form') { e.preventDefault(); mint(); }
   if (e.target.id === 'places-form') {
     e.preventDefault();
@@ -1942,7 +2467,13 @@ document.addEventListener('submit', e => {
 
 document.addEventListener('keydown', e => {
   if (e.altKey) return;
-  if ($('#modal').open) return;
+  if ($('#modal').open) {
+    if ($('#modal').classList.contains('photo-viewer') && !e.ctrlKey && !e.metaKey) {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); movePhotoViewer(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); movePhotoViewer(1); }
+    }
+    return;
+  }
   if (!state.unlocked) return;
   if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
   const modifier = e.ctrlKey || e.metaKey;
@@ -1975,7 +2506,13 @@ document.addEventListener('keydown', e => {
   if (/^[1-5]$/.test(e.key)) navigate(['home', 'library', 'send', 'capsules', 'places'][Number(e.key) - 1]);
 });
 
-$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide'); });
+$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide', 'photo-viewer'); photoViewerIndex = -1; state.photoViewerInfo = false; });
+$('#modal').addEventListener('cancel', event => {
+  if ($('#modal').classList.contains('photo-viewer') && photoViewerHistoryPushed) {
+    event.preventDefault();
+    closePhotoViewer();
+  }
+});
 window.addEventListener('popstate', applyRoute);
 try { state.favorites = JSON.parse(localStorage.getItem('wzcl-favorites') || '[]').filter(path => typeof path === 'string'); } catch { state.favorites = []; }
 document.addEventListener('visibilitychange', () => {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/filesvc"
+	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/upload"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -160,10 +161,14 @@ func uploadError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
 	var offset *upload.OffsetError
 	switch {
+	case errors.Is(err, quota.ErrExceeded):
+		status = http.StatusInsufficientStorage
 	case errors.As(err, &offset):
 		status = http.StatusConflict
 	case errors.Is(err, upload.ErrNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, upload.ErrIdempotencyConflict):
+		status = http.StatusConflict
 	case errors.Is(err, upload.ErrChunkTooLarge):
 		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, upload.ErrIncomplete):

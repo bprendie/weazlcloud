@@ -59,11 +59,14 @@ func (h *Handler) rekeyVault(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b, 8192) {
 		return
 	}
+	res.Lib.PrepareVaultLock()
 	if err := res.Vault.Rekey([]byte(b.Current), []byte(b.Next), []byte(b.Confirm)); err != nil {
+		res.Lib.ResumePhotoPreparation(r.Context())
 		apiError(w, err)
 		return
 	}
 	res.Lib.ForgetVaultSession()
+	res.Lib.ResumePhotoPreparation(r.Context())
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "vault rekeyed"})
 }
 

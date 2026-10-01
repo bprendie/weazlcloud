@@ -13,11 +13,12 @@ import (
 )
 
 // On-demand ZIPs are retained long enough to resume a transfer without
-// leaving plaintext archives on the node for a full day. Grab capsules have
+// retaining encrypted archives on the node for a full day. Grab capsules have
 // their own encrypted payload and burn lifecycle in internal/capsule.
 const archiveLifetime = 90 * time.Minute
 
 type ArchiveJobView struct {
+	Scope     string    `json:"scope,omitempty"`
 	ID        string    `json:"id"`
 	Status    string    `json:"status"`
 	Files     int       `json:"files"`
@@ -28,6 +29,7 @@ type ArchiveJobView struct {
 }
 
 type archiveJob struct {
+	zipBytes int64
 	ArchiveJobView
 	manifest        library.ArchiveManifest
 	cancel          context.CancelFunc
@@ -38,15 +40,16 @@ type archiveJob struct {
 }
 
 type ArchiveManager struct {
-	lib      *library.Library
-	root     string
-	reserve  func(int64) (func(), error)
-	activity func() func()
-	slots    chan struct{}
-	mu       sync.Mutex
-	jobs     map[string]*archiveJob
-	closing  bool
-	workers  sync.WaitGroup
+	jobsLoaded bool
+	lib        *library.Library
+	root       string
+	reserve    func(int64) (func(), error)
+	activity   func() func()
+	slots      chan struct{}
+	mu         sync.Mutex
+	jobs       map[string]*archiveJob
+	closing    bool
+	workers    sync.WaitGroup
 }
 
 func (m *ArchiveManager) SetActivityTracker(track func() func()) {
@@ -84,20 +87,32 @@ func (m *ArchiveManager) reserveBytes(bytes int64) (func(), error) {
 }
 
 func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
-	releaseActivity := m.trackStorage()
+	activity := m.trackStorage()
+	if len(paths) == 0 {
+		activity()
+		return ArchiveJobView{}, errors.New("archive selection is empty")
+	}
+	manifest, err := m.lib.PrepareArchive(context.Background(), paths)
+	if err != nil {
+		activity()
+		return ArchiveJobView{}, err
+	}
+	return m.startManifest(manifest, activity)
+}
+
+// StartManifest accepts an owner-authorized, pinned selection. It owns the
+// holds after this call, including failure cleanup.
+func (m *ArchiveManager) StartManifest(manifest library.ArchiveManifest) (ArchiveJobView, error) {
+	return m.startManifest(manifest, m.trackStorage())
+}
+
+func (m *ArchiveManager) startManifest(manifest library.ArchiveManifest, releaseActivity func()) (ArchiveJobView, error) {
 	handedOff := false
 	defer func() {
 		if !handedOff {
 			releaseActivity()
 		}
 	}()
-	if len(paths) == 0 {
-		return ArchiveJobView{}, errors.New("archive selection is empty")
-	}
-	manifest, err := m.lib.PrepareArchive(context.Background(), paths)
-	if err != nil {
-		return ArchiveJobView{}, err
-	}
 	manifestHandedOff := false
 	defer func() {
 		if !manifestHandedOff {
@@ -107,9 +122,9 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	if err := os.MkdirAll(m.root, 0o700); err != nil {
 		return ArchiveJobView{}, err
 	}
-	reserveBytes := manifest.Bytes
-	if len(manifest.Entries) > 0 {
-		reserveBytes += int64(len(manifest.Entries)) * 256
+	reserveBytes, err := archiveReservationBytes(manifest)
+	if err != nil {
+		return ArchiveJobView{}, err
 	}
 	release, err := m.reserveBytes(reserveBytes)
 	if err != nil {
@@ -123,13 +138,28 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	created := time.Now().UTC()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.mu.Lock()
+	if err := m.loadJobsLocked(); err != nil {
+		m.mu.Unlock()
+		cancel()
+		release()
+		return ArchiveJobView{}, err
+	}
 	if m.closing {
 		m.mu.Unlock()
 		cancel()
 		release()
 		return ArchiveJobView{}, errors.New("archive manager is closing")
 	}
-	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(archiveLifetime)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".zip"), done: make(chan struct{})}
+	job := &archiveJob{ArchiveJobView: ArchiveJobView{ID: id, Status: "queued", Files: manifest.Files, Bytes: manifest.Bytes, CreatedAt: created, ExpiresAt: created.Add(24 * time.Hour)}, manifest: manifest, cancel: cancel, release: release, activityRelease: releaseActivity, path: filepath.Join(m.root, id+".wza"), done: make(chan struct{})}
+	if manifest.PhotoOnly() {
+		job.Scope = "photos"
+	}
+	if err := m.persistJobLocked(job); err != nil {
+		m.mu.Unlock()
+		cancel()
+		release()
+		return ArchiveJobView{}, err
+	}
 	m.jobs[id] = job
 	m.workers.Add(1)
 	view := job.ArchiveJobView
@@ -138,75 +168,6 @@ func (m *ArchiveManager) Start(paths []string) (ArchiveJobView, error) {
 	manifestHandedOff = true
 	go m.run(ctx, job)
 	return view, nil
-}
-
-func (m *ArchiveManager) run(ctx context.Context, job *archiveJob) {
-	defer job.manifest.Release()
-	defer job.activityRelease()
-	defer close(job.done)
-	defer m.workers.Done()
-	select {
-	case m.slots <- struct{}{}:
-		defer func() { <-m.slots }()
-	case <-ctx.Done():
-		m.mu.Lock()
-		job.Status = "cancelled"
-		job.Error = "archive cancelled"
-		logArchive(job)
-		if job.release != nil {
-			job.release()
-			job.release = nil
-		}
-		m.mu.Unlock()
-		return
-	}
-	m.mu.Lock()
-	job.Status = "preparing"
-	m.mu.Unlock()
-	tmp, err := os.CreateTemp(m.root, ".archive-*.zip")
-	fileCount := job.Files
-	byteCount := job.Bytes
-	if err == nil {
-		_ = tmp.Chmod(0o600)
-		fileCount, byteCount, err = m.lib.WriteArchive(ctx, job.manifest, tmp)
-		if closeErr := tmp.Close(); err == nil {
-			err = closeErr
-		}
-		if err == nil {
-			err = os.Rename(tmp.Name(), job.path)
-		}
-		if err != nil {
-			_ = os.Remove(tmp.Name())
-		}
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	job.Files = fileCount
-	job.Bytes = byteCount
-	if errors.Is(ctx.Err(), context.Canceled) {
-		job.Status = "cancelled"
-		job.Error = "archive cancelled"
-		logArchive(job)
-		_ = os.Remove(job.path)
-		if job.release != nil {
-			job.release()
-			job.release = nil
-		}
-		return
-	}
-	if err != nil {
-		job.Status = "failed"
-		job.Error = err.Error()
-		logArchive(job)
-		if job.release != nil {
-			job.release()
-			job.release = nil
-		}
-		return
-	}
-	job.Status = "ready"
-	job.ExpiresAt = time.Now().UTC().Add(archiveLifetime)
-	logArchive(job)
 }
 
 func (m *ArchiveManager) Drain(ctx context.Context) error {
@@ -235,6 +196,9 @@ func logArchive(job *archiveJob) {
 func (m *ArchiveManager) Get(id string) (ArchiveJobView, string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := m.loadJobsLocked(); err != nil {
+		return ArchiveJobView{}, "", false
+	}
 	job := m.jobs[id]
 	if job == nil {
 		return ArchiveJobView{}, "", false
@@ -253,12 +217,18 @@ func (m *ArchiveManager) Cancel(id string) bool {
 	if job == nil || job.Status == "ready" || job.Status == "failed" || job.Status == "cancelled" {
 		return false
 	}
-	job.cancel()
 	job.Status = "cancelled"
+	job.Error = "archive cancelled"
+	if err := m.persistJobLocked(job); err != nil {
+		job.Status = "failed"
+		job.Error = "archive cancellation checkpoint failed"
+		logArchive(job)
+	}
+	job.cancel()
 	return true
 }
 
-// Lock cancels active jobs and removes completed plaintext archives before a
+// Lock cancels active jobs and removes completed encrypted archives before a
 // vault is locked. A new authenticated session can create a fresh archive.
 func (m *ArchiveManager) Lock() {
 	m.mu.Lock()
@@ -266,6 +236,7 @@ func (m *ArchiveManager) Lock() {
 	for id, job := range m.jobs {
 		job.cancel()
 		_ = os.Remove(job.path)
+		_ = os.Remove(filepath.Join(m.root, id+".enc"))
 		if job.release != nil {
 			job.release()
 			job.release = nil

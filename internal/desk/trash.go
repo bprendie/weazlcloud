@@ -17,7 +17,7 @@ func trashViews(items []catalog.File) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		view := map[string]any{
-			"path": item.Path, "folder": item.Folder, "size": item.Size, "mtime": item.Mtime,
+			"id": item.EntryID, "revision": item.Revision, "path": item.Path, "folder": item.Folder, "size": item.Size, "mtime": item.Mtime,
 		}
 		if item.DeletedAt != nil {
 			view["deleted_at"] = item.DeletedAt

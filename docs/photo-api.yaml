@@ -1,0 +1,3058 @@
+openapi: 3.0.3
+info:
+  title: WeazlCloud Photos and device API
+  version: 1.0.0
+  description: 'Local identity and owner-private encrypted Photos. Mutations require X-Weazl-Desk: 1.
+    Hidden is explicit Photos presentation context, not a separate vault. Backup is one-way; a stored
+    original is independent of derivative readiness. See photo-api.md and photos-local-verification-2026-09-30.md
+    for behavior and release gates.'
+servers:
+- url: /
+security:
+- deviceBearer: []
+- accountCookie: []
+paths:
+  /api/v1/devices:
+    get:
+      summary: List owner devices
+      operationId: getApiV1Devices
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters: []
+    post:
+      summary: Enroll a device
+      operationId: postApiV1Devices
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device:
+                    $ref: '#/components/schemas/Device'
+                  token:
+                    type: string
+                  scope:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 120
+              required:
+              - name
+      description: Account cookie and unlocked vault required; bearer credentials cannot enroll devices.
+      security:
+      - accountCookie: []
+  /api/v1/devices/revoke:
+    post:
+      summary: Revoke an owner device
+      operationId: postApiV1DevicesRevoke
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  maxLength: 128
+              required:
+              - id
+      description: A device bearer can revoke only itself.
+  /api/v1/photos/capabilities:
+    get:
+      summary: Report implemented capabilities
+      operationId: getApiV1PhotosCapabilities
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters: []
+      description: While locked, roots is empty and vault_unlocked is false.
+  /api/v1/photos:
+    get:
+      summary: Read a bounded timeline page
+      operationId: getApiV1Photos
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+          default: 100
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: album
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: mode
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - all
+          - recent
+          - favorites
+          - archived
+          - hidden
+      - name: date
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: around
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 128
+  /api/v1/photos/search:
+    get:
+      summary: Search metadata without reading originals
+      operationId: getApiV1PhotosSearch
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+          default: 100
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: album
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - image
+          - video
+      - name: from
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: to
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: camera
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: outside_albums
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: favorite
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: archived
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: unknown
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+  /api/v1/photos/dates:
+    get:
+      summary: Read visible capture month counts
+      operationId: getApiV1PhotosDates
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  months:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        month:
+                          type: string
+                        count:
+                          type: integer
+                          format: int64
+                  unknown_dates:
+                    type: integer
+                    format: int64
+                  generation:
+                    type: integer
+                    format: int64
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+  /api/v1/photos/assets/{id}:
+    get:
+      summary: Read one visible photo
+      operationId: getApiV1PhotosAssetsId
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoItem'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+    post:
+      summary: Edit non-destructive photo metadata
+      operationId: postApiV1PhotosAssetsId
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoItem'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoEdit'
+  /api/v1/photos/assets/{id}/thumbnail:
+    get:
+      summary: Read a bounded metadata-free derivative
+      operationId: getApiV1PhotosAssetsIdThumbnail
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 96
+          maximum: 1280
+          default: 320
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+  /api/v1/photos/assets/{id}/original:
+    get:
+      summary: Read authorized original bytes
+      operationId: getApiV1PhotosAssetsIdOriginal
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+        '206':
+          description: Partial content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: Range
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: If-Range
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      description: Supports a single byte range, HEAD, ETag and If-Range. Private no-store; lock cancels
+        owner streams.
+    head:
+      summary: Read authorized original bytes
+      operationId: headApiV1PhotosAssetsIdOriginal
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: Range
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: If-Range
+        in: header
+        required: false
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      description: Supports a single byte range, HEAD, ETag and If-Range. Private no-store; lock cancels
+        owner streams.
+  /api/v1/photos/albums:
+    get:
+      summary: List owner folder and custom albums
+      operationId: getApiV1PhotosAlbums
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  albums:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Album'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+    post:
+      summary: Edit a custom album or its memberships
+      operationId: postApiV1PhotosAlbums
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Album'
+                - type: object
+                  properties:
+                    status:
+                      type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlbumMutation'
+      description: Deleting an album leaves originals intact. Revisions are optimistic. A selection_id
+        may create initial memberships of a new custom album.
+  /api/v1/photos/albums/memberships:
+    get:
+      summary: Read bounded custom album membership IDs
+      operationId: getApiV1PhotosAlbumsMemberships
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumMembershipPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+          default: 100
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+  /api/v1/photos/folders:
+    post:
+      summary: Set inherited Photos folder visibility
+      operationId: postApiV1PhotosFolders
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  hidden:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                hidden:
+                  type: boolean
+              required:
+              - path
+              - hidden
+  /api/v1/photos/trash:
+    get:
+      summary: Read owner Photos Trash
+      operationId: getApiV1PhotosTrash
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  retention_days:
+                    type: integer
+                    format: int64
+                    enum:
+                    - 30
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+  /api/v1/photos/trash/restore:
+    post:
+      summary: Restore a logical photo or folder
+      operationId: postApiV1PhotosTrashRestore
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  maxLength: 128
+              required:
+              - id
+  /api/v1/photos/duplicates:
+    get:
+      summary: Review exact duplicates in this visibility context
+      operationId: getApiV1PhotosDuplicates
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          maxLength: 128
+                        count:
+                          type: integer
+                          format: int64
+                        items:
+                          type: array
+                          items:
+                            $ref: '#/components/schemas/PhotoItem'
+                          maxItems: 200
+                        has_more_items:
+                          type: boolean
+                    maxItems: 20
+                  next_cursor:
+                    type: string
+                  generation:
+                    type: integer
+                    format: int64
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+    post:
+      summary: Prefer one exact duplicate without deleting originals
+      operationId: postApiV1PhotosDuplicates
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  maxLength: 128
+              required:
+              - id
+  /api/v1/photos/selections:
+    post:
+      summary: Save an encrypted revision-bound server selection
+      operationId: postApiV1PhotosSelections
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Selection'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionRequest'
+  /api/v1/photos/selection-actions:
+    post:
+      summary: Apply a bulk action after selection revalidation
+      operationId: postApiV1PhotosSelection-Actions
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ArchiveJob'
+                - $ref: '#/components/schemas/Album'
+                - type: object
+                  properties:
+                    deleted:
+                      type: integer
+                      format: int64
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+        '202':
+          description: ZIP job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveJob'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionAction'
+      description: archive returns 202 and an owner ZIP job; hidden archive requires confirm_hidden.
+  /api/v1/photos/archives:
+    get:
+      summary: Read or download an owner Photos ZIP job
+      operationId: getApiV1PhotosArchives
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveJob'
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+        '206':
+          description: Partial ZIP
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: download
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: Range
+        in: header
+        required: false
+        schema:
+          type: string
+      description: With download=1 a ready job streams a ZIP with range support. Only jobs containing
+        Photos media can be accessed here; generic Library archives require an account through the Library
+        API.
+    delete:
+      summary: Cancel an unfinished owner Photos ZIP job
+      operationId: deleteApiV1PhotosArchives
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+  /api/v1/photos/grabs:
+    post:
+      summary: Freeze an owner selection into a gallery grab
+      operationId: postApiV1PhotosGrabs
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Grab'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrabRequest'
+      description: Choose ids or selection_id, not both. Hidden requires explicit confirm_hidden. At most
+        10000 exported components; administrator controls hostname.
+  /api/v1/photos/uploads:
+    post:
+      summary: Create or recover logical mobile ingestion
+      operationId: postApiV1PhotosUploads
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadView'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSpec'
+      description: Bearer fills device_id. Cookie clients must supply it. Identity includes source_revision,
+        separate from content hashes. Root is owner-resolved within Photos. Locked ingestion rejected.
+  /api/v1/photos/uploads/{id}:
+    get:
+      summary: Read accepted component offsets and final result
+      operationId: getApiV1PhotosUploadsId
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadView'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+    delete:
+      summary: Cancel unfinished logical ingestion
+      operationId: deleteApiV1PhotosUploadsId
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+  /api/v1/photos/uploads/{id}/components/{componentId}:
+    patch:
+      summary: Append a verified bounded byte chunk
+      operationId: patchApiV1PhotosUploadsIdComponentsComponentid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadView'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: Upload-Offset
+        in: header
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+      - name: Upload-Chunk-SHA256
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: componentId
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: At most 16 MiB; server returns accepted offset
+  /api/v1/photos/uploads/{id}/finalize:
+    post:
+      summary: Verify and atomically publish a complete logical asset
+      operationId: postApiV1PhotosUploadsIdFinalize
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadView'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                captured_at:
+                  type: string
+                  format: date-time
+                offset_known:
+                  type: boolean
+      description: All components must be complete; catalog commit includes pairing, albums and processing
+        outbox. Retrying lost response is safe. Original status stored is distinct from preview processing_state.
+  /api/v1/photos/sync:
+    get:
+      summary: Page snapshot then ordered changes
+      operationId: getApiV1PhotosSync
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 200
+          default: 100
+      - name: hidden
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      - name: resume
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - '0'
+          - '1'
+      description: Initial snapshot pages media/folders, then custom album headers. Fetch memberships
+        separately. Apply a checkpoint only after its page. Restore/divergence/expired history requires
+        full reconciliation.
+  /api/v1/photos/sync/checkpoint:
+    post:
+      summary: Acknowledge a fully applied device checkpoint
+      operationId: postApiV1PhotosSyncCheckpoint
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: X-Weazl-Desk
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - '1'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkpoint:
+                  type: string
+                hidden:
+                  type: boolean
+              required:
+              - checkpoint
+      security:
+      - deviceBearer: []
+  /g/{id}/gallery:
+    post:
+      summary: Open or renew a capsule-only guest session
+      operationId: postGIdGallery
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  gallery:
+                    $ref: '#/components/schemas/GalleryManifest'
+                  session:
+                    type: string
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      description: Passphrase for initial open, valid session for renewal; 15-minute lifetime capped at
+        capsule expiry. No retries spent.
+      security: []
+  /g/{id}/preview/{member}:
+    post:
+      summary: Read one frozen sanitized preview
+      operationId: postGIdPreviewMember
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: member
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      security: []
+  /g/{id}/original/{member}:
+    post:
+      summary: Admit one frozen original transfer
+      operationId: postGIdOriginalMember
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: member
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      description: Requires session; counts one transfer even if interrupted. GET/HEAD/Range do not admit
+        transfers.
+      security: []
+  /g/{id}/zip:
+    post:
+      summary: Admit a full or legacy selected ZIP transfer
+      operationId: postGIdZip
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      description: Omit ids for frozen album ZIP. Selected ids stream a fresh subset; use zip/jobs for
+        durable preparation.
+      security: []
+  /g/{id}/zip/jobs:
+    post:
+      summary: Prepare a durable encrypted selected ZIP
+      operationId: postGIdZipJobs
+      responses:
+        '202':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryZIPJob'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      description: ids required. Preparation does not spend retries. Failed preparations retry with matching
+        selection.
+      security: []
+  /g/{id}/zip/jobs/{job}:
+    post:
+      summary: Read or resume a queued selected ZIP job
+      operationId: postGIdZipJobsJob
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryZIPJob'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: job
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      security: []
+  /g/{id}/zip/jobs/{job}/download:
+    post:
+      summary: Admit a ready selected ZIP transfer
+      operationId: postGIdZipJobsJobDownload
+      responses:
+        '200':
+          description: Success
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '507':
+          $ref: '#/components/responses/Error507'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      - name: job
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryAuth'
+      description: One retry for the ZIP; all prepared bytes stay encrypted until burn/expiry/revoke.
+      security: []
+components:
+  securitySchemes:
+    deviceBearer:
+      type: http
+      scheme: bearer
+      description: Revocable Photos/device credential; no vault key. Cannot enroll devices.
+    accountCookie:
+      type: apiKey
+      in: cookie
+      name: weazl_session
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        offset:
+          type: integer
+          format: int64
+        resync_required:
+          type: boolean
+      required:
+      - error
+    PhotoComponent:
+      type: object
+      properties:
+        id:
+          type: string
+          enum:
+          - original
+          - motion
+        asset_id:
+          type: string
+          maxLength: 128
+        media_type:
+          type: string
+      required:
+      - id
+      - asset_id
+      - media_type
+    PhotoItem:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        parent_asset_id:
+          type: string
+          maxLength: 128
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoComponent'
+          maxItems: 2
+        device_id:
+          type: string
+          maxLength: 128
+        device_asset_id:
+          type: string
+          maxLength: 128
+        source_revision:
+          type: string
+        folder:
+          type: boolean
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+          minimum: 0
+        modified:
+          type: string
+          format: date-time
+        imported_at:
+          type: string
+          format: date-time
+        captured_at:
+          type: string
+          format: date-time
+        capture_offset_minutes:
+          type: integer
+          format: int64
+          minimum: -840
+          maximum: 840
+        capture_source:
+          type: string
+        media_type:
+          type: string
+        width:
+          type: integer
+          format: int64
+        height:
+          type: integer
+          format: int64
+        duration_millis:
+          type: integer
+          format: int64
+        orientation:
+          type: integer
+          format: int64
+        user_rotation:
+          type: integer
+          format: int64
+          enum:
+          - 0
+          - 90
+          - 180
+          - 270
+        preferred_photo:
+          type: boolean
+        camera:
+          type: string
+        favorite:
+          type: boolean
+        archived:
+          type: boolean
+        caption:
+          type: string
+      required:
+      - id
+      - revision
+      - path
+      - size
+      - modified
+      - media_type
+    PhotoPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoItem'
+          maxItems: 200
+        next_cursor:
+          type: string
+        previous_cursor:
+          type: string
+        generation:
+          type: integer
+          format: int64
+        index_ready:
+          type: boolean
+        indexed:
+          type: integer
+          format: int64
+        index_total:
+          type: integer
+          format: int64
+      required:
+      - items
+      - generation
+    PhotoEdit:
+      type: object
+      properties:
+        rotation:
+          type: integer
+          format: int64
+          enum:
+          - 0
+          - 90
+          - 180
+          - 270
+        favorite:
+          type: boolean
+        archived:
+          type: boolean
+        caption:
+          type: string
+          maxLength: 4000
+        captured_at:
+          type: string
+          description: RFC3339, or empty string for unknown
+        offset_known:
+          type: boolean
+    Album:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        revision:
+          type: integer
+          format: int64
+        path:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        position:
+          type: integer
+          format: int64
+        count:
+          type: integer
+          format: int64
+        cover:
+          type: string
+        cover_id:
+          type: string
+          maxLength: 128
+        asset_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 200
+        source:
+          type: string
+        metadata_warning:
+          type: boolean
+      required:
+      - id
+      - title
+    AlbumMutation:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+          - save
+          - members
+          - delete
+        id:
+          type: string
+          maxLength: 128
+        revision:
+          type: integer
+          format: int64
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 4000
+        cover_id:
+          type: string
+          maxLength: 128
+        position:
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 100000
+        asset_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 100000
+        add_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 100000
+        remove_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 100000
+        selection_id:
+          type: string
+          maxLength: 128
+        hidden:
+          type: boolean
+      required:
+      - action
+    AlbumMembershipPage:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        revision:
+          type: integer
+          format: int64
+        asset_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 200
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+      required:
+      - id
+      - revision
+      - asset_ids
+      - has_more
+    SearchFilter:
+      type: object
+      properties:
+        q:
+          type: string
+        album:
+          type: string
+        type:
+          type: string
+          enum:
+          - image
+          - video
+        from:
+          type: string
+        to:
+          type: string
+        camera:
+          type: string
+        outside_albums:
+          type: boolean
+        favorite:
+          type: boolean
+        hidden:
+          type: boolean
+        archived:
+          type: boolean
+        unknown:
+          type: boolean
+    SelectionRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 100000
+        filter:
+          $ref: '#/components/schemas/SearchFilter'
+        mode:
+          type: string
+          enum:
+          - all
+          - recent
+          - favorites
+          - archived
+          - hidden
+        date:
+          type: string
+        search:
+          type: boolean
+    Selection:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        count:
+          type: integer
+          format: int64
+        hidden:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - count
+      - hidden
+      - expires_at
+    SelectionAction:
+      type: object
+      properties:
+        selection_id:
+          type: string
+          maxLength: 128
+        action:
+          type: string
+          enum:
+          - archive
+          - add_album
+          - remove_album
+          - delete
+        hidden:
+          type: boolean
+        confirm_hidden:
+          type: boolean
+        album_id:
+          type: string
+          maxLength: 128
+        revision:
+          type: integer
+          format: int64
+      required:
+      - selection_id
+      - action
+    ArchiveJob:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        status:
+          type: string
+          enum:
+          - queued
+          - preparing
+          - ready
+          - failed
+          - cancelled
+        files:
+          type: integer
+          format: int64
+        bytes:
+          type: integer
+          format: int64
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - status
+    UploadComponentSpec:
+      type: object
+      properties:
+        id:
+          type: string
+          enum:
+          - original
+          - motion
+        filename:
+          type: string
+          maxLength: 255
+        media_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 4611686018427387903
+        sha256:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+      required:
+      - id
+      - filename
+      - size
+      - sha256
+    UploadSpec:
+      type: object
+      properties:
+        device_id:
+          type: string
+          maxLength: 100
+        device_asset_id:
+          type: string
+          maxLength: 100
+        source_revision:
+          type: string
+          maxLength: 100
+          default: '1'
+        root_id:
+          type: string
+          default: root:photos
+        captured_at:
+          type: string
+          format: date-time
+        offset_known:
+          type: boolean
+        album_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 100
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadComponentSpec'
+          minItems: 1
+          maxItems: 2
+        filename:
+          type: string
+          maxLength: 255
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+        sha256:
+          type: string
+          pattern: ^[a-fA-F0-9]{64}$
+      required:
+      - device_asset_id
+    UploadComponent:
+      type: object
+      properties:
+        id:
+          type: string
+        offset:
+          type: integer
+          format: int64
+          minimum: 0
+        size:
+          type: integer
+          format: int64
+          minimum: 1
+        status:
+          type: string
+        chunk_limit:
+          type: integer
+          format: int64
+      required:
+      - id
+      - offset
+      - size
+      - status
+      - chunk_limit
+    UploadSession:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+        offset:
+          type: integer
+          format: int64
+        hash:
+          type: string
+        chunk_hashes:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - size
+      - offset
+      - status
+    UploadView:
+      type: object
+      properties:
+        upload:
+          $ref: '#/components/schemas/UploadSession'
+        component:
+          $ref: '#/components/schemas/UploadComponent'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/UploadComponent'
+          minItems: 1
+          maxItems: 2
+        asset_id:
+          type: string
+          maxLength: 128
+        device_asset_id:
+          type: string
+          maxLength: 128
+        source_revision:
+          type: string
+        path:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - uploading
+          - stored
+          - cancelled
+        processing_state:
+          type: string
+          enum:
+          - pending
+          - processing
+          - ready
+          - failed
+      required:
+      - upload
+      - component
+      - components
+      - device_asset_id
+      - source_revision
+      - status
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        owner_id:
+          type: string
+          maxLength: 128
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - name
+      - created_at
+      - expires_at
+    SyncChange:
+      type: object
+      properties:
+        sequence:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        id:
+          type: string
+          maxLength: 128
+        deleted:
+          type: boolean
+        item:
+          $ref: '#/components/schemas/PhotoItem'
+        album:
+          $ref: '#/components/schemas/Album'
+        membership_changed:
+          type: boolean
+      required:
+      - sequence
+      - kind
+      - id
+    SyncPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoItem'
+          maxItems: 200
+        albums:
+          type: array
+          items:
+            $ref: '#/components/schemas/Album'
+          maxItems: 200
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncChange'
+          maxItems: 200
+        next_cursor:
+          type: string
+        checkpoint:
+          type: string
+        has_more:
+          type: boolean
+        resync_required:
+          type: boolean
+      required:
+      - items
+      - has_more
+      - resync_required
+    Capabilities:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int64
+          enum:
+          - 1
+        vault_unlocked:
+          type: boolean
+        page_limit:
+          type: integer
+          format: int64
+        chunk_limit:
+          type: integer
+          format: int64
+        upload_components:
+          type: array
+          items:
+            type: string
+            enum:
+            - original
+            - motion
+        roots:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                maxLength: 128
+              name:
+                type: string
+              hidden:
+                type: boolean
+            required:
+            - id
+            - name
+          maxItems: 200
+        device_credentials:
+          type: boolean
+        durable_sync:
+          type: boolean
+        hidden_context:
+          type: boolean
+        album_edits:
+          type: boolean
+        gallery_grabs:
+          type: boolean
+        live_photo_uploads:
+          type: boolean
+        backup_direction:
+          type: string
+          enum:
+          - device_to_vault
+        locked_ingestion:
+          type: string
+          enum:
+          - rejected
+        checkpoint_expiry:
+          type: string
+      required:
+      - version
+      - vault_unlocked
+      - roots
+    GrabRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+          maxItems: 10000
+        selection_id:
+          type: string
+          maxLength: 128
+        hidden:
+          type: boolean
+        confirm_hidden:
+          type: boolean
+        title:
+          type: string
+          maxLength: 200
+        gate:
+          type: string
+          enum:
+          - open
+          - passphrase
+        passphrase:
+          type: string
+        expiry:
+          type: string
+          enum:
+          - 24h
+          - 3d
+          - 7d
+        grabs:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 10000
+      required:
+      - gate
+      - grabs
+    Grab:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        url:
+          type: string
+          format: uri
+        kind:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        gate:
+          type: string
+        limit:
+          type: integer
+          format: int64
+        used:
+          type: integer
+          format: int64
+        left:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum:
+          - live
+          - burned
+        expires:
+          type: string
+          format: date-time
+    GalleryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+        name:
+          type: string
+        media_type:
+          type: string
+        preview_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        revision:
+          type: integer
+          format: int64
+      required:
+      - id
+      - name
+      - media_type
+      - size
+      - revision
+    GalleryManifest:
+      type: object
+      properties:
+        title:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GalleryItem'
+          maxItems: 10000
+        original_metadata:
+          type: boolean
+      required:
+      - title
+      - items
+      - original_metadata
+    GalleryAuth:
+      type: object
+      properties:
+        passphrase:
+          type: string
+        session:
+          type: string
+          maxLength: 2048
+        ids:
+          type: array
+          items:
+            type: string
+            pattern: ^[a-f0-9]{32}$
+          maxItems: 10000
+    GalleryZIPJob:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 128
+        status:
+          type: string
+          enum:
+          - queued
+          - preparing
+          - ready
+          - failed
+        bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        error:
+          type: string
+      required:
+      - id
+      - status
+      - bytes
+  responses:
+    Error400:
+      description: Invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error401:
+      description: Authentication required or vault locked
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error403:
+      description: Credential scope or origin denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Unknown or inaccessible item
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: Stale revision, cursor or identity conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error410:
+      description: Expired upload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error413:
+      description: Chunk or derivative too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error422:
+      description: Checksum mismatch
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error507:
+      description: Insufficient node storage
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

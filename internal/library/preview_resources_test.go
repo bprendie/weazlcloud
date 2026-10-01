@@ -14,9 +14,9 @@ func TestPreviewPolicyProfiles(t *testing.T) {
 		bg, render, readers int
 		budget              int64
 	}{
-		{"small", 2, 4 << 30, 1, 2, 1, 512 << 20},
-		{"medium", 4, 8 << 30, 2, 3, 2, 1 << 30},
-		{"large", 32, 128 << 30, 8, 10, 4, 8 << 30},
+		{"small", 2, 4 << 30, 1, 1, 1, 512 << 20},
+		{"medium", 4, 8 << 30, 1, 2, 2, 1 << 30},
+		{"large", 32, 128 << 30, 8, 16, 4, 8 << 30},
 		{"one cpu", 1, 1 << 30, 1, 1, 1, 128 << 20},
 		{"unknown", 0, 0, 1, 1, 1, 256 << 20},
 	}
@@ -37,11 +37,31 @@ func TestPreviewPolicyHonorsOverridesAndBounds(t *testing.T) {
 		"WEAZLCLOUD_PREVIEW_SOURCE_READERS":     "4",
 		"WEAZLCLOUD_PREVIEW_MEMORY_BYTES":       "536870912",
 	}))
-	if err != nil || p.BackgroundWorkers != 2 || p.RenderWorkers != 3 || p.SourceReaders != 3 || p.MemoryBytes != 536870912 {
+	if err != nil || p.BackgroundWorkers != 1 || p.RenderWorkers != 2 || p.SourceReaders != 2 || p.MemoryBytes != 536870912 {
 		t.Fatalf("override policy=%+v err=%v", p, err)
 	}
 	if _, err := choosePreviewPolicy(PreviewResources{CPUs: 4}, envMap(map[string]string{"WEAZLCLOUD_PREVIEW_TOTAL_WORKERS": "nope"})); err == nil {
 		t.Fatal("invalid worker override accepted")
+	}
+}
+
+func TestPreviewScheduleModesStayWithinCPUWorkerBudget(t *testing.T) {
+	resources := PreviewResources{CPUs: 32, MemoryBytes: 64 << 30}
+	for _, tc := range []struct {
+		mode string
+		bg   int
+	}{
+		{"quiet", 1},
+		{"balanced", 8},
+		{"fast", 15},
+	} {
+		policy, err := choosePreviewPolicy(resources, envMap(map[string]string{"WEAZLCLOUD_PHOTO_SCHEDULE": tc.mode}))
+		if err != nil || policy.Schedule != tc.mode || policy.CPUBudget != 16 || policy.RenderWorkers != 16 || policy.BackgroundWorkers != tc.bg {
+			t.Fatalf("mode %s: policy=%+v err=%v", tc.mode, policy, err)
+		}
+	}
+	if _, err := choosePreviewPolicy(resources, envMap(map[string]string{"WEAZLCLOUD_PHOTO_SCHEDULE": "unbounded"})); err == nil {
+		t.Fatal("invalid photo schedule accepted")
 	}
 }
 

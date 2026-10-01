@@ -171,3 +171,30 @@ func TestPhotoThumbnailReusesEncryptedPreviewAfterRename(t *testing.T) {
 		t.Fatalf("preview cache path leaked source path: entries=%v err=%v", entries, err)
 	}
 }
+
+func TestKnownRasterDimensionsUseOneSourceRestore(t *testing.T) {
+	l := newPhotoIndexTestLibrary(t)
+	backend := &countingThumbnailBackend{isolatedLegacy: &isolatedLegacy{root: filepath.Join(filepath.Dir(l.repo), "repo")}}
+	l.backend = backend
+	var source bytes.Buffer
+	if err := jpeg.Encode(&source, image.NewRGBA(image.Rect(0, 0, 640, 480)), &jpeg.Options{Quality: 85}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Put(context.Background(), "Photos/one-read.jpg", source.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	file, ok := l.catalog.Get("Photos/one-read.jpg")
+	if !ok {
+		t.Fatal("uploaded file missing from catalog")
+	}
+	if _, err := l.catalog.UpdateMedia(file.EntryID, file.Revision, catalog.MediaMetadata{Width: 640, Height: 480}); err != nil {
+		t.Fatal(err)
+	}
+	before := backend.reads
+	if _, _, err := l.Thumbnail(context.Background(), "Photos/one-read.jpg", 320); err != nil {
+		t.Fatal(err)
+	}
+	if reads := backend.reads - before; reads != 1 {
+		t.Fatalf("preview restored source %d times; want one", reads)
+	}
+}

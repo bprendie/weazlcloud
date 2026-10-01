@@ -11,7 +11,10 @@ import (
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
-var errPhotoFailureRecord = errors.New("cannot checkpoint preview failure")
+var (
+	errPhotoFailureRecord    = errors.New("cannot checkpoint preview failure")
+	ErrPhotoPreviouslyFailed = errors.New("preview previously failed")
+)
 
 const maxPhotoFailureRecords = 100_000
 
@@ -40,7 +43,7 @@ func (l *Library) photoFailure(key string) error {
 		return fmt.Errorf("%w: %v", errPhotoFailureRecord, err)
 	}
 	defer clear(plain)
-	return fmt.Errorf("previous preview failure: %s", plain)
+	return fmt.Errorf("%w: %s", ErrPhotoPreviouslyFailed, plain)
 }
 
 func (l *Library) savePhotoFailure(key string, failure error) error {
@@ -107,7 +110,7 @@ func (l *Library) reconcilePreparedCacheLocked() {
 	}
 	ready := 0
 	for key, count := range l.photoPrepared {
-		if l.previewCached(key) {
+		if l.validCachedPreview(key) {
 			ready += count
 		}
 	}

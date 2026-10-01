@@ -58,12 +58,60 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiQuota)
 	case r.URL.Path == "/api/qr" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.qr)
+	case r.URL.Path == "/api/v1/devices" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		h.multiGuard(w, r, true, h.photoDevices)
+	case r.URL.Path == "/api/v1/devices/revoke" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.revokePhotoDevice)
 	case r.URL.Path == "/api/photos/albums" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiPhotoAlbums)
+	case r.URL.Path == "/api/v1/photos/albums" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoAlbums)
+	case r.URL.Path == "/api/v1/photos/albums/memberships" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.photoAlbumMemberships)
+	case r.URL.Path == "/api/v1/photos/albums" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiPhotoAlbumMutation)
+	case r.URL.Path == "/api/v1/photos/duplicates" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		h.multiGuard(w, r, true, h.photoDuplicates)
+	case r.URL.Path == "/api/v1/photos/selections" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.photoSelectionCreate)
+	case r.URL.Path == "/api/v1/photos/archives" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiArchive)
+	case r.URL.Path == "/api/v1/photos/archives" && r.Method == http.MethodDelete:
+		h.multiGuard(w, r, true, h.multiCancelArchive)
+	case r.URL.Path == "/api/v1/photos/selection-actions" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.photoSelectionAction)
+	case r.URL.Path == "/api/v1/photos/capabilities" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.photoCapabilities)
+	case r.URL.Path == "/api/v1/photos" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoPage)
+	case r.URL.Path == "/api/v1/photos/grabs" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiPhotoGrab)
+	case r.URL.Path == "/api/v1/photos/trash" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoTrash)
+	case r.URL.Path == "/api/v1/photos/trash/restore" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiRestorePhotoTrash)
+	case r.URL.Path == "/api/v1/photos/search" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoSearch)
+	case r.URL.Path == "/api/v1/photos/sync" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.photoSync)
+	case r.URL.Path == "/api/v1/photos/sync/checkpoint" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.photoSyncCheckpoint)
+	case r.URL.Path == "/api/v1/photos/dates" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoDates)
+	case r.URL.Path == "/api/v1/photos/folders" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiPhotoFolderVisibility)
+	case r.URL.Path == "/api/photos/dates" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoDates)
 	case r.URL.Path == "/api/photos" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiPhotoPage)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/photos/assets/") && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/original")):
+		h.multiGuard(w, r, true, h.multiPhotoAsset)
 	case r.URL.Path == "/api/photos/preparation" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		h.multiGuard(w, r, true, h.multiPhotoPreparation)
+	case r.URL.Path == "/api/v1/photos/uploads" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.v1PhotoUploadCreate)
+	case strings.HasPrefix(r.URL.Path, "/api/v1/photos/uploads/"):
+		h.multiGuard(w, r, true, h.v1PhotoUploadRoute)
 	case r.URL.Path == "/api/library" && r.Method == http.MethodGet && r.URL.Query().Get("path") == "":
 		h.multiGuard(w, r, true, h.multiListLibrary)
 	case r.URL.Path == "/api/library/thumbnail" && r.Method == http.MethodGet:
@@ -136,7 +184,7 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 func readyServe(w http.ResponseWriter, r *http.Request) { ready.Serve(w, r) }
 
 func (h *Handler) multiGuard(w http.ResponseWriter, r *http.Request, auth bool, fn func(http.ResponseWriter, *http.Request)) {
-	if r.Method != http.MethodGet && !mutating(r) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && !mutating(r) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}

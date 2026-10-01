@@ -34,8 +34,12 @@ func TestCatalogSnapshotClearsAtVaultLock(t *testing.T) {
 		t.Fatalf("warm catalog version changed from %d to %d", loadedVersion, got)
 	}
 	external := catalog.New(path, v)
-	if err := external.Load(); err != nil { t.Fatal(err) }
-	if err := external.Put(catalog.File{Path: "outside.txt", Size: 3, Hash: "efgh", Present: true}); err != nil { t.Fatal(err) }
+	if err := external.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if err := external.Put(catalog.File{Path: "outside.txt", Size: 3, Hash: "efgh", Present: true}); err != nil {
+		t.Fatal(err)
+	}
 	if err := l.Ensure(ctx); err != nil || len(l.List()) != 2 {
 		t.Fatalf("external catalog replacement was not reloaded: %v", err)
 	}

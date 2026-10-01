@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/photos"
 	"github.com/bprendie/weazlcloud/internal/sharedstore"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
@@ -55,20 +56,35 @@ type Library struct {
 	photoByID             map[string]catalog.File
 	photoByPath           map[string]int
 	photoMediaByPath      map[string]int
+	photoMediaByID        map[string]int
+	photoHiddenFolders    map[string]bool
+	photoArchivedCount    int
 	photoReady            bool
 	photoEpoch            uint64
 	photoSortedEpoch      uint64
+	photoQueryCache       map[string]photoQueryView
+	photoQueryOrder       []string
+	photoQueryEpoch       uint64
+	photoDateSummary      PhotoDateSummary
+	photoDateSummaryEpoch uint64
 	photoSave             *time.Timer
 	photoSaveEpoch        uint64
+	photoSaveWG           sync.WaitGroup
 	photoPrepMu           sync.Mutex
 	photoPrep             photoPreparation
 	photoPrepLoaded       bool
 	photoPrepRunning      bool
 	photoResumeWaiting    bool
 	photoPrepCancel       context.CancelFunc
+	photoStoppingForLock  bool
+	photoJobsMu           sync.Mutex
+	photoJobs             photos.JobQueue
+	photoJobsLoaded       bool
 	photoPrepared         map[string]int
 	photoCacheEpoch       uint64
 	photoImports          int
+	pendingPhotoIngest    map[string]catalog.File
+	photoAutoDisabled     bool
 	photoFailureMu        sync.Mutex
 	photoFailureCount     int
 	photoFailuresKnown    bool
@@ -99,80 +115,6 @@ func (l *Library) Ensure(ctx context.Context) error {
 		return err
 	}
 	return l.recoverStaged(ctx)
-}
-
-func (l *Library) Mkdir(ctx context.Context, name string) error {
-	name, err := cleanPath(name)
-	if err != nil {
-		return err
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return err
-	}
-	if err := l.catalog.Mkdir(name); err != nil {
-		return err
-	}
-	l.publishChange(Change{Kind: "mkdir", Paths: []string{name}})
-	return nil
-}
-
-func (l *Library) Rename(ctx context.Context, oldName, newName string) error {
-	oldName, err := cleanPath(oldName)
-	if err != nil {
-		return err
-	}
-	newName, err = cleanPath(newName)
-	if err != nil {
-		return err
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return err
-	}
-	if err := l.catalog.Rename(oldName, newName); err != nil {
-		return err
-	}
-	l.publishChange(Change{Kind: "rename", Paths: []string{oldName, newName}})
-	return nil
-}
-
-func (l *Library) Copy(ctx context.Context, oldName, newName string) error {
-	oldName, err := cleanPath(oldName)
-	if err != nil {
-		return err
-	}
-	newName, err = cleanPath(newName)
-	if err != nil {
-		return err
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
-		return err
-	}
-	err = l.catalog.CopyWith(oldName, newName, func(source, destination *catalog.File) error {
-		if source.Reference == nil || source.Reference.Backend != catalog.SharedBackend {
-			return nil
-		}
-		if l.sharedStore == nil || l.ownerID == "" {
-			return catalog.ErrUnknownReference
-		}
-		ref, e := l.sharedStore.Grant(ctx, l.ownerID, l.vault, toSharedReference(*source.Reference), destination.EntryID, destination.Revision)
-		if e != nil {
-			return e
-		}
-		destination.Reference = &catalog.Reference{Backend: catalog.SharedBackend, Version: uint16(ref.Version), Object: ref.ObjectID, Operation: ref.Operation, OwnerEntryID: ref.EntryID, OwnerRevision: ref.Revision}
-		destination.Object = ref.ObjectID
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	l.publishChange(Change{Kind: "copy", Paths: []string{oldName, newName}})
-	return nil
 }
 
 func (l *Library) Put(ctx context.Context, name string, body []byte) (catalog.File, error) {
@@ -241,10 +183,11 @@ func (l *Library) Delete(name string) error {
 	if err := l.loadCatalogSession(session); err != nil {
 		return err
 	}
+	paths := l.catalog.RelatedPhotoPaths(name, false)
 	if err := l.catalog.Delete(name); err != nil {
 		return err
 	}
-	l.publishChange(Change{Kind: "delete", Paths: []string{name}})
+	l.publishChange(Change{Kind: "delete", Paths: paths})
 	return nil
 }
 

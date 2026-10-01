@@ -42,11 +42,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case rest == "" && r.Method == http.MethodGet:
-		writeGrabPage(w, id)
+		if rec, err := h.store.Meta(id); err == nil && rec.Kind == "gallery" {
+			writeGalleryPage(w, id)
+		} else {
+			writeGrabPage(w, id)
+		}
+	case rest == "gallery" || rest == "zip" || strings.HasPrefix(rest, "zip/") || strings.HasPrefix(rest, "preview/") || strings.HasPrefix(rest, "original/"):
+		h.gallery(w, r, id, rest)
 	case rest == "meta" && r.Method == http.MethodGet:
 		h.meta(w, id)
 	case rest == "file" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		h.file(w, r, id)
+		if rec, err := h.store.Meta(id); err == nil && rec.Kind == "gallery" {
+			h.gallery(w, r, id, "zip")
+		} else {
+			h.file(w, r, id)
+		}
 	default:
 		http.Error(w, "weazlcloud: no grab", http.StatusNotFound)
 	}
@@ -80,7 +90,7 @@ func (h *Handler) meta(w http.ResponseWriter, id string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id": rec.ID, "name": rec.Name, "kind": rec.Kind, "gate": rec.Gate,
 		"size": rec.Size, "expires": rec.Expires, "files": rec.Files,
-		"status": "live",
+		"status": "live", "left": max(0, rec.Limit-rec.Used),
 	})
 }
 

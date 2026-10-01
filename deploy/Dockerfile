@@ -6,6 +6,7 @@ COPY . .
 RUN bash scripts/generate-desk-ui.sh
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazlcloud ./cmd/weazlcloud
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/takeout-layout ./cmd/takeout-layout
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazl-photo-worker ./cmd/weazl-photo-worker
 
 FROM restic/restic:0.18.0 AS restic
 
@@ -15,12 +16,13 @@ COPY native/preview/main.c /src/main.c
 RUN cc -O3 -Wall -Wextra -Werror -o /weazl-preview-turbo /src/main.c -ljpeg
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata libjpeg-turbo \
+RUN apk add --no-cache ca-certificates tzdata libjpeg-turbo ffmpeg libheif-tools \
  && adduser -D -H -u 7272 -g "" weazl \
- && mkdir -p /data/tmp \
- && chown -R weazl:weazl /data
+ && mkdir -p /data/tmp /run/weazlcloud-photo \
+ && chown -R weazl:weazl /data /run/weazlcloud-photo
 COPY --from=build /out/weazlcloud /usr/local/bin/weazlcloud
 COPY --from=build /out/takeout-layout /usr/local/bin/takeout-layout
+COPY --from=build /out/weazl-photo-worker /usr/local/bin/weazl-photo-worker
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
 COPY --from=preview-build /weazl-preview-turbo /usr/local/bin/weazl-preview-turbo
 USER 7272:7272

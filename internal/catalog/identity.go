@@ -118,6 +118,7 @@ func validateReference(f File) error {
 func ValidateFileReference(f File) error { return validateReference(f) }
 
 func cloneFile(f File) File {
+	f.PhotoComponents = append([]PhotoComponent(nil), f.PhotoComponents...)
 	if f.Reference != nil {
 		ref := *f.Reference
 		f.Reference = &ref
@@ -125,6 +126,14 @@ func cloneFile(f File) File {
 	if f.DeletedAt != nil {
 		deleted := *f.DeletedAt
 		f.DeletedAt = &deleted
+	}
+	if f.CaptureTime != nil {
+		captured := *f.CaptureTime
+		f.CaptureTime = &captured
+	}
+	if f.CaptureOffsetMinutes != nil {
+		offset := *f.CaptureOffsetMinutes
+		f.CaptureOffsetMinutes = &offset
 	}
 	return f
 }

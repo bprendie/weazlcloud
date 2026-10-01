@@ -162,13 +162,37 @@ export const finalizeUpload = id => uploadJSON('/api/uploads/' + encodeURICompon
 export const cancelUpload = id => uploadJSON('/api/uploads/' + encodeURIComponent(id), {method: 'DELETE', headers: jsonHeaders});
 
 export const listTakeout = () => uploadJSON('/api/takeout');
-export const listPhotoAlbums = () => uploadJSON('/api/photos/albums');
-export const listPhotos = (cursor = '', album = '') => {
+export const listPhotoAlbums = (hidden=false) => uploadJSON('/api/photos/albums'+(hidden?'?hidden=1':''));
+export const createPhotoSelection = body => post('/api/v1/photos/selections',body);
+export const photoSelectionAction = body => post('/api/v1/photos/selection-actions',body);
+export const savePhotoAlbum = body => post('/api/v1/photos/albums', {action:'save', ...body});
+export const editPhotoAlbumMembers = body => post('/api/v1/photos/albums', {action:'members', ...body});
+export const deletePhotoAlbum = (id, revision) => post('/api/v1/photos/albums', {action:'delete', id, revision});
+export const listPhotos = (cursor = '', album = '', options = {}) => {
   const q = new URLSearchParams({limit: '100'});
   if (cursor) q.set('cursor', cursor);
   if (album) q.set('album', album);
-  return uploadJSON('/api/photos?' + q.toString());
+  if (options.mode && options.mode !== 'all') q.set('mode', options.mode);
+  if (options.date) q.set('date', options.date);
+  if (options.around) q.set('around', options.around);
+  return uploadJSON('/api/v1/photos?' + q.toString(), {signal:options.signal});
 };
+export const searchPhotos = (cursor = '', options = {}) => {
+  const q = new URLSearchParams({limit: '100'});
+  for (const key of ['q', 'album', 'type', 'from', 'to', 'camera']) if (options[key]) q.set(key, options[key]);
+  if (cursor) q.set('cursor', cursor);
+  if (options.favorite) q.set('favorite', '1');
+  if (options.hidden) q.set('hidden', '1');
+  if (options.archived) q.set('archived', '1');
+  if (options.unknown) q.set('unknown', '1');
+  if (options.outside_albums) q.set('outside_albums','1');
+  return uploadJSON('/api/v1/photos/search?' + q.toString(), {signal:options.signal});
+};
+export const listPhotoDates = hidden => uploadJSON('/api/v1/photos/dates' + (hidden ? '?hidden=1' : ''));
+export const photoDetail = (id, hidden) => uploadJSON('/api/v1/photos/assets/' + encodeURIComponent(id) + (hidden ? '?hidden=1' : ''));
+export const setPhotoFavorite = (id, favorite, hidden) => post('/api/v1/photos/assets/' + encodeURIComponent(id) + (hidden ? '?hidden=1' : ''), {favorite: Boolean(favorite)});
+export const updatePhoto = (id, body, hidden) => post('/api/v1/photos/assets/' + encodeURIComponent(id) + (hidden ? '?hidden=1' : ''), body);
+export const setPhotoFolderHidden = (path, hidden) => post('/api/v1/photos/folders', {path, hidden: Boolean(hidden)});
 export const photoPreparation = () => uploadJSON('/api/photos/preparation');
 export const setPhotoPreparation = action => post('/api/photos/preparation', {action});
 export const startTakeout = name => post('/api/takeout', {name});
@@ -183,6 +207,10 @@ export async function listTrash() {
   if (!r.ok) throw new Error(j.error || 'trash');
   return j;
 }
+export const listPhotoDuplicates = (cursor='', hidden=false) => uploadJSON('/api/v1/photos/duplicates?' + new URLSearchParams({cursor, hidden:hidden?'1':'0'}));
+export const preferPhoto = (id,hidden=false) => post('/api/v1/photos/duplicates' + (hidden?'?hidden=1':''), {id});
+export const listPhotoTrash = hidden => uploadJSON('/api/v1/photos/trash' + (hidden ? '?hidden=1' : ''));
+export const restorePhotoTrash = (id, hidden) => post('/api/v1/photos/trash/restore' + (hidden ? '?hidden=1' : ''), {id});
 export const restoreTrash = path => post('/api/trash/restore', {path});
 export async function cleanupTrash() {
   const r = await fetch('/api/trash', {method: 'DELETE', headers: jsonHeaders});
@@ -263,6 +291,7 @@ export async function listCapsules() {
   return j;
 }
 
+export const mintPhotoGrab = body => post('/api/v1/photos/grabs', body);
 export const mintCapsule = body => post('/api/capsules', body);
 
 export async function revokeCapsule(id) {
@@ -287,8 +316,8 @@ export const saveNodeSettings = hostname => post('/api/node', {hostname});
 export function toFixture(row) {
   const parts = String(row.path || '').split('/').filter(Boolean);
   const title = parts.pop() || row.path;
-  if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true, mtime: row.mtime};
+  if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true, hidden: Boolean(row.hidden), mtime: row.mtime};
   const ext = title.includes('.') ? title.slice(title.lastIndexOf('.') + 1).toUpperCase() : 'FILE';
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
-  return { id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified };
+  return { id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified, importedAt: row.imported_at, captureTime: row.captured_at, captureOffsetMinutes:row.capture_offset_minutes, revision:row.revision, captureSource: row.capture_source, mediaType: row.media_type, width: row.width, height: row.height, favorite: row.favorite, archived: row.archived, caption: row.caption, durationMillis: row.duration_millis, userRotation: row.user_rotation || 0, orientation: row.orientation };
 }

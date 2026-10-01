@@ -10,8 +10,15 @@ import (
 )
 
 type Store struct {
-	mu   sync.Mutex
-	root string
+	mu                sync.Mutex
+	root              string
+	gallerySecret     []byte
+	galleryCache      map[string]GalleryManifest
+	galleryCacheOrder []string
+	galleryStreams    map[string]map[*galleryLease]struct{}
+	galleryZIPActive  map[string]bool
+	galleryZIPSlots   chan struct{}
+	galleryReserve    func(int64) (func(), error)
 }
 
 func New(root string) *Store { return &Store{root: root} }
@@ -74,6 +81,9 @@ func (s *Store) ListOwner(owner string) []Record {
 }
 
 func (s *Store) RevokeOwner(id, owner string) error {
+	if !validGalleryToken(id) {
+		return ErrGone
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	dir := filepath.Join(s.root, id)
@@ -116,6 +126,8 @@ func (s *Store) ownerCapsules(owner string, remove bool) error {
 			continue
 		}
 		if remove {
+			s.cancelGalleryLocked(rec.ID)
+			delete(s.galleryCache, rec.ID)
 			if err := os.RemoveAll(dir); err != nil {
 				return err
 			}

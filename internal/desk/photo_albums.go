@@ -16,9 +16,9 @@ func (h *Handler) multiPhotoAlbums(w http.ResponseWriter, r *http.Request) {
 		apiError(w, vault.ErrLocked)
 		return
 	}
-	albums, err := res.Lib.PhotoAlbums(r.Context())
+	albums, err := res.Lib.PhotoAlbums(r.Context(), r.URL.Query().Get("hidden") == "1")
 	if err != nil {
-		apiError(w, err)
+		photoAPIError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

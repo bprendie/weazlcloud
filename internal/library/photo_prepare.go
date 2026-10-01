@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"github.com/bprendie/weazlcloud/internal/vault"
 	"time"
 )
 
@@ -11,28 +12,39 @@ const photoPreparationStateLimit = 16 << 10
 var ErrPhotoPreparationAction = errors.New("photo preparation action must be start, resume, pause, or retry")
 
 type photoPreparation struct {
-	Enabled    bool   `json:"enabled"`
-	Status     string `json:"status"`
-	Total      int    `json:"total"`
-	Ready      int    `json:"ready"`
-	Failed     int    `json:"failed"`
-	Position   int    `json:"position"`
-	Generation uint64 `json:"generation"`
-	Updated    string `json:"updated"`
-	Paused     bool   `json:"paused,omitempty"`
-	Retry      bool   `json:"retry,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	Status       string `json:"status"`
+	Total        int    `json:"total"`
+	Ready        int    `json:"ready"`
+	Failed       int    `json:"failed"`
+	Position     int    `json:"position"`
+	Generation   uint64 `json:"generation"`
+	Updated      string `json:"updated"`
+	Paused       bool   `json:"paused,omitempty"`
+	Retry        bool   `json:"retry,omitempty"`
+	AutoOnly     bool   `json:"auto_only,omitempty"`
+	Error        string `json:"error,omitempty"`
+	CPUBudget    int    `json:"cpu_budget,omitempty"`
+	Workers      int    `json:"workers,omitempty"`
+	Readers      int    `json:"source_readers,omitempty"`
+	Schedule     string `json:"schedule,omitempty"`
+	Working      int    `json:"working,omitempty"`
+	WorkProgress int    `json:"work_progress,omitempty"`
 }
 
 func (l *Library) PhotoPreparation() (photoPreparation, error) {
 	if !l.vault.Unlocked() {
-		return photoPreparation{}, errors.New("vault is locked")
+		return photoPreparation{}, vault.ErrLocked
 	}
 	l.photoPrepMu.Lock()
 	defer l.photoPrepMu.Unlock()
 	l.loadPhotoPreparationLocked()
 	l.reconcilePreparedCacheLocked()
 	state := l.photoPrep
+	state.CPUBudget, state.Workers, state.Readers, state.Schedule = previewPolicy.CPUBudget, previewPolicy.RenderWorkers, previewPolicy.SourceReaders, previewPolicy.Schedule
+	l.photoPrepMu.Unlock()
+	state.Working, state.WorkProgress = l.photoJobProgress()
+	l.photoPrepMu.Lock()
 	if state.Status == "paused_storage" && !l.photoStorageBusy() {
 		go l.startPhotoPreparationWorker()
 	}
@@ -46,7 +58,7 @@ func (l *Library) SetPhotoPreparation(ctx context.Context, action string) (photo
 	l.mu.Lock()
 	if !l.vault.Unlocked() {
 		l.mu.Unlock()
-		return photoPreparation{}, errors.New("vault is locked")
+		return photoPreparation{}, vault.ErrLocked
 	}
 	if action != "pause" {
 		if err := l.ensurePhotoIndexLocked(ctx); err != nil {
@@ -66,6 +78,7 @@ func (l *Library) SetPhotoPreparation(ctx context.Context, action string) (photo
 		l.photoPrep.Retry = true
 	}
 	if action == "start" {
+		l.photoPrep.AutoOnly = false
 		l.photoPrep.Position, l.photoPrep.Ready, l.photoPrep.Failed = 0, 0, 0
 		l.photoPrep.Total = l.photoCount()
 		l.photoPrep.Generation = l.photoGeneration()
@@ -78,9 +91,16 @@ func (l *Library) SetPhotoPreparation(ctx context.Context, action string) (photo
 		l.photoPrep.Enabled = true
 		l.photoPrep.Status = "paused"
 	} else {
+		promoteAutoOnly := action == "resume" && l.photoPrep.AutoOnly
+		// An explicit resume from the Photos UI means finish the entire library.
+		// AutoOnly is reserved for background ingestion and otherwise leaves a
+		// completed upload queue with no pending jobs to lease.
+		if action == "retry" || action == "resume" {
+			l.photoPrep.AutoOnly = false
+		}
 		l.photoPrep.Enabled = true
 		l.photoPrep.Status = "queued"
-		if l.photoPrep.Generation != l.photoGeneration() {
+		if l.photoPrep.Generation != l.photoGeneration() || promoteAutoOnly {
 			l.photoPrep.Position, l.photoPrep.Ready, l.photoPrep.Failed = 0, 0, 0
 			l.photoPrep.Total = l.photoCount()
 			l.photoPrep.Generation = l.photoGeneration()
@@ -109,7 +129,7 @@ func (l *Library) resumePhotoPreparation() {
 		l.touchPhotoPreparationLocked()
 		l.savePhotoPreparationLocked()
 	}
-	enabled := l.photoPrep.Enabled && !l.photoPrep.Paused && l.photoPrep.Status != "complete" && l.photoPrep.Status != "partial" && l.photoPrep.Status != "paused_error"
+	enabled := l.photoPrep.Enabled && !l.photoPrep.Paused && l.photoPrep.Status != "complete" && l.photoPrep.Status != "partial" && l.photoPrep.Status != "paused_error" && !(previewPolicy.Schedule == "quiet" && l.photoPrep.Status == "paused_schedule")
 	l.photoPrepMu.Unlock()
 	if enabled {
 		l.startPhotoPreparationWorker()
@@ -154,7 +174,7 @@ func (l *Library) photoCount() int {
 	defer l.photoMu.Unlock()
 	n := 0
 	for _, f := range l.photoRows {
-		if !f.Folder && photoRaster(f.Path) {
+		if !f.Folder && photoPreviewable(f.Path) {
 			n++
 		}
 	}
@@ -189,68 +209,30 @@ func (l *Library) startPhotoPreparationWorker() {
 	go func() { defer release(); defer cancel(); l.runPhotoPreparationParallel(ctx) }()
 }
 
-func (l *Library) photoStorageBusy() bool {
-	l.stageMu.Lock()
-	defer l.stageMu.Unlock()
-	return len(l.activeStages) > 0 || l.photoImports > 0
-}
-
-func (l *Library) waitForPhotoStorage() {
+// PrepareVaultLock cancels and drains background photo work while the vault
+// key remains available to release durable queue leases safely.
+func (l *Library) PrepareVaultLock() {
 	l.photoPrepMu.Lock()
-	if l.photoResumeWaiting {
+	if !l.photoPrepRunning {
 		l.photoPrepMu.Unlock()
 		return
 	}
-	l.photoResumeWaiting = true
-	l.photoPrepMu.Unlock()
-	go func() {
-		ctx, release := l.previewContext(context.Background())
-		defer release()
-		defer func() {
-			l.photoPrepMu.Lock()
-			l.photoResumeWaiting = false
-			l.photoPrepMu.Unlock()
-		}()
-		for {
-			if ctx.Err() != nil {
-				return
-			}
-			l.photoPrepMu.Lock()
-			running := l.photoPrepRunning
-			l.photoPrepMu.Unlock()
-			if !running && !l.photoStorageBusy() {
-				break
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(100 * time.Millisecond):
-			}
-		}
-		l.startPhotoPreparationWorker()
-	}()
-}
-
-func (l *Library) restartPhotoPreparation() {
-	l.photoPrepMu.Lock()
-	l.photoPrep.Position, l.photoPrep.Ready, l.photoPrep.Failed = 0, 0, 0
-	l.photoPrep.Total = l.photoCount()
-	l.photoPrep.Generation = l.photoGeneration()
-	l.touchPhotoPreparationLocked()
-	l.savePhotoPreparationLocked()
-	l.photoPrepMu.Unlock()
-}
-
-func (l *Library) finishPhotoPreparation(status string) {
-	l.photoPrepMu.Lock()
-	if !l.photoPrep.Paused && l.photoPrep.Status != "queued" {
-		l.photoPrep.Status = status
+	l.photoStoppingForLock = true
+	if l.photoPrepCancel != nil {
+		l.photoPrepCancel()
 	}
-	l.touchPhotoPreparationLocked()
-	l.savePhotoPreparationLocked()
 	l.photoPrepMu.Unlock()
-}
-
-func (l *Library) touchPhotoPreparationLocked() {
-	l.photoPrep.Updated = time.Now().UTC().Format(time.RFC3339)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		l.photoPrepMu.Lock()
+		running := l.photoPrepRunning
+		if !running {
+			l.photoStoppingForLock = false
+		}
+		l.photoPrepMu.Unlock()
+		if !running {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

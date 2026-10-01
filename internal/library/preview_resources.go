@@ -22,7 +22,9 @@ type PreviewPolicy struct {
 	BackgroundWorkers int
 	RenderWorkers     int
 	SourceReaders     int
+	CPUBudget         int
 	MemoryBytes       int64
+	Schedule          string
 	Reason            string
 }
 
@@ -39,18 +41,31 @@ func choosePreviewPolicy(r PreviewResources, lookup func(string) (string, bool))
 	readers := 1
 	memory := int64(fallbackPreviewMemory)
 	if knownCPU {
-		background = max(1, min(8, cpus/2))
-		foreground := 1
-		if cpus >= 8 {
-			foreground = 2
-		}
-		render = min(cpus, background+foreground)
-		readers = max(1, min(4, cpus/2))
+		// All photo work shares one hard concurrency budget equal to half the
+		// effective cgroup/affinity allocation. On a one-CPU allocation we allow
+		// one throttled job so preparation can still make progress.
+		budget := max(1, cpus/2)
+		render = budget
+		background = max(1, min(8, budget/2))
+		readers = max(1, min(4, budget))
+	}
+	schedule := "balanced"
+	if value, ok := lookup("WEAZLCLOUD_PHOTO_SCHEDULE"); ok {
+		schedule = strings.ToLower(strings.TrimSpace(value))
+	}
+	switch schedule {
+	case "quiet":
+		background = 1
+	case "balanced":
+	case "fast":
+		background = max(1, min(16, cpus/2-1))
+	default:
+		return PreviewPolicy{}, fmt.Errorf("WEAZLCLOUD_PHOTO_SCHEDULE must be quiet, balanced, or fast")
 	}
 	if r.MemoryBytes > 0 {
 		memory = min(int64(8<<30), r.MemoryBytes/8)
 	}
-	p := PreviewPolicy{BackgroundWorkers: background, RenderWorkers: render, SourceReaders: readers, MemoryBytes: memory, Reason: r.CPUReason + "; " + r.MemReason}
+	p := PreviewPolicy{BackgroundWorkers: background, RenderWorkers: render, SourceReaders: readers, CPUBudget: max(1, cpus/2), MemoryBytes: memory, Schedule: schedule, Reason: r.CPUReason + "; " + r.MemReason + "; 50% photo CPU ceiling"}
 	for name, target := range map[string]*int{
 		"WEAZLCLOUD_PREVIEW_BACKGROUND_WORKERS": &p.BackgroundWorkers,
 		"WEAZLCLOUD_PREVIEW_TOTAL_WORKERS":      &p.RenderWorkers,
@@ -71,9 +86,11 @@ func choosePreviewPolicy(r PreviewResources, lookup func(string) (string, bool))
 		}
 		p.MemoryBytes = n
 	}
-	if p.RenderWorkers > cpus {
-		p.RenderWorkers = cpus
+	photoBudget := max(1, cpus/2)
+	if p.RenderWorkers > photoBudget {
+		p.RenderWorkers = photoBudget
 	}
+	p.CPUBudget = photoBudget
 	if p.SourceReaders > p.RenderWorkers {
 		p.SourceReaders = p.RenderWorkers
 	}
@@ -84,7 +101,7 @@ func choosePreviewPolicy(r PreviewResources, lookup func(string) (string, bool))
 func defaultPreviewPolicy() PreviewPolicy {
 	p, err := choosePreviewPolicy(discoverPreviewResources(), os.LookupEnv)
 	if err != nil {
-		return PreviewPolicy{BackgroundWorkers: 1, RenderWorkers: 1, SourceReaders: 1, MemoryBytes: fallbackPreviewMemory, Reason: "invalid override: " + err.Error()}
+		return PreviewPolicy{BackgroundWorkers: 1, RenderWorkers: 1, SourceReaders: 1, CPUBudget: 1, MemoryBytes: fallbackPreviewMemory, Reason: "invalid override: " + err.Error()}
 	}
 	return p
 }
@@ -92,6 +109,9 @@ func defaultPreviewPolicy() PreviewPolicy {
 // ValidatePreviewSettings is called before opening service listeners.
 func ValidatePreviewSettings() error {
 	if err := validatePreviewRenderer(); err != nil {
+		return err
+	}
+	if err := validatePhotoWorkerSocket(); err != nil {
 		return err
 	}
 	_, err := choosePreviewPolicy(discoverPreviewResources(), os.LookupEnv)

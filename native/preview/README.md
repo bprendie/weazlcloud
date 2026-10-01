@@ -14,7 +14,7 @@ Input is one JPEG on stdin; the sole argument is the longest output edge
 The helper is single threaded; WeazlCloud owns concurrency. libjpeg-turbo chooses
 SIMD implementations at runtime. Decode uses 1/2, 1/4 or 1/8 scaling where suitable,
 then a scalar bilinear resize. This does not claim SIMD for the resize loop or
-AVX-512 support in the codec. No EXIF-orientation behavior is changed in this pass.
+AVX-512 support in the codec. JPEG EXIF orientation is applied to the bounded output in Go for both native and fallback rendering. Owner rotation is another non-destructive derivative transform; originals remain unchanged.
 
 Warnings (including truncated JPEGs) fail the image. Grayscale is converted to
 RGB; the Go dispatcher retains CMYK handling. Input, dimensions, pixels, output,

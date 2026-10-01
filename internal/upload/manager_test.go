@@ -68,6 +68,22 @@ func TestSessionOffsetsRestartAndIdempotentFinalize(t *testing.T) {
 	}
 }
 
+func TestCreateIdempotentResumesAndRejectsChangedContent(t *testing.T) {
+	manager := New(filepath.Join(t.TempDir(), "uploads"), nil, nil, nil)
+	owner := testOwner()
+	first, err := manager.CreateIdempotent(owner, "Photos/Mobile/device/asset/photo.jpg", 12, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "device:asset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := manager.CreateIdempotent(owner, first.Path, 12, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "device:asset")
+	if err != nil || repeated.ID != first.ID || repeated.Offset != first.Offset {
+		t.Fatalf("repeat=%+v err=%v", repeated, err)
+	}
+	if _, err := manager.CreateIdempotent(owner, first.Path, 13, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "device:asset"); err != ErrIdempotencyConflict {
+		t.Fatalf("changed request error=%v", err)
+	}
+}
+
 func TestInterruptedChunkDoesNotAdvanceOffset(t *testing.T) {
 	manager := New(filepath.Join(t.TempDir(), "uploads"), nil, nil, nil)
 	owner := testOwner()

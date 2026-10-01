@@ -36,6 +36,8 @@ type SessionView struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+var ErrIdempotencyConflict = errors.New("upload idempotency key was reused with different content")
+
 // DeleteOwner waits for all in-flight session operations before removing the
 // owner's upload manifests, payloads, chunks, and quota reservations.
 func (m *Manager) DeleteOwner(owner string) error {
@@ -125,6 +127,18 @@ func (m *Manager) lockSession(id string) func() {
 }
 
 func (m *Manager) Create(owner users.User, path string, size int64, expectedHash string) (SessionView, error) {
+	return m.create(owner, path, size, expectedHash, "")
+}
+
+func (m *Manager) CreateIdempotent(owner users.User, path string, size int64, expectedHash, idempotencyKey string) (SessionView, error) {
+	if len(idempotencyKey) == 0 || len(idempotencyKey) > 200 {
+		return SessionView{}, errors.New("upload idempotency key is invalid")
+	}
+	sum := sha256.Sum256([]byte(idempotencyKey))
+	return m.create(owner, path, size, expectedHash, hex.EncodeToString(sum[:]))
+}
+
+func (m *Manager) create(owner users.User, path string, size int64, expectedHash, idempotencyHash string) (SessionView, error) {
 	path, err := library.CleanPath(path)
 	if err != nil {
 		return SessionView{}, err
@@ -140,14 +154,21 @@ func (m *Manager) Create(owner users.User, path string, size int64, expectedHash
 			return SessionView{}, errors.New("upload hash is invalid")
 		}
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if idempotencyHash != "" {
+		if existing, ok, findErr := m.findIdempotentLocked(owner.ID, idempotencyHash, path, size, expectedHash); findErr != nil {
+			return SessionView{}, findErr
+		} else if ok {
+			return view(existing), nil
+		}
+	}
 	id, err := newSessionID()
 	if err != nil {
 		return SessionView{}, err
 	}
 	now := time.Now().UTC()
-	s := session{ID: id, OwnerID: owner.ID, Path: path, Size: size, Expected: expectedHash, Status: "uploading", CreatedAt: now, UpdatedAt: now}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	s := session{ID: id, OwnerID: owner.ID, Path: path, Size: size, Expected: expectedHash, IdempotencyHash: idempotencyHash, Status: "uploading", CreatedAt: now, UpdatedAt: now}
 	if m.quota != nil {
 		reservation, reserveErr := m.reserveUploadBytes(owner.ID, size, 0)
 		if reserveErr != nil {
@@ -174,6 +195,43 @@ func (m *Manager) Create(owner users.User, path string, size int64, expectedHash
 		return SessionView{}, err
 	}
 	return view(s), nil
+}
+
+func (m *Manager) findIdempotentLocked(owner, key, path string, size int64, expected string) (session, bool, error) {
+	if !validComponent(owner) {
+		return session{}, false, ErrNotFound
+	}
+	entries, err := os.ReadDir(m.ownerDir(owner))
+	if errors.Is(err, os.ErrNotExist) {
+		return session{}, false, nil
+	}
+	if err != nil {
+		return session{}, false, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		if !validComponent(id) {
+			continue
+		}
+		s, readErr := m.loadLocked(owner, id)
+		if errors.Is(readErr, ErrExpired) || errors.Is(readErr, ErrNotFound) {
+			continue
+		}
+		if readErr != nil {
+			return session{}, false, readErr
+		}
+		if s.IdempotencyHash != key {
+			continue
+		}
+		if s.Path != path || s.Size != size || s.Expected != expected {
+			return session{}, false, ErrIdempotencyConflict
+		}
+		return s, true, nil
+	}
+	return session{}, false, nil
 }
 
 func (m *Manager) Status(owner users.User, id string) (SessionView, error) {

@@ -47,12 +47,23 @@ listing the whole library or reading original image bytes. Use **Prepare preview
 in Photos to build grid-size previews in the background; preparation is opt-in,
 resumes after restart, and pauses for a locked vault, bulk storage work or low disk
 space. JPEG, PNG and GIF get encrypted 320-pixel grid previews and 1280-pixel
-viewing previews on demand. Other formats keep their existing browser/fallback
-behavior. The originals are unchanged. Preview caches are disposable and bounded
+viewing previews on demand. The private worker renders WebP and TIFF previews
+when supported by the installed FFmpeg build, plus a bounded first-frame poster
+for supported video files. HEIC/HEIF and AVIF use libheif through anonymous
+memory files because Alpine FFmpeg lacks their demuxer; unavailable codecs use
+the preview fallback. Preparation shows active render count and average source-read
+progress. Video playback still uses the original browser-compatible stream; no
+playback transcode or Live Photo pairing is generated yet. The originals are unchanged. Preview caches are disposable and bounded
 by default to 4 GiB and 100,000 files per owner and 16 GiB per node. Set
 `WEAZLCLOUD_PREVIEW_OWNER_BYTES`, `WEAZLCLOUD_PREVIEW_OWNER_FILES` and
 `WEAZLCLOUD_PREVIEW_NODE_BYTES` to change those limits (byte values are integers).
 These limits apply to generated previews, not the library quota.
+
+The Photos timeline groups items by capture day, offers a Recently added view
+and month jump, and opens images and videos in a full-screen viewer. The viewer
+supports keyboard/swipe navigation, adjacent-image prefetch, capture metadata
+and original download while preserving the timeline position. Date anchors,
+zoom and an explicit owner-only Hidden view are included.
 
 Docker images include a **libjpeg-turbo JPEG renderer**. It uses runtime CPU
 feature detection (including SIMD where supported), scaled JPEG decoding, and
@@ -67,7 +78,7 @@ The single-image helper uses pipes only, with no plaintext image files. Existing
 64-MiB input / 32-million-pixel limits remain; native workers additionally have a
 512-MiB address-space ceiling, 30-second CPU limit and 35-second wall timeout.
 Cancellation kills and reaps the helper. The Go process remains CGO-free. The
-`raster-v3` cache identity regenerates derivatives lazily; old encrypted caches
+`media-v4` cache identity regenerates derivatives lazily; old encrypted caches
 remain subject to normal eviction. Originals are never rewritten. See the
 [acceleration workbook](accelerated_previews_workbook_2026-09-28.md) for measurements
 and limitations. Local native tests need a C compiler, libjpeg-turbo development
@@ -94,6 +105,52 @@ previews get the next available reservation ahead of background preparation. Thi
 does not yet provide fair scheduling between owners or dynamically promote an
 already-running coalesced background job.
 
+Set `WEAZLCLOUD_PHOTO_SCHEDULE=quiet|balanced|fast` in the deployment environment
+to control background preparation. `balanced` is the default; `fast` can use up to
+the full photo worker allowance while reserving one render slot for foreground
+requests. `quiet` pauses backlog work while on-demand previews continue. Every mode
+remains within the worker concurrency derived from at most half the effective CPU
+allocation. The selected mode and effective limits are reported by the photo
+preparation status endpoint. Manual pause remains encrypted and survives restart.
+
+Photos now has a capture-date timeline with justified rows, Favorites, Archive,
+Hidden, filtered wildcard search and owner-created albums. Date buckets honor a
+known capture timezone instead of using import dates. Captions/date corrections
+and rotation leave originals unchanged; exact-duplicate review can mark a preferred
+copy without deleting files or changing album membership. Photos Trash follows
+the existing 30-day retention and filters hidden items in its own explicit context.
+
+Albums and selected photos can become a frozen gallery grab with the node's
+admin-configured hostname, passphrase option, expiry, QR and revocation. Guests
+browse re-encoded previews without spending retries; explicit original or ZIP
+transfers spend one each. Originals may retain embedded location metadata.
+Gallery capsules retain encrypted copies and their ZIP until burn/expiry/revoke;
+ordinary on-demand download ZIPs expire 90 minutes after becoming ready. Owner
+ZIP jobs and payloads are encrypted, recover after restart, and support bounded
+range reads. Guest selection ZIPs prepare as encrypted background jobs without
+spending a retry; an explicit download spends one.
+
+The versioned Photos API includes revocable device credentials, resumable still/
+motion-pair uploads, source revisions, owner-selected Photos roots, atomic album
+membership and a durable processing outbox. Large selections stay on the server;
+change/checkpoint sync and album memberships use bounded pages. See the [API checkpoint](docs/photo-api.md),
+[execution workbook](plan_modal.md), [recovery runbook](docs/photos-release-runbook.md) and
+[local verification record](docs/photos-local-verification-2026-09-30.md) for
+implemented behavior and remaining release gates. The [OpenAPI contract](docs/photo-api.yaml)
+is ready for a native client; the iOS app itself and runtime SQLCipher integration
+remain future work. Socket-enabled browser/container gates are still required
+before release; production has not been changed by this pass.
+
+The supplied Docker Compose file runs a private `weazlcloud-photo-worker` sidecar
+with no network listener. The API sends it authorized media bytes through a
+permission-restricted Unix socket; the worker receives no vault keys or paths and
+does not write source data to disk. The worker has its own hard CPU and memory
+limits, including FFmpeg child processes. Set `WEAZLCLOUD_PHOTO_CPUS` to half the CPU allocation available to the
+WeazlCloud deployment (for example `16` on a 32-CPU host); the Compose default is
+`1.0` CPU for a small two-CPU host. `WEAZLCLOUD_PHOTO_MEMORY_LIMIT` defaults to
+`2g`. Leave `WEAZLCLOUD_PREVIEW_WORKER_SOCKET` unset for a standalone run without
+Compose; previews then use the bounded in-process renderer and worker pool.
+
 Preparation resumes by checking current content identities and reusable caches,
 not trusting old slice positions. Manual pause survives restart and index changes.
 Failure records are encrypted, capped at 100,000 per owner, and retryable through
@@ -101,8 +158,9 @@ Failure records are encrypted, capped at 100,000 per owner, and retryable throug
 being prepared; inability to persist a checkpoint pauses with a visible error.
 Cache skips, write failures and eviction produce partial readiness. Lock, rekey,
 revocation and shutdown invalidate preview work; imports pause background dispatch
-through their entire lifetime. A cold raster render uses a bounded header probe
-and a separate full read to avoid deadlocking memory upgrades.
+through their entire lifetime. A cold raster render with known dimensions uses
+one admitted source read; older files without dimensions use a bounded header
+probe followed by a separate admitted full read.
 
 Adaptive pressure feedback, owner queue fairness, node-wide accounting for retained
 catalog/index RAM, and measured large-host scaling remain follow-up work. Shared-store writes
@@ -112,9 +170,11 @@ See the
 [local verification record](docs/photos-smoke-followup-2026-09-27.md) before rollout.
 
 The album and music browser smoke uses a disposable Docker volume and synthetic
-fixtures: `WEAZLCLOUD_IMAGE=<fresh-image> python scripts/smoke-photo-albums.py`
-(requires Python Playwright and Chromium). It checks split albums, covers,
-playback, vault locking and owner isolation.
+fixtures (requires Python Playwright and Chromium). After `make smoke-container`,
+run `make smoke-photos PHOTOS_PYTHON=/path/to/playwright-venv/bin/python` for both
+storage backends with 2 CPU / 4 GiB container limits. It checks split albums,
+dated viewers, search, editing, Hidden folders, gallery ZIPs, covers, playback,
+vault locking and owner isolation. CI runs the same authenticated workflow.
 
 ## Development preview
 

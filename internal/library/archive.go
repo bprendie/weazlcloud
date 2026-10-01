@@ -75,22 +75,37 @@ func (l *Library) PrepareArchive(ctx context.Context, selections []string) (Arch
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.prepareArchiveLocked(ctx, cleanSelections)
+}
+
+func (l *Library) prepareArchiveLocked(ctx context.Context, cleanSelections []string) (ArchiveManifest, error) {
 	if err := l.ensure(ctx); err != nil {
 		return ArchiveManifest{}, err
 	}
 	entries := l.catalog.List()
 	files := make(map[string]catalog.File)
 	dirs := make(map[string]time.Time)
+	selected := make(map[string]bool, len(cleanSelections))
 	for _, selection := range cleanSelections {
-		for _, entry := range entries {
-			if entry.Path != selection && !strings.HasPrefix(entry.Path, selection+"/") {
-				continue
+		selected[selection] = true
+	}
+	for _, entry := range entries {
+		matched := selected[entry.Path]
+		for parent := entry.Path; !matched; {
+			slash := strings.LastIndexByte(parent, '/')
+			if slash < 0 {
+				break
 			}
-			if entry.Folder {
-				dirs[entry.Path] = entry.Mtime
-			} else {
-				files[entry.Path] = entry
-			}
+			parent = parent[:slash]
+			matched = selected[parent]
+		}
+		if !matched {
+			continue
+		}
+		if entry.Folder {
+			dirs[entry.Path] = entry.Mtime
+		} else {
+			files[entry.Path] = entry
 		}
 	}
 	if len(files) == 0 && len(dirs) == 0 {
@@ -141,9 +156,12 @@ func (l *Library) PrepareArchive(ctx context.Context, selections []string) (Arch
 // handles ZIP64 without buffering file data.
 func (l *Library) WriteArchive(ctx context.Context, manifest ArchiveManifest, w io.Writer) (int, int64, error) {
 	defer manifest.Release()
+	ctx, done := l.previewContext(ctx)
+	defer done()
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	if err := l.ensure(ctx); err != nil {
+	err := l.ensure(ctx)
+	l.mu.Unlock()
+	if err != nil {
 		return 0, 0, err
 	}
 	archive := zip.NewWriter(w)

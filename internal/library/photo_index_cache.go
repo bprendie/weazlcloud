@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
@@ -44,7 +43,7 @@ func (l *Library) loadPhotoIndexCache() ([]catalog.File, uint64, bool) {
 		return nil, 0, false
 	}
 	for _, f := range snapshot.Rows {
-		if !f.Present || !strings.HasPrefix(f.Path, PhotosRoot) {
+		if !f.Present || !inPhotoRoot(f.Path) {
 			return nil, 0, false
 		}
 	}
@@ -53,10 +52,14 @@ func (l *Library) loadPhotoIndexCache() ([]catalog.File, uint64, bool) {
 
 func (l *Library) schedulePhotoIndexSaveLocked() {
 	l.photoSaveEpoch = l.photoEpoch
-	if l.photoSave != nil {
-		l.photoSave.Stop()
+	if l.photoSave != nil && l.photoSave.Stop() {
+		l.photoSaveWG.Done()
 	}
-	l.photoSave = time.AfterFunc(1500*time.Millisecond, l.persistPhotoIndex)
+	l.photoSaveWG.Add(1)
+	l.photoSave = time.AfterFunc(1500*time.Millisecond, func() {
+		defer l.photoSaveWG.Done()
+		l.persistPhotoIndex()
+	})
 }
 
 // The timer coalesces Takeout's per-file change events into one encrypted

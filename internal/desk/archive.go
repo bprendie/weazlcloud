@@ -47,7 +47,7 @@ func (h *Handler) multiArchive(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.URL.Query().Get("id")
 	job, path, ok := res.Archives.Get(id)
-	if !ok {
+	if !ok || strings.HasPrefix(r.URL.Path, "/api/v1/photos/") && job.Scope != "photos" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "archive job not found"})
 		return
 	}
@@ -55,18 +55,19 @@ func (h *Handler) multiArchive(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, archiveView(job))
 		return
 	}
-	f, err := os.Open(path)
+	f, err := res.Archives.OpenDownload(r.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusGone, map[string]string{"error": "archive expired"})
 		return
 	}
 	defer f.Close()
-	info, err := f.Stat()
+	info, err := os.Stat(path)
 	if err != nil {
 		writeJSON(w, http.StatusGone, map[string]string{"error": "archive expired"})
 		return
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="weazlcloud-`+safeArchiveID(id)+`.zip"`)
+	w.Header().Set("Cache-Control", "private, no-store")
 	http.ServeContent(w, r, "weazlcloud-"+safeArchiveID(id)+".zip", info.ModTime(), f)
 }
 
@@ -79,6 +80,13 @@ func (h *Handler) multiCancelArchive(w http.ResponseWriter, r *http.Request) {
 	if !res.Vault.Unlocked() {
 		apiError(w, vault.ErrLocked)
 		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/photos/") {
+		job, _, ok := res.Archives.Get(r.URL.Query().Get("id"))
+		if !ok || job.Scope != "photos" {
+			writeJSON(w, 404, map[string]string{"error": "photo archive job not found"})
+			return
+		}
 	}
 	if !res.Archives.Cancel(r.URL.Query().Get("id")) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "archive job is not cancellable"})

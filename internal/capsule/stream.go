@@ -214,6 +214,9 @@ func decryptStream(src io.Reader, key []byte, dst io.Writer) error {
 // StreamGrab authenticates and consumes a grab, then lets the caller provide
 // the response writer after the remaining-grab count is known.
 func (s *Store) StreamGrab(id, phrase string, open func(Record) (io.Writer, error)) (Record, error) {
+	if !validGalleryToken(id) {
+		return Record{}, ErrGone
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if open == nil {
@@ -267,6 +270,9 @@ func (s *Store) StreamGrab(id, phrase string, open func(Record) (io.Writer, erro
 	cleanup := func() error {
 		if !terminal {
 			return nil
+		}
+		if err := cleanupGallery(dir); err != nil {
+			return err
 		}
 		for _, name := range []string{"open.key", "pass.wrap", "payload"} {
 			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {

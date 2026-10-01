@@ -64,6 +64,7 @@ type file struct {
 	StateVersion   int             `json:"state_version,omitempty"`
 	Users          []User          `json:"users"`
 	AccessRequests []AccessRequest `json:"access_requests,omitempty"`
+	Devices        []Device        `json:"devices,omitempty"`
 }
 
 type Store struct {
@@ -72,6 +73,7 @@ type Store struct {
 	userRoot      string
 	users         []User
 	requests      []AccessRequest
+	devices       []Device
 	sessions      map[string]session
 	secureCookies bool
 }
@@ -92,6 +94,7 @@ func (s *Store) load(persistUpgrade bool) error {
 	}
 	s.users = f.Users
 	s.requests = f.AccessRequests
+	s.devices = f.Devices
 	changed := false
 	if f.StateVersion < 1 {
 		for i := range s.users {
@@ -225,6 +228,9 @@ func (s *Store) Login(u User) (string, error) {
 }
 
 func (s *Store) Current(r *http.Request) (User, error) {
+	if r.Header.Get("Authorization") != "" {
+		return s.deviceUser(r)
+	}
 	c, err := r.Cookie(cookieName)
 	if err != nil {
 		return User{}, ErrNoSession
@@ -281,7 +287,7 @@ func (s *Store) invalidateSessionsLocked(userID string) {
 }
 
 func (s *Store) saveLocked() error {
-	b, err := json.MarshalIndent(file{StateVersion: 1, Users: s.users, AccessRequests: s.requests}, "", "  ")
+	b, err := json.MarshalIndent(file{StateVersion: 1, Users: s.users, AccessRequests: s.requests, Devices: s.devices}, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -28,6 +28,46 @@ func (l *Library) renderThumbnail(ctx context.Context, f catalog.File, size int,
 	if background {
 		acquire = previewMemory.acquireBackground
 	}
+	media := photoPreviewKind(f.Path)
+	if media != "raster" {
+		need := sourceAllowance(f) + f.Size*2 + 64<<20
+		release, err := acquire(ctx, need)
+		if err != nil {
+			return nil, "", noop, err
+		}
+		data, err := l.thumbnailSource(ctx, f, f.Size, false)
+		if err != nil {
+			return nil, "", release, err
+		}
+		defer clear(data)
+		body, mime, err := renderPhotoPreview(ctx, data, size, media)
+		return body, mime, release, err
+	}
+	// Capture metadata is populated during ingestion. When dimensions are known,
+	// admit the complete decode pipeline up front and restore the source once.
+	// This avoids an extra Restic invocation for every prepared raster preview.
+	if f.Width > 0 && f.Height > 0 {
+		cfg := image.Config{Width: f.Width, Height: f.Height}
+		if !validThumbnailConfig(cfg) {
+			return nil, "", noop, ErrPreviewTooLarge
+		}
+		need := sourceAllowance(f) + f.Size*2 + int64(cfg.Width)*int64(cfg.Height)*8 + int64(size*size)*8 + 32<<20
+		release, err := acquire(ctx, need)
+		if err != nil {
+			return nil, "", noop, err
+		}
+		data, err := l.thumbnailSource(ctx, f, f.Size, false)
+		if err != nil {
+			return nil, "", release, err
+		}
+		defer clear(data)
+		actual, _, err := image.DecodeConfig(bytes.NewReader(data))
+		if err != nil || actual.Width != cfg.Width || actual.Height != cfg.Height {
+			return nil, "", release, ErrThumbnailUnavailable
+		}
+		body, mime, err := renderPhotoPreview(ctx, data, size, media)
+		return body, mime, release, err
+	}
 	// Probe a bounded header first. Release its entire reservation before
 	// acquiring the complete pipeline budget: no worker upgrades a held budget.
 	release, err := acquire(ctx, sourceAllowance(f)+2*previewHeaderLimit)
@@ -63,7 +103,7 @@ func (l *Library) renderThumbnail(ctx context.Context, f catalog.File, size int,
 	if err != nil || actual.Width != cfg.Width || actual.Height != cfg.Height {
 		return nil, "", release, ErrThumbnailUnavailable
 	}
-	body, mime, err := renderThumbnailBytes(ctx, data, size)
+	body, mime, err := renderPhotoPreview(ctx, data, size, media)
 	return body, mime, release, err
 }
 
@@ -92,7 +132,11 @@ func (l *Library) thumbnailSource(ctx context.Context, expected catalog.File, li
 	readCtx, cancel := context.WithCancel(ctx)
 	readCtx = restic.WithMemoryLimit(readCtx, sourceAllowance(expected))
 	defer cancel()
-	out := &boundedPreviewWriter{limit: int(limit), cancel: cancel}
+	var progress func(int)
+	if !prefix {
+		progress = func(read int) { reportPhotoProgress(ctx, photoReadProgress(read, int(expected.Size))) }
+	}
+	out := &boundedPreviewWriter{limit: int(limit), cancel: cancel, progress: progress}
 	out.Grow(int(limit))
 	err = l.readReference(readCtx, ref, out)
 	if ctx.Err() != nil {
@@ -107,6 +151,9 @@ func (l *Library) thumbnailSource(ctx context.Context, expected catalog.File, li
 	if !prefix && int64(out.Len()) != expected.Size {
 		return nil, io.ErrUnexpectedEOF
 	}
+	if !prefix {
+		reportPhotoProgress(ctx, 85)
+	}
 	return out.Bytes(), nil
 }
 
@@ -115,12 +162,17 @@ type boundedPreviewWriter struct {
 	limit    int
 	exceeded bool
 	cancel   context.CancelFunc
+	progress func(int)
 }
 
 func (w *boundedPreviewWriter) Write(p []byte) (int, error) {
 	remaining := w.limit - w.Len()
 	if len(p) <= remaining {
-		return w.buffer.Write(p)
+		n, err := w.buffer.Write(p)
+		if w.progress != nil {
+			w.progress(w.buffer.Len())
+		}
+		return n, err
 	}
 	n, _ := w.buffer.Write(p[:remaining])
 	w.exceeded = true

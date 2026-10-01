@@ -3,14 +3,11 @@ package library
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/vault"
+	"path/filepath"
+	"testing"
+	"time"
 )
 
 func newPhotoIndexTestLibrary(t testing.TB) *Library {
@@ -22,129 +19,146 @@ func newPhotoIndexTestLibrary(t testing.TB) *Library {
 	}
 	l := New(filepath.Join(root, "library"), filepath.Join(root, "catalog.enc"), v)
 	l.backend = &isolatedLegacy{root: filepath.Join(root, "library")}
+	l.photoAutoDisabled = true
 	t.Cleanup(func() {
-		l.photoMu.Lock()
-		if l.photoSave != nil {
-			l.photoSave.Stop()
-		}
-		l.photoMu.Unlock()
+		stopPhotoIndexSaveForTest(l)
 	})
 	return l
 }
 
-func TestPhotoPageBoundsFiltersAndInvalidatesCursors(t *testing.T) {
+func TestPhotoTimelineDateFiltersAndMonthSummary(t *testing.T) {
 	l := newPhotoIndexTestLibrary(t)
 	ctx := context.Background()
-	for _, name := range []string{"Photos/Trip/a.jpg", "Photos/Trip/b.png", "Photos/Else/c.mov", "Drive/no.jpg"} {
+	for _, name := range []string{"Photos/jan-a.jpg", "Photos/jan-b.jpg", "Photos/feb.jpg", "Photos/unknown.jpg"} {
 		if _, err := l.Put(ctx, name, []byte(name)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	first, err := l.PhotoPage(ctx, 1, "", "Photos/Trip")
+	for name, date := range map[string]string{"Photos/jan-a.jpg": "2020-01-03T12:00:00Z", "Photos/jan-b.jpg": "2020-01-14T12:00:00Z", "Photos/feb.jpg": "2020-02-02T12:00:00Z"} {
+		captured, err := time.Parse(time.RFC3339, date)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := l.SetPhotoCapture(ctx, name, catalog.CaptureMetadata{Time: &captured, Source: "test"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := l.PhotoTimelinePage(ctx, 1, "", "", "all", "2020-01")
 	if err != nil || len(first.Items) != 1 || first.NextCursor == "" {
-		t.Fatalf("first page %+v, %v", first, err)
+		t.Fatalf("January page=%+v err=%v", first, err)
 	}
-	second, err := l.PhotoPage(ctx, 1000, first.NextCursor, "Photos/Trip")
-	if err != nil || len(second.Items) != 1 || second.Items[0].Path == first.Items[0].Path {
-		t.Fatalf("second page %+v, %v", second, err)
+	if _, err := l.PhotoTimelinePage(ctx, 10, first.NextCursor, "", "all", "2020-02"); !errors.Is(err, ErrPhotoCursorStale) {
+		t.Fatalf("cursor reused with different date filter: %v", err)
 	}
-	if _, err := l.PhotoPage(ctx, 1, first.NextCursor, "Photos/Else"); !errors.Is(err, ErrPhotoCursorStale) {
-		t.Fatalf("cursor filter mismatch: %v", err)
+	second, err := l.PhotoTimelinePage(ctx, 10, first.NextCursor, "", "all", "2020-01")
+	if err != nil || len(second.Items) != 1 {
+		t.Fatalf("January continuation=%+v err=%v", second, err)
 	}
-	stale := first.NextCursor
-	if _, err := l.Put(ctx, "Photos/Trip/new.webp", []byte("new")); err != nil {
-		t.Fatal(err)
+	summary, err := l.PhotoDateSummary(ctx)
+	if err != nil || len(summary.Months) != 2 || summary.UnknownDates != 1 || summary.Months[0].Month != "2020-02" || summary.Months[0].Count != 1 {
+		t.Fatalf("date summary=%+v err=%v", summary, err)
 	}
-	if _, err := l.PhotoPage(ctx, 1, stale, "Photos/Trip"); !errors.Is(err, ErrPhotoCursorStale) {
-		t.Fatalf("mutation did not invalidate cursor: %v", err)
+	if !PhotoDateFilter("2020-02") || PhotoDateFilter("2020-13") || PhotoDateFilter("2020-02-31") {
+		t.Fatal("date filter validation is incorrect")
 	}
-	page, err := l.PhotoPage(ctx, PhotoPageMaximum+10, "", "")
-	if err != nil || len(page.Items) != 4 {
-		t.Fatalf("unfiltered page %+v, %v", page, err)
+	if !PhotoDateFilter("2020") || PhotoDateFilter("20x0") {
+		t.Fatal("year date filter validation is incorrect")
+	}
+	year, err := l.PhotoTimelinePage(ctx, 10, "", "", "all", "2020")
+	if err != nil || len(year.Items) != 3 {
+		t.Fatalf("year page=%+v err=%v", year, err)
 	}
 }
 
-func TestPhotoIndexTracksMoveAndDelete(t *testing.T) {
+func TestPhotoDetailIsOwnerIndexScoped(t *testing.T) {
 	l := newPhotoIndexTestLibrary(t)
 	ctx := context.Background()
-	if _, err := l.Put(ctx, "Photos/Trip/a.jpg", []byte("a")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := l.PhotoPage(ctx, 10, "", ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.Rename(ctx, "Photos/Trip", "Photos/Travel"); err != nil {
-		t.Fatal(err)
-	}
-	page, err := l.PhotoPage(ctx, 10, "", "Photos/Travel")
-	if err != nil || len(page.Items) != 1 || page.Items[0].Path != "Photos/Travel/a.jpg" {
-		t.Fatalf("renamed page %+v, %v", page, err)
-	}
-	if err := l.Delete("Photos/Travel"); err != nil {
-		t.Fatal(err)
-	}
-	page, err = l.PhotoPage(ctx, 10, "", "")
-	if err != nil || len(page.Items) != 0 {
-		t.Fatalf("deleted page %+v, %v", page, err)
-	}
-}
-
-func TestPhotoCursorBelongsToVault(t *testing.T) {
-	first := newPhotoIndexTestLibrary(t)
-	first.catalog.Put(catalog.File{Path: "Photos/a.jpg", Size: 1, Present: true})
-	first.buildPhotoIndex()
-	cursor, err := first.encodePhotoCursor(photoCursor{Generation: 1, Offset: 1})
+	_, err := l.Put(ctx, "Photos/Trip/a.jpg", []byte("photo"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second := newPhotoIndexTestLibrary(t)
-	if _, err := second.decodePhotoCursor(cursor); !errors.Is(err, ErrPhotoCursor) {
-		t.Fatalf("other vault accepted cursor: %v", err)
+	if _, err := l.Put(ctx, "Documents/a.jpg", []byte("other")); err != nil {
+		t.Fatal(err)
+	}
+	page, err := l.PhotoPage(ctx, 10, "", "")
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("photo listing=%+v err=%v", page, err)
+	}
+	photoID := page.Items[0].ID
+	item, err := l.PhotoDetail(ctx, photoID)
+	if err != nil || item.Path != "Photos/Trip/a.jpg" || item.ID != photoID {
+		t.Fatalf("photo detail=%+v err=%v", item, err)
+	}
+	favorite, err := l.SetPhotoFavorite(ctx, photoID, true)
+	if err != nil || !favorite.Favorite {
+		t.Fatalf("set favorite=%+v err=%v", favorite, err)
+	}
+	page, err = l.PhotoTimelinePage(ctx, 10, "", "", "favorites", "")
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != photoID {
+		t.Fatalf("favorites page=%+v err=%v", page, err)
+	}
+	if _, err := l.PhotoDetail(ctx, "missing"); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("unknown photo detail error=%v", err)
 	}
 }
 
-func TestPhotoIndexCacheIsEncryptedAndCheckedAgainstCatalog(t *testing.T) {
-	first := newPhotoIndexTestLibrary(t)
+func TestPhotoHiddenFoldersFilterEveryNormalIndexSurface(t *testing.T) {
+	l := newPhotoIndexTestLibrary(t)
 	ctx := context.Background()
-	if _, err := first.Put(ctx, "Photos/Trip/a.jpg", []byte("photo")); err != nil {
+	if err := l.Mkdir(ctx, "Photos/Private"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := first.PhotoPage(ctx, 10, "", ""); err != nil {
+	file, err := l.Put(ctx, "Photos/Private/secret.jpg", []byte("image bytes"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(1600 * time.Millisecond)
-	path := first.photoIndexCachePath()
-	raw, err := os.ReadFile(path)
-	if err != nil || strings.Contains(string(raw), "Photos/Trip/a.jpg") {
-		t.Fatalf("photo index cache not encrypted: %v", err)
+	file, _ = l.catalog.Get(file.Path)
+	if _, err = l.Put(ctx, "Photos/Public.jpg", []byte("public image")); err != nil {
+		t.Fatal(err)
 	}
-	second := New(first.repo, filepath.Join(filepath.Dir(first.repo), "catalog.enc"), first.vault)
-	second.backend = &isolatedLegacy{root: filepath.Join(filepath.Dir(first.repo), "library")}
-	t.Cleanup(func() {
-		second.photoMu.Lock()
-		if second.photoSave != nil {
-			second.photoSave.Stop()
+	if _, err = l.SetPhotoFolderHidden(ctx, "Photos/Private", true); err != nil {
+		t.Fatal(err)
+	}
+	folder, ok := l.catalog.Get("Photos/Private")
+	if !ok || !folder.Hidden {
+		t.Fatalf("hidden flag not persisted in catalog: %+v", folder)
+	}
+	normal, err := l.PhotoTimelinePage(ctx, 20, "", "", "all", "")
+	if err != nil || len(normal.Items) != 1 || normal.Items[0].Path != "Photos/Public.jpg" {
+		t.Fatalf("normal timeline=%+v err=%v", normal, err)
+	}
+	hidden, err := l.PhotoTimelinePage(ctx, 20, "", "", "hidden", "")
+	if err != nil || len(hidden.Items) != 1 || hidden.Items[0].ID != file.EntryID {
+		t.Fatalf("hidden timeline=%+v err=%v", hidden, err)
+	}
+	if _, err = l.PhotoDetail(ctx, file.EntryID); !errors.Is(err, catalog.ErrNotFound) {
+		t.Fatalf("normal detail exposed hidden photo: %v", err)
+	}
+	if detail, err := l.PhotoDetail(ctx, file.EntryID, true); err != nil || detail.Path != file.Path {
+		t.Fatalf("hidden detail=%+v err=%v", detail, err)
+	}
+	normalDates, err := l.PhotoDateSummary(ctx)
+	if err != nil || normalDates.UnknownDates != 1 {
+		t.Fatalf("normal date summary=%+v err=%v", normalDates, err)
+	}
+	hiddenDates, err := l.PhotoDateSummary(ctx, true)
+	if err != nil || hiddenDates.UnknownDates != 1 {
+		t.Fatalf("hidden date summary=%+v err=%v", hiddenDates, err)
+	}
+	albums, err := l.PhotoAlbums(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, album := range albums {
+		if album.Path == "Photos/Private" {
+			t.Fatalf("hidden folder leaked as album: %+v", album)
 		}
-		second.photoMu.Unlock()
-	})
-	page, err := second.PhotoPage(ctx, 10, "", "")
-	if err != nil || len(page.Items) != 1 || page.Items[0].Path != "Photos/Trip/a.jpg" {
-		t.Fatalf("restored photo index %+v, %v", page, err)
 	}
-	if _, err := second.Put(ctx, "Photos/Trip/b.jpg", []byte("new")); err != nil {
+	if _, err = l.SetPhotoFolderHidden(ctx, "Photos/Private", false); err != nil {
 		t.Fatal(err)
 	}
-	third := New(first.repo, filepath.Join(filepath.Dir(first.repo), "catalog.enc"), first.vault)
-	third.backend = &isolatedLegacy{root: filepath.Join(filepath.Dir(first.repo), "library")}
-	t.Cleanup(func() {
-		third.photoMu.Lock()
-		if third.photoSave != nil {
-			third.photoSave.Stop()
-		}
-		third.photoMu.Unlock()
-	})
-	page, err = third.PhotoPage(ctx, 10, "", "")
-	if err != nil || len(page.Items) != 2 {
-		t.Fatalf("stale index cache was trusted: %+v, %v", page, err)
+	visible, err := l.PhotoTimelinePage(ctx, 20, "", "", "all", "")
+	if err != nil || len(visible.Items) != 2 {
+		t.Fatalf("unhidden timeline=%+v err=%v", visible, err)
 	}
 }

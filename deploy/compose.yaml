@@ -4,7 +4,6 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: weazlcloud:local
-    container_name: weazlcloud
     environment:
       WEAZLCLOUD_DATA: /data
       WEAZLCLOUD_DESK_ADDR: ":7272"
@@ -13,8 +12,13 @@ services:
       HOME: /data
       XDG_CACHE_HOME: /data/cache
       TMPDIR: /data/tmp
+      WEAZLCLOUD_PREVIEW_WORKER_SOCKET: /run/weazlcloud-photo/worker.sock
     volumes:
       - weazlcloud-data:/data
+      - weazlcloud-photo-ipc:/run/weazlcloud-photo
+    depends_on:
+      weazlcloud-photo-worker:
+        condition: service_healthy
     expose:
       - "7272"
       - "7273"
@@ -30,6 +34,34 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/usr/local/bin/weazlcloud", "-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  weazlcloud-photo-worker:
+    image: weazlcloud:local
+    entrypoint: ["/usr/local/bin/weazl-photo-worker"]
+    environment:
+      WEAZLCLOUD_PHOTO_WORKER_SOCKET: /run/weazlcloud-photo/worker.sock
+      WEAZLCLOUD_PREVIEW_RENDERER: ${WEAZLCLOUD_PREVIEW_RENDERER:-auto}
+    volumes:
+      - weazlcloud-photo-ipc:/run/weazlcloud-photo
+    cpus: ${WEAZLCLOUD_PHOTO_CPUS:-1.0}
+    mem_limit: ${WEAZLCLOUD_PHOTO_MEMORY_LIMIT:-2g}
+    pids_limit: 64
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    user: "7272:7272"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/weazl-photo-worker", "-ready"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -52,3 +84,4 @@ services:
 
 volumes:
   weazlcloud-data:
+  weazlcloud-photo-ipc:

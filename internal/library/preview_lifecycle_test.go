@@ -75,6 +75,10 @@ func TestPhotoPreparationDrainDuringBlockedSource(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
+	progress, err := l.PhotoPreparation()
+	if err != nil || progress.Working != 1 || progress.WorkProgress < 5 {
+		t.Fatalf("active preview progress=%+v err=%v", progress, err)
+	}
 	if err := l.Drain(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -84,4 +88,27 @@ func TestPhotoPreparationDrainDuringBlockedSource(t *testing.T) {
 	if running || ready != 0 || failed != 0 {
 		t.Fatalf("cancelled work counted: running=%v ready=%d failed=%d", running, ready, failed)
 	}
+}
+
+func TestVaultLockDrainsPhotoLeaseBeforeKeyIsCleared(t *testing.T) {
+	l := newPhotoIndexTestLibrary(t)
+	putPreviewFixture(t, l, "Photos/lock.jpg")
+	b := &blockingPreviewBackend{Backend: l.backend, started: make(chan struct{}), proceed: make(chan struct{})}
+	l.backend = b
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := l.SetPhotoPreparation(ctx, "start"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-b.started:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	l.PrepareVaultLock()
+	if pending, leased, _, _, err := l.photoJobCounts(); err != nil || pending != 1 || leased != 0 {
+		t.Fatalf("queue after lock drain: pending=%d leased=%d err=%v", pending, leased, err)
+	}
+	l.vault.Lock()
+	l.ForgetVaultSession()
 }

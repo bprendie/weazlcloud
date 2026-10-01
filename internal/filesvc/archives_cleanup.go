@@ -37,6 +37,11 @@ func (m *ArchiveManager) cleanupLocked(now time.Time) (int64, error) {
 			return reclaimed, err
 		}
 		reclaimed += size
+		metadataBytes, err := removeArchive(filepath.Join(m.root, id+".enc"))
+		if err != nil {
+			return reclaimed, err
+		}
+		reclaimed += metadataBytes
 		if job.release != nil {
 			job.release()
 			job.release = nil
@@ -55,6 +60,16 @@ func (m *ArchiveManager) cleanupLocked(now time.Time) (int64, error) {
 			continue
 		}
 		if strings.HasPrefix(entry.Name(), ".archive-") {
+			active := false
+			for id, job := range m.jobs {
+				if (job.Status == "queued" || job.Status == "preparing") && strings.HasPrefix(entry.Name(), ".archive-"+id+"-") {
+					active = true
+					break
+				}
+			}
+			if active {
+				continue
+			}
 			path := filepath.Join(m.root, entry.Name())
 			info, statErr := os.Stat(path)
 			if statErr != nil {
@@ -70,7 +85,7 @@ func (m *ArchiveManager) cleanupLocked(now time.Time) (int64, error) {
 			reclaimed += size
 			continue
 		}
-		if filepath.Ext(entry.Name()) != ".zip" {
+		if filepath.Ext(entry.Name()) != ".zip" && filepath.Ext(entry.Name()) != ".wza" && filepath.Ext(entry.Name()) != ".enc" {
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
@@ -83,7 +98,11 @@ func (m *ArchiveManager) cleanupLocked(now time.Time) (int64, error) {
 				}
 				return reclaimed, statErr
 			}
-			if now.Sub(info.ModTime()) < archiveLifetime {
+			lifetime := archiveLifetime
+			if filepath.Ext(entry.Name()) == ".enc" {
+				lifetime = 24 * time.Hour
+			}
+			if now.Sub(info.ModTime()) < lifetime {
 				continue
 			}
 			size, removeErr := removeArchive(path)

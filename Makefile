@@ -1,6 +1,7 @@
-.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container smoke-sharedstore
+.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container smoke-sharedstore smoke-photos
 
 VERSION ?= dev
+PHOTOS_PYTHON ?= python3
 LDFLAGS := -s -w -X github.com/bprendie/weazlcloud/internal/buildinfo.Version=$(VERSION)
 
 mockup:
@@ -24,6 +25,10 @@ js-check:
 	node --check mockup-ui/engine.js
 	node --check mockup-ui/grab.js
 	node --check mockup-ui/views.js
+	node --check mockup-ui/photo-layout.js
+	node --check mockup-ui/mode-memory.js
+	node scripts/photo-layout.test.mjs
+	node scripts/mode-memory.test.mjs
 
 desk-assets:
 	bash scripts/generate-desk-ui.sh
@@ -50,6 +55,11 @@ smoke-container:
 
 smoke-sharedstore:
 	bash scripts/sharedstore-smoke.sh
+
+# Build weazlcloud:smoke first; requires Playwright and a Chromium installation.
+smoke-photos:
+	WEAZLCLOUD_IMAGE=weazlcloud:smoke WEAZLCLOUD_SMOKE_CPUS=2 WEAZLCLOUD_SMOKE_MEMORY=4g $(PHOTOS_PYTHON) -u scripts/smoke-photo-albums.py
+	WEAZLCLOUD_IMAGE=weazlcloud:smoke WEAZLCLOUD_SMOKE_CPUS=2 WEAZLCLOUD_SMOKE_MEMORY=4g WEAZLCLOUD_SMOKE_STORAGE_BACKEND=shared-experimental $(PHOTOS_PYTHON) -u scripts/smoke-photo-albums.py
 
 compose:
 	docker compose -f deploy/compose.yaml up --build -d

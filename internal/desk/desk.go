@@ -15,6 +15,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/idle"
 	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/photoingest"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ratelimit"
 	"github.com/bprendie/weazlcloud/internal/ready"
@@ -42,6 +43,7 @@ type Handler struct {
 	authLimit         *ratelimit.Limiter
 	changes           *filesvc.Hub
 	uploads           *upload.Manager
+	photoUploads      *photoingest.Manager
 	accounts          *accountlifecycle.Manager
 	maintenanceStatus interface{ Status() []idle.JobStatus }
 	importDir         string
@@ -80,6 +82,9 @@ func New(v *vault.Vault, lib *library.Library, caps *capsule.Store, publicBase, 
 func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase, driveBase, dataDir string, registries ...*filesvc.Registry) *Handler {
 	h := New(nil, nil, caps, publicBase, driveBase, "")
 	h.users, h.quota = us, q
+	if caps != nil && q != nil {
+		caps.SetGalleryReservation(func(bytes int64) (func(), error) { return q.Reserve("", us.Count(), 0, 0, bytes) })
+	}
 	h.nodePath = filepath.Join(dataDir, "node.json")
 	h.publicBase = loadNodeBase(h.nodePath, h.publicBase)
 	if len(registries) > 0 && registries[0] != nil {
@@ -90,6 +95,7 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 	h.uploads = upload.New(filepath.Join(dataDir, "uploads"), func(u users.User) *filesvc.Resource {
 		return h.registry.For(u)
 	}, q, us.Count)
+	h.photoUploads = photoingest.New(h.uploads)
 	h.accounts = accountlifecycle.New(us, h.registry, caps, h.uploads)
 	return h
 }

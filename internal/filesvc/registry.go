@@ -23,6 +23,7 @@ type Resource struct {
 
 // LockVault locks the owner's key and immediately drops decrypted library data.
 func (r *Resource) LockVault() {
+	r.Lib.PrepareVaultLock()
 	r.Vault.Lock()
 	r.Lib.ForgetVaultSession()
 }
@@ -118,9 +119,9 @@ func (r *Registry) For(u users.User) *Resource {
 	}
 	v := vault.New(r.users.VaultPath(u), r.users.NodeKeyPath(u))
 	l := library.New(r.users.LibraryPath(u), r.users.CatalogPath(u), v)
-	if r.shared != nil {
-		l.ConfigureShared(u.ID, r.shared, r.sharedWrites)
-	}
+	// Configure the stable owner ID even when the optional shared store is off;
+	// durable per-vault photo jobs still need an owner-scoped identity.
+	l.ConfigureShared(u.ID, r.shared, r.sharedWrites)
 	changes := NewHub()
 	l.SetChangeSink(changes)
 	var reserve func(int64) (func(), error)

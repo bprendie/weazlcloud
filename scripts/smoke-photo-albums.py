@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright, expect
 from smoke_music_grid import smoke_music
 from smoke_library_ui import smoke_library_ui
 from smoke_photo_preparation import smoke_photo_preparation
+from smoke_modal_photos import smoke_modal_photos
 
 name = 'weazl-albums-' + uuid.uuid4().hex[:10]
 volume = name + '-data'
@@ -24,7 +25,7 @@ base = f'http://127.0.0.1:{port}'
 image = os.environ.get('WEAZLCLOUD_IMAGE', 'weazlcloud:album-smoke')
 storage_backend = os.environ.get('WEAZLCLOUD_SMOKE_STORAGE_BACKEND', 'restic')
 host_network = os.environ.get('WEAZLCLOUD_SMOKE_HOST_NETWORK') == '1'
-network_args = ['--network', 'host'] if host_network else ['-p', f'127.0.0.1:{port}:7272']
+network_args = ['--network', 'host'] if host_network else ['-p', f'127.0.0.1:{port}:7272', '-p', f'127.0.0.1:{port+1}:7273']
 resource_args = []
 for setting, flag in [('WEAZLCLOUD_SMOKE_CPUS', '--cpus'), ('WEAZLCLOUD_SMOKE_MEMORY', '--memory')]:
     if os.environ.get(setting):
@@ -74,7 +75,7 @@ try:
             else: raise AssertionError('container not ready')
             if os.environ.get('WEAZLCLOUD_SMOKE_CPUS') == '2' and os.environ.get('WEAZLCLOUD_SMOKE_MEMORY') == '4g':
                 logs = docker('logs', name)
-                assert 'cpu workers=2 background=1 readers=1 memory=536870912' in logs.stdout + logs.stderr, logs
+                assert 'cpu ceiling=1 workers=1 background=1 readers=1 memory=536870912' in logs.stdout + logs.stderr, logs
             def post(path, data):
                 response = context.request.post(path, data=data, headers=headers)
                 assert response.ok, response.text()
@@ -122,12 +123,19 @@ try:
             expect(page.locator('.library-card')).to_have_count(1)
             page.locator('[data-select-file]').first.click()
             expect(page.locator('#modal')).to_be_visible()
-            page.locator('.dialog-close').click()
+            page.locator('[data-action="photo-viewer-close"]').click()
             page.locator('nav [data-view="takeout"]').click()
             import_zip('part2.zip')
             requests.clear()
             photo_started = time.perf_counter()
             page.goto(base+'/#photos')
+            expect(page.locator('.photo-grid .library-card')).to_have_count(4)
+            date_summary = context.request.get('/api/photos/dates', headers=headers).json()
+            assert date_summary.get('unknown_dates') == 4, date_summary
+            page.locator('[data-photos-mode="recent"]').click()
+            expect(page.locator('.photo-grid .library-card')).to_have_count(4)
+            assert page.url.endswith('#photos/recent'), page.url
+            page.locator('[data-photos-mode="all"]').click()
             expect(page.locator('.photo-grid .library-card')).to_have_count(4)
             first_screen_ms = (time.perf_counter() - photo_started) * 1000
             photo_dom_cards = page.locator('.photo-grid .library-card').count()
@@ -141,6 +149,22 @@ try:
                 return img && img.complete && img.naturalWidth > 0;
             }''')
             first_thumbnail_ms = (time.perf_counter() - photo_started) * 1000
+            page.locator('.photo-grid [data-select-file]').first.click()
+            expect(page.locator('#modal.photo-viewer')).to_be_visible()
+            expect(page.locator('.photo-viewer-top small')).to_have_text('1 of 4')
+            page.locator('[data-action="photo-viewer-next"]').click()
+            expect(page.locator('.photo-viewer-top small')).to_have_text('2 of 4')
+            page.keyboard.press('ArrowLeft')
+            expect(page.locator('.photo-viewer-top small')).to_have_text('1 of 4')
+            page.locator('[data-action="photo-viewer-info"]').click()
+            expect(page.locator('.photo-viewer-info')).to_be_visible()
+            page.locator('[data-action="photo-viewer-close"]').click()
+            expect(page.locator('#modal')).not_to_be_visible()
+            if os.environ.get('WEAZLCLOUD_SMOKE_M3_ONLY') == '1':
+                assert not errors, errors
+                print('PASS: M3 Photos date summary, recent mode, full-screen viewer, previous/next, keyboard navigation and metadata drawer')
+                browser.close()
+                raise SystemExit(0)
             page.locator('[data-action="photo-preparation"]').click()
             for _ in range(120):
                 preparation = context.request.get('/api/photos/preparation', headers=headers).json()
@@ -167,6 +191,8 @@ try:
             assert not errors, errors
             smoke_photo_preparation(context, page, post, png)
             smoke_library_ui(page, storage_backend)
+            assert not errors, errors
+            smoke_modal_photos(context, page, post, browser, base, storage_backend)
             assert not errors, errors
             smoke_music(context, page, post)
             assert not errors, errors

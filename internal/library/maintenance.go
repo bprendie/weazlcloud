@@ -110,13 +110,18 @@ func (l *Library) Restore(ctx context.Context, name string) error {
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}
+	return l.restoreLocked(ctx, name)
+}
+
+func (l *Library) restoreLocked(ctx context.Context, name string) error {
 	if err := l.resumeTrashCleanup(ctx); err != nil {
 		return err
 	}
+	paths := l.catalog.RelatedPhotoPaths(name, true)
 	if err := l.catalog.Restore(name); err != nil {
 		return err
 	}
-	l.publishChange(Change{Kind: "restore", Paths: []string{name}})
+	l.publishChange(Change{Kind: "restore", Paths: paths})
 	return nil
 }
 

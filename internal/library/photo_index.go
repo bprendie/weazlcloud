@@ -3,10 +3,10 @@ package library
 import (
 	"context"
 	"errors"
+	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/vault"
 	"strings"
 	"time"
-
-	"github.com/bprendie/weazlcloud/internal/catalog"
 )
 
 const (
@@ -20,243 +20,170 @@ var (
 )
 
 type PhotoItem struct {
-	ID        string    `json:"id"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	Modified  time.Time `json:"modified"`
-	MediaType string    `json:"media_type"`
+	ParentAssetID        string                   `json:"parent_asset_id,omitempty"`
+	Components           []catalog.PhotoComponent `json:"components,omitempty"`
+	DeviceID             string                   `json:"device_id,omitempty"`
+	DeviceAssetID        string                   `json:"device_asset_id,omitempty"`
+	SourceRevision       string                   `json:"source_revision,omitempty"`
+	ID                   string                   `json:"id"`
+	Revision             uint64                   `json:"revision"`
+	Folder               bool                     `json:"folder,omitempty"`
+	Path                 string                   `json:"path"`
+	Size                 int64                    `json:"size"`
+	Modified             time.Time                `json:"modified"`
+	ImportedAt           time.Time                `json:"imported_at,omitempty"`
+	CapturedAt           *time.Time               `json:"captured_at,omitempty"`
+	CaptureOffsetMinutes *int                     `json:"capture_offset_minutes,omitempty"`
+	CaptureSource        string                   `json:"capture_source,omitempty"`
+	MediaType            string                   `json:"media_type"`
+	Width                int                      `json:"width,omitempty"`
+	Height               int                      `json:"height,omitempty"`
+	DurationMillis       int64                    `json:"duration_millis,omitempty"`
+	Orientation          int                      `json:"orientation,omitempty"`
+	PreferredPhoto       bool                     `json:"preferred_photo,omitempty"`
+	Camera               string                   `json:"camera,omitempty"`
+	UserRotation         int                      `json:"user_rotation,omitempty"`
+	Favorite             bool                     `json:"favorite,omitempty"`
+	Archived             bool                     `json:"archived,omitempty"`
+	Caption              string                   `json:"caption,omitempty"`
 }
 
 type PhotoPage struct {
-	Items      []PhotoItem `json:"items"`
-	NextCursor string      `json:"next_cursor,omitempty"`
-	Generation uint64      `json:"generation"`
-	IndexReady bool        `json:"index_ready"`
-	Indexed    int         `json:"indexed"`
-	IndexTotal int         `json:"index_total"`
+	Items          []PhotoItem `json:"items"`
+	NextCursor     string      `json:"next_cursor,omitempty"`
+	PreviousCursor string      `json:"previous_cursor,omitempty"`
+	Generation     uint64      `json:"generation"`
+	IndexReady     bool        `json:"index_ready"`
+	Indexed        int         `json:"indexed"`
+	IndexTotal     int         `json:"index_total"`
 }
 
-type photoCursor struct {
-	Generation uint64 `json:"generation"`
-	Offset     int    `json:"offset"`
-	Album      string `json:"album,omitempty"`
-}
-
-// PhotoPage returns a bounded page from an owner-private in-memory index.
-// The first request reads catalog metadata once; it never restores photo bytes.
-func (l *Library) PhotoPage(ctx context.Context, limit int, cursor, album string) (PhotoPage, error) {
-	if limit <= 0 {
-		limit = PhotoPageDefault
-	}
-	if limit > PhotoPageMaximum {
-		limit = PhotoPageMaximum
-	}
-	if album != "" {
-		clean, err := cleanPath(album)
-		if err != nil || !strings.HasPrefix(clean, PhotosRoot) {
-			return PhotoPage{}, ErrPhotoCursor
-		}
-		album = clean
+// PhotoDetail resolves a current media identity from the owner's private photo
+// index. It never returns a path outside the Photos collection.
+func (l *Library) PhotoDetail(ctx context.Context, entryID string, hiddenView ...bool) (PhotoItem, error) {
+	if entryID == "" || len(entryID) > 128 {
+		return PhotoItem{}, ErrPhotoCursor
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.vault.Unlocked() {
-		return PhotoPage{}, errors.New("vault is locked")
+		return PhotoItem{}, vault.ErrLocked
 	}
 	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
-		return PhotoPage{}, err
-	}
-	offset := 0
-	if cursor != "" {
-		decoded, err := l.decodePhotoCursor(cursor)
-		if err != nil {
-			return PhotoPage{}, err
-		}
-		if decoded.Generation != l.photoGeneration() || decoded.Album != album {
-			return PhotoPage{}, ErrPhotoCursorStale
-		}
-		offset = decoded.Offset
+		return PhotoItem{}, err
 	}
 	l.photoMu.Lock()
-	if l.photoSortedEpoch != l.photoEpoch {
-		sortPhotoRows(l.photoMediaRows)
-		l.reindexPhotoMediaLocked()
-		l.photoSortedEpoch = l.photoEpoch
-	}
-	generation := l.photoEpoch
-	indexed := len(l.photoRows)
-	indexReady := l.photoReady
-	pageFiles := make([]catalog.File, 0, limit)
-	total := 0
-	if album == "" {
-		total = len(l.photoMediaRows)
-		if offset < 0 || offset > total {
-			l.photoMu.Unlock()
-			return PhotoPage{}, ErrPhotoCursor
-		}
-		pageFiles = append(pageFiles, l.photoMediaRows[offset:min(offset+limit, total)]...)
-	} else {
-		for _, f := range l.photoMediaRows {
-			if strings.HasPrefix(f.Path, album+"/") {
-				if total >= offset && len(pageFiles) < limit {
-					pageFiles = append(pageFiles, f)
-				}
-				total++
-			}
-		}
-		if offset < 0 || offset > total {
-			l.photoMu.Unlock()
-			return PhotoPage{}, ErrPhotoCursor
-		}
-	}
+	file, ok := l.photoByID[entryID]
 	l.photoMu.Unlock()
-	page := PhotoPage{Items: make([]PhotoItem, 0, len(pageFiles)), Generation: generation, IndexReady: indexReady, Indexed: indexed, IndexTotal: indexed}
-	for _, f := range pageFiles {
-		page.Items = append(page.Items, PhotoItem{ID: f.EntryID, Path: f.Path, Size: f.Size, Modified: f.Mtime, MediaType: photoMediaType(f.Path)})
-	}
-	if offset+len(pageFiles) < total {
-		var err error
-		page.NextCursor, err = l.encodePhotoCursor(photoCursor{Generation: generation, Offset: offset + len(pageFiles), Album: album})
-		if err != nil {
-			return PhotoPage{}, err
-		}
-	}
-	l.resumePhotoPreparation()
-	return page, nil
-}
-
-func (l *Library) photoIsReady() bool {
-	l.photoMu.Lock()
-	defer l.photoMu.Unlock()
-	return l.photoReady
-}
-
-func (l *Library) photoGeneration() uint64 {
-	l.photoMu.Lock()
-	defer l.photoMu.Unlock()
-	return l.photoEpoch
-}
-
-func (l *Library) buildPhotoIndex() {
-	rows := make([]catalog.File, 0)
-	for _, f := range l.catalog.List() {
-		if strings.HasPrefix(f.Path, PhotosRoot) {
-			rows = append(rows, f)
-		}
-	}
-	sortPhotoRows(rows)
-	if cached, epoch, ok := l.loadPhotoIndexCache(); ok && samePhotoRows(rows, cached) {
-		rows = cached
-		if epoch > l.photoEpoch {
-			l.photoEpoch = epoch
-		}
+	if !ok || file.Folder || !photoMedia(file.Path) || !strings.HasPrefix(file.Path, PhotosRoot) {
+		return PhotoItem{}, catalog.ErrNotFound
 	}
 	l.photoMu.Lock()
-	l.photoRows, l.photoReady = rows, true
-	l.rebuildPhotoLookupsLocked()
-	if l.photoEpoch == 0 {
-		l.photoEpoch = 1
-	}
-	sortPhotoRows(l.photoRows)
-	l.photoSortedEpoch = l.photoEpoch
-	l.schedulePhotoIndexSaveLocked()
+	hidden := l.photoPathHiddenLocked(file.Path)
 	l.photoMu.Unlock()
-}
-
-// ensurePhotoIndexLocked builds once from the authoritative catalog. The caller
-// holds Library.mu so the first catalog load/build cannot race a mutation.
-func (l *Library) ensurePhotoIndexLocked(ctx context.Context) error {
-	if !l.photoIsReady() {
-		if err := l.ensure(ctx); err != nil {
-			return err
-		}
-		l.buildPhotoIndex()
+	wantHidden := len(hiddenView) != 0 && hiddenView[0]
+	if hidden != wantHidden {
+		return PhotoItem{}, catalog.ErrNotFound
 	}
-	return nil
+	current, ok := l.catalog.Get(file.Path)
+	if !ok || current.EntryID != file.EntryID || current.Revision != file.Revision {
+		return PhotoItem{}, ErrPhotoCursorStale
+	}
+	return l.photoItemVisible(current, wantHidden), nil
 }
 
-// photoEntriesLocked returns a stable copy for aggregate album calculation.
-func (l *Library) photoEntriesLocked(ctx context.Context) ([]catalog.File, error) {
+// SetPhotoFolderHidden persists recursive Photos visibility on a stable folder.
+func (l *Library) SetPhotoFolderHidden(ctx context.Context, name string, hidden bool) (catalog.File, error) {
+	name, err := cleanPath(name)
+	if err != nil || !inPhotoRoot(name) {
+		return catalog.File{}, catalog.ErrNotFound
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.vault.Unlocked() {
+		return catalog.File{}, vault.ErrLocked
+	}
 	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
-		return nil, err
+		return catalog.File{}, err
 	}
-	l.photoMu.Lock()
-	defer l.photoMu.Unlock()
-	return append([]catalog.File(nil), l.photoRows...), nil
+	file, ok := l.catalog.Get(name)
+	// Older imports and native upload paths can have implicit folders. Give
+	// such a folder stable encrypted identity before attaching visibility.
+	if !ok && l.catalog.IsFolder(name) {
+		if err := l.catalog.Mkdir(name); err != nil {
+			return catalog.File{}, err
+		}
+		file, ok = l.catalog.Get(name)
+	}
+	if !ok || !file.Folder {
+		return catalog.File{}, catalog.ErrNotFound
+	}
+	updated, err := l.catalog.SetFolderHidden(file.EntryID, file.Revision, hidden)
+	if err != nil {
+		return catalog.File{}, err
+	}
+	l.publishChange(Change{Kind: "photo-visibility", Paths: []string{name}})
+	return updated, nil
 }
 
-func (l *Library) updatePhotoIndex(change Change) {
+// SetPhotoFavorite persists the owner's Photos favorite flag in the encrypted
+// catalog and publishes a change so open timelines can refresh.
+func (l *Library) SetPhotoFavorite(ctx context.Context, entryID string, favorite bool, hiddenView ...bool) (PhotoItem, error) {
+	if entryID == "" || len(entryID) > 128 {
+		return PhotoItem{}, ErrPhotoCursor
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.vault.Unlocked() {
+		return PhotoItem{}, vault.ErrLocked
+	}
+	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
+		return PhotoItem{}, err
+	}
 	l.photoMu.Lock()
-	defer l.photoMu.Unlock()
-	if !l.photoReady || len(change.Paths) == 0 {
-		return
+	indexed, ok := l.photoByID[entryID]
+	l.photoMu.Unlock()
+	if !ok || indexed.Folder || !photoMedia(indexed.Path) || !strings.HasPrefix(indexed.Path, PhotosRoot) {
+		return PhotoItem{}, catalog.ErrNotFound
 	}
-	changed := false
-	renamed := false
-	switch change.Kind {
-	case "rename":
-		if len(change.Paths) == 2 {
-			oldPath, newPath := change.Paths[0], change.Paths[1]
-			wasPhoto, isPhoto := strings.HasPrefix(oldPath, PhotosRoot), strings.HasPrefix(newPath, PhotosRoot)
-			renamed = true
-			for i := range l.photoRows {
-				if l.photoRows[i].Path == oldPath || strings.HasPrefix(l.photoRows[i].Path, oldPath+"/") {
-					nextPath := newPath + strings.TrimPrefix(l.photoRows[i].Path, oldPath)
-					if current, ok := l.catalog.Get(nextPath); ok {
-						l.photoRows[i] = current
-					} else {
-						l.photoRows[i].Path = nextPath
-					}
-					changed = true
-				}
-			}
-			if !wasPhoto && isPhoto {
-				for _, f := range l.catalog.List() {
-					if f.Path == newPath || strings.HasPrefix(f.Path, newPath+"/") {
-						l.replacePhotoLocked(f.Path, f, true)
-						changed = true
-					}
-				}
-			} else if wasPhoto && !isPhoto {
-				kept := l.photoRows[:0]
-				for _, f := range l.photoRows {
-					if f.Path == newPath || strings.HasPrefix(f.Path, newPath+"/") {
-						changed = true
-						continue
-					}
-					kept = append(kept, f)
-				}
-				l.photoRows = kept
-			}
-		}
-	case "delete":
-		for _, name := range change.Paths {
-			var remove []string
-			for _, f := range l.photoRows {
-				if f.Path == name || strings.HasPrefix(f.Path, name+"/") {
-					remove = append(remove, f.Path)
-				}
-			}
-			for _, path := range remove {
-				changed = l.removePhotoPathLocked(path) || changed
-			}
-		}
-	case "put", "copy", "restore", "mkdir":
-		for _, name := range change.Paths {
-			f, ok := l.catalog.Get(name)
-			changed = l.replacePhotoLocked(name, f, ok) || changed
-		}
+	l.photoMu.Lock()
+	hidden := l.photoPathHiddenLocked(indexed.Path)
+	l.photoMu.Unlock()
+	wantHidden := len(hiddenView) != 0 && hiddenView[0]
+	if hidden != wantHidden {
+		return PhotoItem{}, catalog.ErrNotFound
 	}
-	if changed {
-		if renamed {
-			l.rebuildPhotoLookupsLocked()
-		}
-		l.photoEpoch++
-		l.photoSortedEpoch = 0
-		l.schedulePhotoIndexSaveLocked()
+	current, ok := l.catalog.Get(indexed.Path)
+	if !ok || current.EntryID != indexed.EntryID || current.Revision != indexed.Revision {
+		return PhotoItem{}, ErrPhotoCursorStale
 	}
+	updated, err := l.catalog.UpdateMedia(current.EntryID, current.Revision, catalog.MediaMetadata{
+		Width: current.Width, Height: current.Height, DurationMillis: current.DurationMillis,
+		Orientation: current.Orientation, Favorite: favorite, Archived: current.Archived,
+		Caption: current.Caption, Camera: current.Camera, UserRotation: current.UserRotation,
+	})
+	if err != nil {
+		return PhotoItem{}, err
+	}
+	l.publishChange(Change{Kind: "photo-metadata", Paths: []string{updated.Path}})
+	return l.photoItemVisible(updated, false), nil
 }
 
-func (l *Library) replacePhotoLocked(name string, file catalog.File, found bool) bool {
-	return l.putPhotoPathLocked(name, file, found && strings.HasPrefix(file.Path, PhotosRoot))
+type photoCursor struct {
+	Generation    uint64       `json:"generation"`
+	AfterID       string       `json:"after_id,omitempty"`
+	BeforeID      string       `json:"before_id,omitempty"`
+	Album         string       `json:"album,omitempty"`
+	Mode          string       `json:"mode,omitempty"`
+	Date          string       `json:"date,omitempty"`
+	Search        string       `json:"search,omitempty"`
+	SearchType    string       `json:"search_type,omitempty"`
+	DateFrom      string       `json:"date_from,omitempty"`
+	DateTo        string       `json:"date_to,omitempty"`
+	Favorite      bool         `json:"favorite,omitempty"`
+	OutsideAlbums bool         `json:"outside_albums,omitempty"`
+	Camera        string       `json:"camera,omitempty"`
+	UnknownDates  bool         `json:"unknown_dates,omitempty"`
+	Archived      bool         `json:"archived,omitempty"`
+	Anchor        *photoAnchor `json:"anchor,omitempty"`
 }
