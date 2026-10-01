@@ -54,6 +54,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
+      # Override the image's VOLUME /data with empty, ephemeral worker storage.
+      - /data:size=1m,mode=700,uid=7272,gid=7272
     user: "7272:7272"
     cap_drop:
       - ALL

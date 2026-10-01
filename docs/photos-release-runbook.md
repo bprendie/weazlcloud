@@ -1,7 +1,8 @@
 # Photos release and recovery runbook
 
-Updated September 30, 2026. This pass changes local source only. Deployment is
-outside the current authorization; no production inventory or migration ran.
+Updated October 1, 2026. Bob subsequently authorized production deployment.
+See [the rollout record](photos-production-rollout-2026-10-01.md) for the preserved
+settings/data checkpoint, reconciliation and remaining capture-date backfill.
 The runtime keeps the encrypted catalog authoritative. SQLCipher is a prototype,
 not a new live database or a dependency needed to enable these features.
 

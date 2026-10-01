@@ -212,3 +212,11 @@ The final full `make check` and both constrained authenticated browser smokes
 passed before publication. Earlier read-only staging and DNS failures are
 historical. Unrelated screenshots and Python caches are excluded from the commit.
 Production is outside this pass and remains untouched.
+
+
+## Subsequent production authorization
+
+On October 1 Bob authorized deployment of the published release. The earlier
+local-only scope above is historical. See [the production rollout record](photos-production-rollout-2026-10-01.md)
+for live preservation/reconciliation checks and the still-required capture-date
+backfill. Local smoke results do not imply that this existing-data repair ran.

@@ -8,7 +8,8 @@ The permission retry cleared the local network/Docker blockage: full normal/race
 checks, both backend container restart/migration smokes, basic Chromium smokes,
 filesystem recovery and shared-store integration pass. M7 documentation and
 authenticated browser verification are being finalized. Apple-device media and
-large-library measurements remain explicit release gates. Production is excluded.
+large-library measurements remain explicit release gates. Production was authorized
+and deployed October 1; see the rollout record linked at the end.
 
 ## Outcome
 
@@ -335,7 +336,10 @@ Depends on M1 query contracts; prepared media from M2 supplies the complete gate
   without loading the whole catalog or silently skipping items.
   Cursors are owner-encrypted and keyset anchored by stable ID; indexed around-ID
   lookup and deleted-anchor neighbor tests cover date/album/search filters.
-- [x] Build justified rows, day headings, density control and year/month scrubber.
+- [x] Build justified rows, day headings, density control and year/month filters.
+- [ ] Add a continuous Google Photos-style date scrubber. Requested October 1;
+  current dropdowns filter by date and do not implement a draggable timeline rail.
+  Existing capture-date backfill and direct date seeking are prerequisites.
   Jump directly to a date. Layout uses known aspect ratios and placeholders.
   Use M1's canonical capture dates everywhere in Timeline, expose Date unknown,
   and retain the visible asset anchor when a backfill changes its date bucket.
@@ -699,3 +703,18 @@ The prior staging/DNS failures are superseded by the approved permission retry.
 Implementation commit `0ec910e` was pushed to `origin/main`; its exact hash was
 verified with `git ls-remote` after the final full and authenticated browser checks.
 Unrelated screenshots and Python caches are excluded. Production stays untouched.
+
+## October 1 production follow-up
+
+Bob subsequently authorized deployment. Source `2c4cede` is live with settings,
+vaults and the Restic backend preserved; both services are healthy. A consistent
+full-data reflink checkpoint, old image/config and complete photo/album inventories
+were retained. Production authenticated desktop/mobile Chromium checks and sample
+original readback pass; background preparation was resumed. Historical statements
+above that production was excluded describe the preceding local-only pass.
+
+See [the production rollout record](docs/photos-production-rollout-2026-10-01.md).
+Existing-data capture-date backfill remains **unfinished**: all 37,082 existing
+media entries have unknown capture dates. The library migration needs a safe,
+durable batched operator integration before it can repair this live collection.
+The new requested date rail is still a design discussion, not implemented work.
