@@ -206,8 +206,9 @@ retention/restart rules, fixture dry-run counts and rollback constraints.
 
 ## Publishing
 
-GitHub is reachable with the approved network permission. The initial remote
-HEAD matched the local starting commit, `6dd8934`. Earlier read-only staging and
-DNS failures are historical; publication is verified separately after final
-checks. Unrelated screenshots and Python caches are excluded from the commit.
+Implementation commit `0ec910e91fa85c9d1ff4cc75909a4c65aa46a4ab` was pushed to
+`origin/main`. `git ls-remote origin refs/heads/main` returned that exact hash.
+The final full `make check` and both constrained authenticated browser smokes
+passed before publication. Earlier read-only staging and DNS failures are
+historical. Unrelated screenshots and Python caches are excluded from the commit.
 Production is outside this pass and remains untouched.

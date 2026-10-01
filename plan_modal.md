@@ -696,5 +696,6 @@ checks; see [local verification](docs/photos-local-verification-2026-09-30.md).
   when a later rollout is authorized; follow the recovery runbook.
 
 The prior staging/DNS failures are superseded by the approved permission retry.
-GitHub is reachable; publication is checked against origin after final smokes.
+Implementation commit `0ec910e` was pushed to `origin/main`; its exact hash was
+verified with `git ls-remote` after the final full and authenticated browser checks.
 Unrelated screenshots and Python caches are excluded. Production stays untouched.

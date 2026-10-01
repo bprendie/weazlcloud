@@ -255,5 +255,6 @@ still require a new explicit POST on reconnect; preparation recovery does not
 claim HTTP download resume for guests.
 
 The machine-readable [OpenAPI contract](photo-api.yaml) covers Photos/device
-routes and guest gallery operations. Local evidence and the pending constrained
-browser/container/media checks are in the [verification record](photos-local-verification-2026-09-30.md).
+routes and guest gallery operations. Passing constrained browser/container checks
+and the remaining device/media measurements are in the
+[verification record](photos-local-verification-2026-09-30.md).
