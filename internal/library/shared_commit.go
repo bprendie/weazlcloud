@@ -57,6 +57,7 @@ func (l *Library) commitSharedStaged(ctx context.Context, stage stagedUpload) (c
 		return catalog.File{}, err
 	}
 	f := catalog.File{EntryID: stage.EntryID, Revision: stage.Revision, Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Object: ref.Object, Reference: &ref, Present: true}
+	f.PhotoProcessingPending = l.needsPhotoProcessing(f.Path)
 	if err = l.catalog.Put(f); err != nil {
 		return catalog.File{}, err
 	}

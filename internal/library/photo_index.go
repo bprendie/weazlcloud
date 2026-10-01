@@ -170,6 +170,7 @@ func (l *Library) SetPhotoFavorite(ctx context.Context, entryID string, favorite
 }
 
 type photoCursor struct {
+	Scope         string       `json:"scope,omitempty"`
 	Generation    uint64       `json:"generation"`
 	AfterID       string       `json:"after_id,omitempty"`
 	BeforeID      string       `json:"before_id,omitempty"`

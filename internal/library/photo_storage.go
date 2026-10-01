@@ -18,7 +18,11 @@ func (l *Library) BeginPhotoStorageWork() func() {
 			l.stageMu.Lock()
 			l.photoImports--
 			pending := l.takePendingPhotoIngestLocked()
+			metadataPending := len(l.pendingMetadataDirectories) > 0
 			l.stageMu.Unlock()
+			if metadataPending {
+				go l.flushMetadataSidecars()
+			}
 			if len(pending) > 0 {
 				go l.retryPhotoIngest(pending)
 			}

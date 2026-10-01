@@ -258,3 +258,46 @@ The machine-readable [OpenAPI contract](photo-api.yaml) covers Photos/device
 routes and guest gallery operations. Passing constrained browser/container checks
 and the remaining device/media measurements are in the
 [verification record](photos-local-verification-2026-09-30.md).
+
+## Capture-date repair and continuous navigation
+
+`GET /api/v1/photos/metadata-jobs` returns the owner's current encrypted durable
+repair status. `POST` accepts `action` (`start`, `dry-run`, `pause`, `resume`,
+`retry`), optional `root` (default `Photos`), `dry_run` and `sidecars_only`.
+One owner job runs at a time. Start repeats return active work.
+Starting with different options while work is active returns 409; it never silently
+changes a dry run into an apply job. Status includes initial known/unknown counts,
+parser version and `supported_embedded: ["jpeg-exif"]`.
+Retry requeues failed/unresolved assets; clean results are retained. `GET ?report=1&cursor=N`
+returns up to 100 private per-asset outcomes and a next offset. An empty page ends
+pagination. Counts distinguish changed, unchanged, unresolved and failed assets.
+Dry runs persist only their own encrypted report/checkpoint, preserving a completed
+apply checkpoint. Durable `sequence` selects the current job across restart. Jobs resume after owner unlock
+and continue without a browser. Lock/rekey stops private work; source errors do
+not stop other assets. Shared durable commit failures pause/report the job.
+
+Takeout `photoTakenTime` takes priority over JPEG EXIF and mobile/client capture;
+user corrections always win. Conventional and supplemental sidecars are supported;
+truncated names require an unambiguous directory-local title match. `creationTime`,
+mtime and import time are never capture fallbacks. JPEG is the current embedded
+capture parser; other media can receive dates from Takeout sidecars. Unknown
+metadata remains unknown. Batched catalog saves preserve source bytes and edits.
+
+`GET /api/v1/photos/dates` now accepts the same scope as the rail: `mode`
+(`all`, `favorites`, `archived`, `hidden`), `album`, explicit date filter `date`,
+`search=1`, `q`, `camera`, `type`, `from`, `to`, `outside_albums=1`, `unknown=1`.
+The existing `hidden=1` alias remains accepted. It returns an array of month
+counts/ranks, known/unknown totals and generation. `month=YYYY-MM` adds bounded
+day anchors. Ordinary responses exclude Hidden assets; admin identity does not
+provide vault access.
+
+`GET /api/v1/photos/seek` accepts this scope plus one destination: `at=YYYY-MM-DD`,
+`at=unknown`, `rank=N`, `around=stableID`, or `cursor=...`; `limit` defaults to 100
+and is capped at 200. It returns a bounded `items` page, `anchor_id`, `position`,
+`start`, `total`, `generation` and before/after cursors. Continue using the seek
+endpoint with the returned cursor and the identical scope. A seek navigates the
+continuous scoped collection; it does not add a destination-day filter.
+Empty calendar days choose the nearest available day, newer on a tie. Outside
+ranges clamp to dated endpoints; Unknown date is separate. Capture offsets define
+calendar buckets and are never inferred from the browser/server timezone.
+Prepared summary/seek requests read metadata only, not originals.

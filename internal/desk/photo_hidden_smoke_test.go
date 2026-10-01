@@ -62,6 +62,20 @@ func smokePhotoHiddenOwnerIsolation(t *testing.T, h *Handler, client *http.Clien
 		if err != nil || res.StatusCode != 200 || len(page.Items) != view.count {
 			t.Fatalf("owner %s timeline=%+v %v", view.mode, page, err)
 		}
+		for _, endpoint := range []string{"dates", "seek"} {
+			res, err = client.Get(base + "/api/v1/photos/" + endpoint + "?mode=" + view.mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var scoped struct {
+				Total int `json:"total"`
+			}
+			err = json.NewDecoder(res.Body).Decode(&scoped)
+			res.Body.Close()
+			if err != nil || res.StatusCode != 200 || scoped.Total != view.count {
+				t.Fatalf("%s %s=%+v %v", endpoint, view.mode, scoped, err)
+			}
+		}
 	}
 	// Hiding a source is presentation only; the existing frozen grab survives.
 	var preview bytes.Buffer
@@ -84,6 +98,22 @@ func smokePhotoHiddenOwnerIsolation(t *testing.T, h *Handler, client *http.Clien
 	if err != nil || res.StatusCode != 200 || len(page.Items) != 0 {
 		t.Fatalf("cross-owner hidden timeline=%+v %v", page, err)
 	}
+	for _, endpoint := range []string{"dates", "seek", "metadata-jobs"} {
+		res, err = client.Get(base + "/api/v1/photos/" + endpoint + "?mode=hidden&owner=photo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var scoped struct {
+			Total int `json:"total"`
+		}
+		err = json.NewDecoder(res.Body).Decode(&scoped)
+		res.Body.Close()
+		if err != nil || res.StatusCode != 200 || scoped.Total != 0 {
+			t.Fatalf("cross-owner %s=%+v %v", endpoint, scoped, err)
+		}
+	}
+	checkGet("/api/v1/photos/metadata-jobs?report=1&cursor=-1", 400)
+	checkGet("/api/v1/photos/seek?around="+assetID+"&mode=hidden&owner=photo", 409)
 	res = post("/api/v1/photos/selection-actions", map[string]any{"selection_id": selection.ID, "action": "archive", "hidden": true, "confirm_hidden": true})
 	res.Body.Close()
 	if res.StatusCode < 400 {

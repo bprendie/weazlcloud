@@ -56,6 +56,9 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 		return err
 	}
 	l.photoJobsMu.Unlock()
+	if err := l.queueMetadataIngest(files); err != nil {
+		return err
+	}
 	if err := l.ackPhotoIngest(files); err != nil {
 		return err
 	}
@@ -66,12 +69,18 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 	l.photoPrepMu.Lock()
 	l.loadPhotoPreparationLocked()
 	if !l.photoPrep.Paused {
-		l.photoPrep.AutoOnly = true
+		if !l.photoPrep.Enabled {
+			l.photoPrep.AutoOnly = true
+		}
 		l.photoPrep.Enabled = true
 		l.photoPrep.Status = "queued"
 		l.photoPrep.Error = ""
-		l.photoPrep.Retry = false
-		l.photoPrep.Total = len(files)
+		if l.photoPrep.AutoOnly {
+			l.photoPrep.Retry = false
+		}
+		if l.photoPrep.AutoOnly {
+			l.photoPrep.Total = len(files)
+		}
 		l.photoPrep.Generation = l.photoGeneration()
 		l.touchPhotoPreparationLocked()
 		l.savePhotoPreparationLocked()

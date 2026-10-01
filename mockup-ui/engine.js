@@ -321,3 +321,14 @@ export function toFixture(row) {
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
   return { id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified, importedAt: row.imported_at, captureTime: row.captured_at, captureOffsetMinutes:row.capture_offset_minutes, revision:row.revision, captureSource: row.capture_source, mediaType: row.media_type, width: row.width, height: row.height, favorite: row.favorite, archived: row.archived, caption: row.caption, durationMillis: row.duration_millis, userRotation: row.user_rotation || 0, orientation: row.orientation };
 }
+
+const photoNavigationQuery = options => {
+ const query=new URLSearchParams();
+ for(const key of ['mode','date','album','q','camera','type','from','to','month','around','at','cursor','rank','limit'])if(options[key]!==undefined && options[key]!==null && options[key]!=='')query.set(key,String(options[key]));
+ for(const key of ['search','outside_albums','unknown'])if(options[key])query.set(key,'1');
+ return query.toString();
+};
+export const navigatePhotos = options => uploadJSON('/api/v1/photos/seek?'+photoNavigationQuery(options),{signal:options.signal});
+export const photoTimelineDates = options => uploadJSON('/api/v1/photos/dates?'+photoNavigationQuery(options),{signal:options.signal});
+export const photoMetadata = () => uploadJSON('/api/v1/photos/metadata-jobs');
+export const setPhotoMetadata = action => post('/api/v1/photos/metadata-jobs',{action});

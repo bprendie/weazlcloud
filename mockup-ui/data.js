@@ -145,6 +145,7 @@ export const state = {
   photoError: '',
   photoGeneration: 0,
   photoPreparation: null,
+ photoMetadata:null,photoSeek:null,photoStart:0,photoPosition:0,photoJumpAnchor:'',
   photoAlbumCount: 0,
   photoWindowStart: 0,
   photoWindowEnd: 0,

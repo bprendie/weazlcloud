@@ -96,8 +96,12 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.photoSync)
 	case r.URL.Path == "/api/v1/photos/sync/checkpoint" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.photoSyncCheckpoint)
+	case r.URL.Path == "/api/v1/photos/metadata-jobs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		h.multiGuard(w, r, true, h.photoMetadataJob)
 	case r.URL.Path == "/api/v1/photos/dates" && r.Method == http.MethodGet:
-		h.multiGuard(w, r, true, h.multiPhotoDates)
+		h.multiGuard(w, r, true, h.photoNavigationDates)
+	case r.URL.Path == "/api/v1/photos/seek" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.photoNavigation)
 	case r.URL.Path == "/api/v1/photos/folders" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.multiPhotoFolderVisibility)
 	case r.URL.Path == "/api/photos/dates" && r.Method == http.MethodGet:

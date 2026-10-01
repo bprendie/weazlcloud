@@ -32,43 +32,9 @@ type PhotoSearchOptions struct {
 var ErrPhotoSearch = errors.New("invalid photo search")
 
 func (l *Library) PhotoSearchPage(ctx context.Context, options PhotoSearchOptions) (PhotoPage, error) {
-	options.Query = strings.ToLower(strings.TrimSpace(options.Query))
-	options.Camera = strings.ToLower(strings.TrimSpace(options.Camera))
-	options.Type = strings.ToLower(strings.TrimSpace(options.Type))
-	options.Album = strings.TrimSuffix(strings.TrimSpace(options.Album), "/")
-	if len(options.Camera) > 120 || options.OutsideAlbums && options.Album != "" || len(options.Query) > 256 || len(options.Album) > 1024 || options.Type != "" && options.Type != "image" && options.Type != "video" || !validPhotoSearchDate(options.DateFrom) || !validPhotoSearchDate(options.DateTo) {
-		return PhotoPage{}, ErrPhotoSearch
-	}
-	if options.DateFrom != "" && options.DateTo != "" && options.DateFrom > options.DateTo {
-		return PhotoPage{}, ErrPhotoSearch
-	}
-	customAlbum := strings.HasPrefix(options.Album, "album:")
-	if customAlbum {
-		if len(strings.TrimPrefix(options.Album, "album:")) > 64 {
-			return PhotoPage{}, ErrPhotoSearch
-		}
-	} else if options.Album != "" {
-		clean, err := cleanPath(options.Album)
-		if err != nil || !strings.HasPrefix(clean, PhotosRoot) {
-			return PhotoPage{}, ErrPhotoSearch
-		}
-		options.Album = clean
-	}
-	if options.Limit <= 0 {
-		options.Limit = PhotoPageDefault
-	}
-	if options.Limit > PhotoPageMaximum {
-		options.Limit = PhotoPageMaximum
-	}
-	var pattern *regexp.Regexp
-	if strings.ContainsAny(options.Query, "*?") {
-		quoted := regexp.QuoteMeta(options.Query)
-		quoted = strings.ReplaceAll(strings.ReplaceAll(quoted, `\*`, ".*"), `\?`, ".")
-		var err error
-		pattern, err = regexp.Compile(quoted)
-		if err != nil {
-			return PhotoPage{}, ErrPhotoSearch
-		}
+	options, pattern, err := normalizePhotoSearch(options)
+	if err != nil {
+		return PhotoPage{}, err
 	}
 	requestCursor := options.Cursor
 	options.Cursor = ""
@@ -80,33 +46,9 @@ func (l *Library) PhotoSearchPage(ctx context.Context, options PhotoSearchOption
 	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
 		return PhotoPage{}, err
 	}
-	var albumMembers map[string]bool
-	var albumRevision uint64
-	searchOptions := options
-	if customAlbum {
-		searchOptions.Album = ""
-		for _, album := range l.catalog.Albums() {
-			if "album:"+album.ID != options.Album {
-				continue
-			}
-			albumRevision = album.Revision
-			albumMembers = make(map[string]bool, len(album.AssetIDs))
-			for _, id := range album.AssetIDs {
-				albumMembers[id] = true
-			}
-			break
-		}
-		if albumMembers == nil {
-			return PhotoPage{}, catalog.ErrAlbumNotFound
-		}
-	}
-	if options.OutsideAlbums {
-		albumMembers = make(map[string]bool)
-		for _, album := range l.catalog.Albums() {
-			for _, id := range album.AssetIDs {
-				albumMembers[id] = true
-			}
-		}
+	searchOptions, albumMembers, albumRevision, err := l.photoSearchMembers(options)
+	if err != nil {
+		return PhotoPage{}, err
 	}
 	l.photoMu.Lock()
 	defer l.photoMu.Unlock()

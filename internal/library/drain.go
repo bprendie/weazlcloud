@@ -14,7 +14,10 @@ func (l *Library) Drain(ctx context.Context) error {
 		l.photoPrepMu.Lock()
 		running := l.photoPrepRunning || l.photoResumeWaiting
 		l.photoPrepMu.Unlock()
-		if jobs == 0 && !running {
+		l.metadataMu.Lock()
+		metadataRunning := l.metadataRunning
+		l.metadataMu.Unlock()
+		if jobs == 0 && !running && !metadataRunning {
 			break
 		}
 		select {

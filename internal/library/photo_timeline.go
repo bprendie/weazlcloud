@@ -34,7 +34,7 @@ func (l *Library) PhotoDateSummary(ctx context.Context, hiddenView ...bool) (Pho
 	includeHidden := len(hiddenView) != 0 && hiddenView[0]
 	if !includeHidden && l.photoDateSummaryEpoch == l.photoEpoch && l.photoDateSummary.Months != nil {
 		cached := l.photoDateSummary
-		cached.Months = append([]PhotoDateBucket(nil), cached.Months...)
+		cached.Months = append([]PhotoDateBucket{}, cached.Months...)
 		return cached, nil
 	}
 	counts := make(map[string]int)
@@ -65,7 +65,7 @@ func (l *Library) PhotoDateSummary(ctx context.Context, hiddenView ...bool) (Pho
 	if !includeHidden {
 		l.photoDateSummary, l.photoDateSummaryEpoch = result, l.photoEpoch
 	}
-	result.Months = append([]PhotoDateBucket(nil), result.Months...)
+	result.Months = append([]PhotoDateBucket{}, result.Months...)
 	return result, nil
 }
 

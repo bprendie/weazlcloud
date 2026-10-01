@@ -26,6 +26,7 @@ js-check:
 	node --check mockup-ui/grab.js
 	node --check mockup-ui/views.js
 	node --check mockup-ui/photo-layout.js
+	node --check mockup-ui/photo-timeline.js
 	node --check mockup-ui/mode-memory.js
 	node scripts/photo-layout.test.mjs
 	node scripts/mode-memory.test.mjs

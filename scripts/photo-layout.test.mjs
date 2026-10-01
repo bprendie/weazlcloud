@@ -36,3 +36,18 @@ test('recently added headings use import dates while the timeline keeps capture 
  assert.equal(layoutPhotos(items,320,'comfortable','recent').rows[0].day,'2026-09-30');
  assert.equal(layoutPhotos(items,320,'comfortable','capture').rows[0].day,'2013-01-02');
 });
+
+import {timelineTarget,timelineTicks,timelineLabel} from '../mockup-ui/photo-timeline.js';
+test('date rail weights busy months and leaves genuinely undated photos unknown',()=>{
+ const summary={total:100,known_dates:90,unknown_dates:10,months:[{month:'2024-06',count:80,rank:0},{month:'2018-01',count:10,rank:80}]};
+ assert.equal(timelineTarget(summary,0.5).date,'2024-06');
+ assert.equal(timelineTarget(summary,0.85).date,'2018-01');
+ assert.equal(timelineTarget(summary,1).date,'unknown');
+ assert.equal(timelineTarget(summary,-1).rank,0);
+ assert.equal(timelineTarget(summary,2).rank,99);
+ assert.equal(timelineTicks(summary).length,2);
+ assert.match(timelineLabel('2018-01'),/2018/);
+ assert.equal(timelineTarget({total:4,known_dates:0,months:[]},0).date,'unknown');
+ const months=Array.from({length:100},(_,i)=>({month:`${2026-i}-01`,count:1,rank:i}));
+ assert.ok(timelineTicks({months}).length<=8);
+});

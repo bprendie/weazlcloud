@@ -110,3 +110,18 @@ func minimalJPEGExif(t *testing.T, date, offset string) []byte {
 	result = append(result[:6], segment...)
 	return append(result, 0xff, 0xd9)
 }
+
+func TestTakeoutCreationTimeIsNotCaptureAndOffsetIsPreserved(t *testing.T) {
+	if _, err := ParseTakeoutSidecar([]byte(`{"creationTime":{"timestamp":"1365152400"}}`)); err != ErrNoCaptureMetadata {
+		t.Fatal("creation time became capture", err)
+	}
+	offset := -300
+	instant, err := normalizeWallTime("2018:12:31 23:30:00", &offset)
+	if err != nil || instant.UTC().Year() != 2019 || instant.UTC().Hour() != 4 {
+		t.Fatal(instant, err)
+	}
+	leap, err := normalizeWallTime("2020:02:29 12:00:00", nil)
+	if err != nil || leap.Day() != 29 {
+		t.Fatal(leap, err)
+	}
+}

@@ -1,3 +1,5 @@
+import {layoutPhotos} from './photo-layout.js';
+import {installPhotoTimeline} from './photo-timeline.js';
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
 import {renderMain, renderDeck, renderUploadTray, refreshPhotoGrid, modifiedLabel} from './views.js';
 import * as engine from './engine.js';
@@ -279,6 +281,7 @@ function hydrateGridTextPreviews() {
 function updatePhotoGridWindow() {
   photoWindowFrame = 0;
   refreshPhotoGrid();
+  photoTimeline.sync();
 }
 
 function schedulePhotoGridWindow() {
@@ -1152,7 +1155,7 @@ function applyRoute() {
   const allowed = new Set(['home', 'library', 'photos', 'send', 'capsules', 'places', 'admin', 'kit', 'takeout', 'check', 'destroy', 'trash']);
   const previous=state.view, switching=previous !== (allowed.has(view)?view:'home');
   if(switching){
-    const anchor=previous==='photos'?[...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top})).find(row=>row.top>=0&&row.top<window.innerHeight):null;
+    const anchor=previous==='photos'?[...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight):null;
     modeMemory.remember(previous,state,window.scrollY,anchor);stopMediaPlayback();
     if(previous==='photos'){photoPageController?.abort();photoPageRequest++;state.photoLoading=false;photoSelectionRequest++;}
   }
@@ -1173,6 +1176,8 @@ function applyRoute() {
     try { state.photoQuery = hiddenSearch ? decodeURIComponent(parts[3] || '') : regularSearch ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photoQuery = ''; }
     try { state.photosAlbum = encoded === 'album' ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photosAlbum = ''; }
     try { state.photoDate = encoded === 'date' ? decodeURIComponent(parts[2] || '') : ''; } catch { state.photoDate = ''; }
+    const navigation=history.state?.photoNavigation?.owner===state.username?history.state.photoNavigation:null;
+    if(navigation?.scope){const s=navigation.scope;state.photoCamera=s.camera||'';state.photoSearchType=s.type||'';state.photoFrom=s.from||'';state.photoTo=s.to||'';state.photoOutsideAlbums=Boolean(s.outside_albums);state.photoQuery=s.q||'';}
     state.photosShown = 60;
     state.photoItems = [];
     state.photoCursor = '';
@@ -1183,10 +1188,12 @@ function applyRoute() {
     try { photoRouteViewerID = photoRouteViewer ? decodeURIComponent(routeParts[2] || '') : ''; } catch { photoRouteViewerID = ''; }
     const restored=switching?modeMemory.restore('photos',state):null;
     if(switching&&!restored)clearFileSelection();
-    state.photoAnchor = photoRouteViewerID || restored?.anchor?.id || '';
+    state.photoAnchor = photoRouteViewerID || navigation?.anchor || restored?.anchor?.id || '';
+    state.photoFallbackDate=navigation?.date || restored?.anchor?.date || '';
+    if(navigation?.anchor || restored?.anchor?.id){state.photoJumpAnchor=navigation?.anchor || restored.anchor.id;state.photoJumpOffset=navigation?.offset??restored?.anchor?.top??145;}
     loadPhotoPage(true).then(() => {
       state.photoModeDirty=false;
-      if(restored) requestAnimationFrame(()=>{window.scrollTo({top:restored.scroll,behavior:'auto'});schedulePhotoGridWindow();});
+      if(restored)requestAnimationFrame(()=>{const tile=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor?.id);if(tile)window.scrollBy({top:tile.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});else if(!restored.anchor)window.scrollTo({top:restored.scroll,behavior:'auto'});schedulePhotoGridWindow();});
       if (photoRouteViewerID) restorePhotoViewerRoute(photoRouteViewerID);
     }).catch(err => toast(err.message));
   }
@@ -1204,7 +1211,7 @@ function applyRoute() {
 function navigate(view, replace = false) {
   const previous = state.view, switching = previous !== view;
   if (switching) {
-    const anchor = previous === 'photos' ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top})).find(row=>row.top>=0&&row.top<window.innerHeight) : null;
+    const anchor = previous === 'photos' ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight) : null;
     modeMemory.remember(previous,state,window.scrollY,anchor);
   }
   if (previous === 'photos' && view !== 'photos') { photoPageController?.abort(); photoPageRequest++; state.photoLoading=false; photoSelectionRequest++; }
@@ -1219,7 +1226,8 @@ function navigate(view, replace = false) {
   const cachedPhotos=view==='photos' && switching && !state.photoModeDirty && state.photoItems.length>0;
   if (view==='photos' && !cachedPhotos) {
     state.photoItems=[]; state.photoCursor=state.photoPreviousCursor=''; state.photoLoading=false; state.photoWindowStart=state.photoWindowEnd=0;
-    state.photoAnchor=restored?.anchor?.id || '';
+    state.photoAnchor=restored?.anchor?.id || '';state.photoFallbackDate=restored?.anchor?.date||'';
+    if(restored?.anchor){state.photoJumpAnchor=restored.anchor.id;state.photoJumpOffset=restored.anchor.top;}
   }
   renderMain(); renderDeck();
   if (view==='trash') loadTrash();
@@ -1229,7 +1237,7 @@ function navigate(view, replace = false) {
     requestAnimationFrame(()=>{
       const anchor=restored?.anchor && [...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor.id);
       if(anchor)window.scrollBy({top:anchor.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});
-      else window.scrollTo({top:restored?.scroll || 0,behavior:'auto'});
+      else if(!restored?.anchor)window.scrollTo({top:restored?.scroll || 0,behavior:'auto'});
       if(view==='photos')schedulePhotoGridWindow();
     });
   };
@@ -1510,6 +1518,39 @@ let photoAlbumsRequest = 0;
 let photoPageRequest = 0;
 let photoPageController;
 const hasPhotoSearchFilters = () => Boolean(state.photoQuery || state.photoCamera || state.photoSearchType || state.photoFrom || state.photoTo || state.photoOutsideAlbums);
+function photoScopeOptions(){return {mode:['favorites','hidden','archived'].includes(state.photosMode)?state.photosMode:'all',date:state.photoDate,album:state.photoOutsideAlbums?'':state.photosAlbum,search:hasPhotoSearchFilters(),q:state.photoQuery,camera:state.photoCamera,type:state.photoSearchType,from:state.photoFrom,to:state.photoTo,outside_albums:state.photoOutsideAlbums};}
+const photoTimeline=installPhotoTimeline({state,summaryForMonth:month=>engine.photoTimelineDates({...photoScopeOptions(),month}),jump:async target=>{
+ if(!live || !state.unlocked || state.view!=='photos')return;
+ const visible=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.getBoundingClientRect().bottom>140);
+ const item=state.photoItems.find(item=>item.id===visible?.dataset.selectFile);
+ history.replaceState({...history.state,photoNavigation:{owner:state.username,anchor:visible?.dataset.selectFile,date:item?.captureTime?.slice(0,10)||'unknown',offset:visible?.getBoundingClientRect().top,scope:photoScopeOptions()}},'',location.hash);
+ clearFileSelection();state.photoSeek=target;state.photoAnchor='';
+ state.photoJumpOffset=null;
+ const request=photoPageRequest+1;
+ await loadPhotoPage(true);
+ if(request===photoPageRequest && state.view==='photos' && !state.photoError){const item=state.photoItems.find(item=>item.id===state.photoLastJumpAnchor);history.pushState({photoNavigation:{owner:state.username,anchor:state.photoLastJumpAnchor,date:item?.captureTime?.slice(0,10)||'unknown',scope:photoScopeOptions()}},'',routeHash('photos'));restorePhotoJump();}
+}});
+function restorePhotoJump(){
+ const id=state.photoJumpAnchor;
+ if(!id)return;
+ const index=state.photoItems.findIndex(item=>item.id===id);
+ if(index<0)return;
+ // The destination may lie outside mounted rows. Use the same layout first.
+ const grid=document.querySelector('.photo-grid');
+ if(grid){const layout=layoutPhotos(state.photoItems,grid.clientWidth,state.photoDensity);const row=layout.rows.find(row=>row.tiles.some(tile=>tile.index===index));if(row)window.scrollTo({top:window.scrollY+grid.getBoundingClientRect().top+row.top-145,behavior:'auto'});}
+ // Mount the destination, then correct against its actual rendered position.
+ // Toolbar changes and browser scroll anchoring can shift the estimated layout.
+ const request=photoPageRequest;
+ requestAnimationFrame(()=>{
+   if(request!==photoPageRequest || state.view!=='photos' || state.photoJumpAnchor!==id)return;
+   refreshPhotoGrid();
+   const tile=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===id);
+   if(tile)window.scrollBy({top:tile.getBoundingClientRect().top-(state.photoJumpOffset??145),behavior:'auto'});
+   state.photoJumpOffset=null;
+   state.photoJumpAnchor='';schedulePhotoGridWindow();
+ });
+}
+
 let photoSearchTimer = 0;
 async function loadPhotoPage(reset = false, render = true, direction = 'next') {
   if (!live || !state.unlocked || state.view !== 'photos' || state.photosMode === 'albums' && !state.photosAlbum) return;
@@ -1522,6 +1563,8 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
     ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top})).find(row => row.top >= 0 && row.top < window.innerHeight)
     : null;
   if (reset) {
+    const summaryScope=JSON.stringify(photoScopeOptions());
+    if(state.photoSummaryScope!==summaryScope)state.photoDateSummary=null;
     state.photoItems = [];
     state.photoCursor = '';
     state.photoPreviousCursor = '';
@@ -1536,11 +1579,14 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
     const requestCursor = direction === 'before' ? state.photoPreviousCursor : state.photoCursor;
     const dateFrom = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-01-01` : state.photoDate.length === 7 ? `${state.photoDate}-01` : state.photoDate) : '';
     const dateTo = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-12-31` : state.photoDate.length === 7 ? `${state.photoDate}-${new Date(Number(state.photoDate.slice(0,4)), Number(state.photoDate.slice(5,7)), 0).getDate()}` : state.photoDate) : '';
-    const page = hasPhotoSearchFilters()
-      ? await engine.searchPhotos(requestCursor, {signal, camera:state.photoCamera, type:state.photoSearchType, outside_albums:state.photoOutsideAlbums, q:state.photoQuery, album:state.photoOutsideAlbums ? '' : state.photosAlbum, from:state.photoFrom || dateFrom, to:state.photoTo || dateTo, favorite:state.photosMode === 'favorites', hidden:state.photosMode === 'hidden', archived:state.photosMode === 'archived'})
-      : await engine.listPhotos(requestCursor, state.photosAlbum || '', {mode: photoMode, date: state.photoDate, around, signal});
+    const seek=reset?state.photoSeek:null;
+    const page = state.photosMode==='recent'
+      ? await engine.listPhotos(requestCursor,state.photosAlbum || '',{mode:'recent',around,signal})
+      : await engine.navigatePhotos({...photoScopeOptions(),cursor:reset?'':requestCursor,around,...seek,signal});
     if (request !== photoPageRequest || username !== state.username || !state.unlocked || state.view !== 'photos') return;
     const incoming = (page.items || []).map(engine.toFixture);
+    if(reset){state.photoSeek=null;state.photoStart=page.start||0;state.photoPosition=page.position||0;if(seek){state.photoJumpAnchor=page.anchor_id||'';state.photoLastJumpAnchor=page.anchor_id||'';}}
+    if(direction==='before')state.photoStart=page.start||0;
     if (direction === 'before') {
       state.photoItems.unshift(...incoming);
       if (photoViewerIndex >= 0) photoViewerIndex += incoming.length;
@@ -1551,6 +1597,7 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
       if (direction === 'before') state.photoItems.splice(2000, trim);
       else {
         state.photoItems.splice(0, trim);
+        state.photoStart=(state.photoStart||0)+trim;
         photoViewerIndex = Math.max(-1, photoViewerIndex - trim);
       }
     }
@@ -1566,6 +1613,7 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
       state.photoCursor = '';
       state.photoPreviousCursor = '';
       state.photoAnchor = '';
+      if(state.photoFallbackDate)state.photoSeek={at:state.photoFallbackDate};
       state.photoLoading = false;
       state.photoError = '';
       return loadPhotoPage(true, render);
@@ -1583,16 +1631,21 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
       state.photoViewportRestore = null;
     });
   }
-  if (request === photoPageRequest && state.view === 'photos') schedulePhotoGridWindow();
+  if (request === photoPageRequest && state.view === 'photos') {schedulePhotoGridWindow();if(reset){await loadPhotoDates();if(request===photoPageRequest)restorePhotoJump();}}
 }
 
+let photoDatesRequest=0;
 async function loadPhotoDates() {
   if (!live || !state.unlocked) return;
   const username = state.username;
+  const request=++photoDatesRequest;
   try {
-    const summary = await engine.listPhotoDates(state.photosMode === 'hidden');
+    const scope=photoScopeOptions(),key=JSON.stringify(scope);
+    const summary = await engine.photoTimelineDates(scope);
+    if(request!==photoDatesRequest || key!==JSON.stringify(photoScopeOptions()))return;
     if (username !== state.username || !state.unlocked) return;
     state.photoDateSummary = summary;
+    state.photoSummaryScope=key;
   } catch {
     if (username !== state.username) return;
     state.photoDateSummary = null;
@@ -1602,7 +1655,9 @@ async function loadPhotoDates() {
 
 async function loadPhotoPreparation() {
   if (!live || !state.unlocked) return;
-  try { state.photoPreparation = await engine.photoPreparation(); } catch { state.photoPreparation = null; }
+  const username=state.username;
+  try {const metadata=await engine.photoMetadata();if(username!==state.username || !state.unlocked)return;state.photoMetadata=metadata;}catch{if(username!==state.username || !state.unlocked)return;state.photoMetadata=null;}
+  try {const preparation=await engine.photoPreparation();if(username!==state.username || !state.unlocked)return;state.photoPreparation=preparation;} catch {state.photoPreparation=null;}
   if (state.view === 'photos') renderMain();
 }
 
@@ -1698,8 +1753,18 @@ async function refreshTakeout() {
 setInterval(() => { if (state.view === 'takeout' && live && state.unlocked) refreshTakeout(); }, 4000);
 setInterval(async () => {
   if (state.view !== 'photos' || !live || !state.unlocked) return;
+  const username=state.username;
   try {
-    state.photoPreparation = await engine.photoPreparation();
+    const metadata=await engine.photoMetadata();
+    if(username!==state.username || !state.unlocked)return;
+    state.photoMetadata=metadata;
+    const metadataStatus=document.querySelector('[data-photo-metadata-status]');
+    if(metadataStatus && state.photoMetadata.status!=='idle'){const job=state.photoMetadata;metadataStatus.textContent=`${job.examined} / ${job.total} dates · ${job.status.replaceAll('_',' ')} · ${job.unresolved} unknown · ${job.failed} failed`;}
+    const metadataButton=document.querySelector('[data-action="photo-metadata"].secondary');
+    if(metadataButton){const active=['queued','running'].includes(metadata.status),paused=['paused','paused_error'].includes(metadata.status);metadataButton.dataset.metadataAction=active?'pause':paused?'resume':'start';metadataButton.textContent=active?'Pause date repair':paused?'Resume date repair':'Repair dates';}
+    const preparation=await engine.photoPreparation();
+    if(username!==state.username || !state.unlocked)return;
+    state.photoPreparation=preparation;
     const prep = state.photoPreparation;
     const status = document.querySelector('[data-photo-prep-status]');
     const button = document.querySelector('[data-action="photo-preparation"]');
@@ -1764,6 +1829,7 @@ function openDesk() {
   state.photoItems = [];
   state.photoCursor = '';
   state.photoPreparation = null;
+  state.photoMetadata=null;state.photoJumpAnchor='';state.photoLastJumpAnchor='';state.photoSeek=null;state.photoFallbackDate='';
   state.photoAlbums = [];
   state.photoAlbumsLoaded = false;
   state.photoAlbumsError = '';
@@ -2078,6 +2144,9 @@ document.addEventListener('click', e => {
     return;
   }
   if (b.dataset.action === 'photos-earlier') { loadPhotoPage(false, true, 'before'); return; }
+  if(b.dataset.action==='photo-metadata'){
+    engine.setPhotoMetadata(b.dataset.metadataAction).then(job=>{state.photoMetadata=job;renderMain();toast(job.options?.dry_run?'Date inspection started.':'Date repair updated.');}).catch(err=>toast(err.message));return;
+  }
   if (b.dataset.action === 'photo-preparation') {
     const action = b.dataset.prepAction || 'start';
     engine.setPhotoPreparation(action).then(result => { state.photoPreparation = result; renderMain(); toast(action === 'pause' ? 'Preview preparation paused.' : 'Preview preparation started.'); }).catch(err => toast(err.message));
@@ -2260,6 +2329,7 @@ function setVaultOnly(on) {
     state.photoAlbums = [];
     state.photoAlbumsLoaded = false;
     state.photoPreparation = null;
+  state.photoMetadata=null;state.photoJumpAnchor='';state.photoLastJumpAnchor='';state.photoSeek=null;state.photoFallbackDate='';
     state.photoDateSummary = null;
   }
   const row = $('#username-row');

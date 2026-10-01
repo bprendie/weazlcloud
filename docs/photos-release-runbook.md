@@ -21,7 +21,8 @@ volume; it has no network, no vault volume and no private path or key.
 | Restic repositories or shared manifests/objects/key envelopes | Preserve the configured backend and all its required keys. A Photos UI update never migrates or deletes these. |
 | `.weazl-photo-ingest/*.enc` | Durable logical upload receipts. Keep with the vault; completed receipts prevent duplicate uploads after lost replies. |
 | Node `uploads/` | Existing byte-engine manifests/chunks and unfinished staging. Preserve active sessions or explicitly cancel them. Unfinished sessions retain for 24 hours. |
-| `.weazl-photo-jobs.enc` and preparation state | Durable per-asset jobs, attempts and leases. Pending catalog markers retry checkpoint creation after unlock/reload. |
+| `.weazl-photo-jobs.enc` and preparation state | Durable per-asset jobs, attempts and leases. Pending catalog markers on Photos uploads and sidecars retry checkpoint creation after unlock/reload. |
+| `.weazl-photo-metadata.enc` / `.weazl-photo-metadata-dry-run.enc` | Encrypted capture-date repair options, source checkpoints and private per-asset outcomes. Preserve it with the catalog. Queued/running work resumes after owner unlock; paused work stays paused. Dry-run output preserves the apply checkpoint; a durable sequence selects the latest job. |
 | `.weazl-photos-index.enc`, preview/failure/thumbnail caches | Encrypted derived data. Rebuild from the canonical catalog and originals; clearing a cache must not erase albums or edits. |
 | `.weazl-photo-selections/*.enc` | Owner/revision/visibility-bound 90-minute selections. Expired selections are recreated; do not treat them as permanent albums. |
 | Owner archive directory `.enc` + `.wza` | Encrypted ZIP jobs and indexed encrypted ZIP output. Queue recovery is lazy on the first owner request. Ready output retains for 90 minutes. |
@@ -93,6 +94,18 @@ No automatic cleanup of duplicate originals, old repositories or rollback data
 is part of this release. Date-only metadata changes reuse pixel cache identities.
 
 ## Restart, failure and rollback
+
+For date repair, use **Inspect dates** before **Repair dates**, or the owner
+`/api/v1/photos/metadata-jobs` endpoint documented in [photo-api.md](photo-api.md).
+Keep the private report; unresolved/ambiguous/unsupported cases are not permission
+to delete their sources. A running job continues without the browser. A locked
+vault cancels work and resumes queued work after unlock; an explicit pause persists.
+`paused_error` requires fixing storage and explicitly resuming. Commit-before-job-
+checkpoint recovery compares the current catalog instead of applying twice.
+Do not run the old sequential `BackfillPhotoMetadata` helper with a plaintext
+checkpoint against live data; the service operator path is encrypted and batched.
+Date-only changes reuse existing pixel caches. See the
+[timeline verification record](photos-timeline-verification-2026-10-01.md).
 
 1. Preserve the current image/config and consistent data backup before rollout.
    Check active imports/transfers/jobs and settle or checkpoint affected workers.

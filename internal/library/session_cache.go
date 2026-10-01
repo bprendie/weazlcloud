@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"strings"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -33,11 +34,16 @@ func (l *Library) loadCatalogSession(session uint64) error {
 		return err
 	}
 	l.catalogSession, l.catalogLoaded = session, true
+	go func() { _, _ = l.PhotoMetadataStatus() }()
 	if !l.photoAutoDisabled {
 		pending := []catalog.File{}
 		for _, file := range l.catalog.List() {
 			if file.PhotoProcessingPending {
-				pending = append(pending, file)
+				if strings.HasSuffix(strings.ToLower(file.Path), ".json") {
+					l.noteMetadataSidecar(file.Path)
+				} else {
+					pending = append(pending, file)
+				}
 			}
 		}
 		if len(pending) != 0 {
@@ -59,10 +65,12 @@ func (l *Library) clearSessionCache() {
 	l.photoMediaByID, l.photoHiddenFolders = nil, nil
 	l.photoDateSummary = PhotoDateSummary{}
 	l.photoQueryCache, l.photoQueryOrder = nil, nil
+	l.photoNavigationCache = nil
 	l.photoDateSummaryEpoch, l.photoArchivedCount = 0, 0
 	l.photoReady = false
 	l.photoMu.Unlock()
 	l.clearPhotoJobMemory()
+	l.clearMetadataMemory()
 }
 
 // ForgetVaultSession clears decrypted metadata after an explicit vault lock.

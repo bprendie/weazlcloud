@@ -108,7 +108,7 @@ func (l *Library) photoMetadataFiles(ctx context.Context, root string) ([]catalo
 	prefix := strings.TrimSuffix(strings.TrimSpace(root), "/")
 	files := make([]catalog.File, 0)
 	for _, file := range l.catalog.List() {
-		if file.Folder || !photoMedia(file.Path) || !strings.HasPrefix(file.Path, PhotosRoot) {
+		if file.Folder || !photoMedia(file.Path) || file.PhotoParentID != "" || !inPhotoRoot(file.Path) {
 			continue
 		}
 		if prefix != "" && file.Path != prefix && !strings.HasPrefix(file.Path, prefix+"/") {

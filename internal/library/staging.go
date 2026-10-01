@@ -116,6 +116,7 @@ func (l *Library) commitStaged(ctx context.Context, stage stagedUpload) (catalog
 		stage.Reference = &ref
 	}
 	f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Reference: stage.Reference, Present: true}
+	f.PhotoProcessingPending = l.needsPhotoProcessing(f.Path)
 	if err := l.catalog.Put(f); err != nil {
 		return catalog.File{}, err
 	}
@@ -254,9 +255,13 @@ func (l *Library) setStageActive(id string, active bool) {
 	}
 	idle := len(l.activeStages) == 0 && l.photoImports == 0
 	pending := l.takePendingPhotoIngestLocked()
+	metadataPending := len(l.pendingMetadataDirectories) > 0
 	l.stageMu.Unlock()
 	if len(pending) > 0 {
 		go l.queuePhotoIngestFiles(pending)
+	}
+	if !active && idle && metadataPending {
+		go l.flushMetadataSidecars()
 	}
 	if !active && idle {
 		l.resumePhotoPreparation()

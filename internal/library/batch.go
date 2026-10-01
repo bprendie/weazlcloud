@@ -207,6 +207,7 @@ func (l *Library) commitStagedBatch(ctx context.Context, requests []batchRequest
 		ref := resticReference(stage.Snap, stage.Object, stage.Hash)
 		stage.Reference = &ref
 		f := catalog.File{Path: stage.Path, Size: stage.Size, Mtime: stage.Mtime, Hash: stage.Hash, Snap: stage.Snap, Object: stage.Object, Reference: &ref, Present: true}
+		f.PhotoProcessingPending = l.needsPhotoProcessing(f.Path)
 		if err := l.catalog.Put(f); err != nil {
 			return err
 		}

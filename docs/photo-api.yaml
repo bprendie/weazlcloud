@@ -12,6 +12,133 @@ security:
 - deviceBearer: []
 - accountCookie: []
 paths:
+  /api/v1/photos/metadata-jobs:
+    get:
+      summary: Owner metadata repair status or paged private report
+      operationId: getPhotoMetadataJob
+      parameters:
+      - in: query
+        name: report
+        schema:
+          type: string
+          enum:
+          - '1'
+      - in: query
+        name: cursor
+        schema:
+          type: integer
+          minimum: 0
+      responses:
+        '200':
+          description: Job status or up to 100 private asset outcomes
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/PhotoMetadataJob'
+                - $ref: '#/components/schemas/PhotoMetadataReport'
+        '401':
+          $ref: '#/components/responses/Error401'
+    post:
+      summary: Start, inspect, pause, resume or retry owner capture-date repair
+      operationId: setPhotoMetadataJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - action
+              properties:
+                action:
+                  type: string
+                  enum:
+                  - start
+                  - dry-run
+                  - pause
+                  - resume
+                  - retry
+                root:
+                  type: string
+                  default: Photos
+                  maxLength: 1024
+                dry_run:
+                  type: boolean
+                sidecars_only:
+                  type: boolean
+      responses:
+        '200':
+          description: Durable background job status; no browser lifetime dependency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoMetadataJob'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '409':
+          $ref: '#/components/responses/Error409'
+  /api/v1/photos/seek:
+    get:
+      summary: Seek or continue a bounded continuous capture-date timeline
+      operationId: seekPhotoTimeline
+      description: Uses the same owner-private scope as dates. at navigates without filtering to that day. cursor
+        must retain the identical scope. No source media is restored.
+      parameters:
+      - in: query
+        name: at
+        schema:
+          type: string
+          maxLength: 10
+      - in: query
+        name: rank
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: around
+        schema:
+          type: string
+          maxLength: 128
+      - in: query
+        name: cursor
+        schema:
+          type: string
+          maxLength: 8192
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 100
+      - $ref: '#/components/parameters/PhotoScope_mode'
+      - $ref: '#/components/parameters/PhotoScope_album'
+      - $ref: '#/components/parameters/PhotoScope_date'
+      - $ref: '#/components/parameters/PhotoScope_search'
+      - $ref: '#/components/parameters/PhotoScope_q'
+      - $ref: '#/components/parameters/PhotoScope_camera'
+      - $ref: '#/components/parameters/PhotoScope_type'
+      - $ref: '#/components/parameters/PhotoScope_from'
+      - $ref: '#/components/parameters/PhotoScope_to'
+      - $ref: '#/components/parameters/PhotoScope_outside_albums'
+      - $ref: '#/components/parameters/PhotoScope_unknown'
+      - $ref: '#/components/parameters/PhotoScope_hidden'
+      responses:
+        '200':
+          description: Page, stable anchor, rank, scoped total and before/after cursors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoNavigationPage'
+        '400':
+          $ref: '#/components/responses/Error400'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '409':
+          $ref: '#/components/responses/Error409'
   /api/v1/devices:
     get:
       summary: List owner devices
@@ -387,24 +514,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  months:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        month:
-                          type: string
-                        count:
-                          type: integer
-                          format: int64
-                  unknown_dates:
-                    type: integer
-                    format: int64
-                  generation:
-                    type: integer
-                    format: int64
+                $ref: '#/components/schemas/PhotoNavigationDates'
         '400':
           $ref: '#/components/responses/Error400'
         '401':
@@ -424,14 +534,23 @@ paths:
         '507':
           $ref: '#/components/responses/Error507'
       parameters:
-      - name: hidden
-        in: query
-        required: false
+      - $ref: '#/components/parameters/PhotoScope_mode'
+      - $ref: '#/components/parameters/PhotoScope_album'
+      - $ref: '#/components/parameters/PhotoScope_date'
+      - $ref: '#/components/parameters/PhotoScope_search'
+      - $ref: '#/components/parameters/PhotoScope_q'
+      - $ref: '#/components/parameters/PhotoScope_camera'
+      - $ref: '#/components/parameters/PhotoScope_type'
+      - $ref: '#/components/parameters/PhotoScope_from'
+      - $ref: '#/components/parameters/PhotoScope_to'
+      - $ref: '#/components/parameters/PhotoScope_outside_albums'
+      - $ref: '#/components/parameters/PhotoScope_unknown'
+      - $ref: '#/components/parameters/PhotoScope_hidden'
+      - in: query
+        name: month
         schema:
           type: string
-          enum:
-          - '0'
-          - '1'
+          pattern: ^[0-9]{4}-[0-9]{2}$
   /api/v1/photos/assets/{id}:
     get:
       summary: Read one visible photo
@@ -2124,7 +2243,276 @@ components:
       type: apiKey
       in: cookie
       name: weazl_session
+  parameters:
+    PhotoScope_mode:
+      in: query
+      name: mode
+      schema:
+        type: string
+        enum:
+        - all
+        - favorites
+        - archived
+        - hidden
+    PhotoScope_album:
+      in: query
+      name: album
+      schema:
+        type: string
+        maxLength: 1024
+    PhotoScope_date:
+      in: query
+      name: date
+      schema:
+        type: string
+        maxLength: 10
+    PhotoScope_search:
+      in: query
+      name: search
+      schema:
+        type: string
+        enum:
+        - '1'
+    PhotoScope_q:
+      in: query
+      name: q
+      schema:
+        type: string
+        maxLength: 256
+    PhotoScope_camera:
+      in: query
+      name: camera
+      schema:
+        type: string
+        maxLength: 120
+    PhotoScope_type:
+      in: query
+      name: type
+      schema:
+        type: string
+        enum:
+        - image
+        - video
+    PhotoScope_from:
+      in: query
+      name: from
+      schema:
+        type: string
+        format: date
+    PhotoScope_to:
+      in: query
+      name: to
+      schema:
+        type: string
+        format: date
+    PhotoScope_outside_albums:
+      in: query
+      name: outside_albums
+      schema:
+        type: string
+        enum:
+        - '1'
+    PhotoScope_unknown:
+      in: query
+      name: unknown
+      schema:
+        type: string
+        enum:
+        - '1'
+    PhotoScope_hidden:
+      in: query
+      name: hidden
+      schema:
+        type: string
+        enum:
+        - '1'
   schemas:
+    PhotoNavigationBucket:
+      type: object
+      required:
+      - month
+      - count
+      - rank
+      properties:
+        month:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+        rank:
+          type: integer
+          minimum: 0
+    PhotoNavigationDates:
+      type: object
+      required:
+      - months
+      - known_dates
+      - unknown_dates
+      - total
+      - generation
+      properties:
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoNavigationBucket'
+        days:
+          type: array
+          maxItems: 31
+          items:
+            $ref: '#/components/schemas/PhotoNavigationBucket'
+        known_dates:
+          type: integer
+          minimum: 0
+        unknown_dates:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+        generation:
+          type: integer
+          minimum: 0
+    PhotoNavigationPage:
+      allOf:
+      - $ref: '#/components/schemas/PhotoPage'
+      - type: object
+        required:
+        - start
+        - position
+        - total
+        properties:
+          anchor_id:
+            type: string
+          start:
+            type: integer
+            minimum: 0
+          position:
+            type: integer
+            minimum: 0
+          total:
+            type: integer
+            minimum: 0
+    PhotoMetadataJob:
+      type: object
+      required:
+      - status
+      - total
+      - examined
+      - updated
+      - unchanged
+      - unresolved
+      - failed
+      - supported_embedded
+      properties:
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+        version:
+          type: integer
+        parser:
+          type: string
+        options:
+          type: object
+          properties:
+            root:
+              type: string
+            dry_run:
+              type: boolean
+            sidecars_only:
+              type: boolean
+        status:
+          type: string
+          enum:
+          - idle
+          - queued
+          - running
+          - paused
+          - paused_error
+          - complete
+          - complete_with_issues
+        total:
+          type: integer
+          minimum: 0
+        examined:
+          type: integer
+          minimum: 0
+        updated:
+          type: integer
+          minimum: 0
+        unchanged:
+          type: integer
+          minimum: 0
+        unresolved:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        initial_known:
+          type: integer
+          minimum: 0
+        initial_unknown:
+          type: integer
+          minimum: 0
+        supported_embedded:
+          type: array
+          items:
+            type: string
+            enum:
+            - jpeg-exif
+        error:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+    PhotoMetadataEntry:
+      type: object
+      required:
+      - id
+      - path
+      - hash
+      - revision
+      - status
+      properties:
+        id:
+          type: string
+        path:
+          type: string
+        hash:
+          type: string
+        category:
+          type: string
+        source:
+          type: string
+        revision:
+          type: integer
+        status:
+          type: string
+          enum:
+          - pending
+          - updated
+          - unchanged
+          - unresolved
+          - failed
+        attempts:
+          type: integer
+        queue_version:
+          type: integer
+    PhotoMetadataReport:
+      type: object
+      required:
+      - entries
+      - next_cursor
+      properties:
+        entries:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/PhotoMetadataEntry'
+        next_cursor:
+          type: integer
+          minimum: 0
     Error:
       type: object
       properties:

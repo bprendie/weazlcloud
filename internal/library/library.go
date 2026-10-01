@@ -17,77 +17,85 @@ import (
 )
 
 type Library struct {
-	mu                    sync.Mutex
-	stageMu               sync.Mutex
-	activeStages          map[string]struct{}
-	resticCommits         atomic.Uint64
-	batchCommits          atomic.Uint64
-	batchMu               sync.Mutex
-	batchPending          []batchRequest
-	batchWake             chan struct{}
-	batchRunning          bool
-	batchDone             chan struct{}
-	thumbMu               sync.Mutex
-	thumbJobs             map[string]*thumbnailJob
-	changeMu              sync.RWMutex
-	changeSink            ChangeSink
-	activityMu            sync.RWMutex
-	activity              func() func()
-	previewLease          func(context.Context) (context.Context, func(), bool)
-	previewLifetime       context.Context
-	stopPreviews          context.CancelFunc
-	repo                  string
-	vault                 *vault.Vault
-	catalog               *catalog.Catalog
-	catalogSession        uint64
-	catalogLoaded         bool
-	storageSummary        StorageSummary
-	storageSummaryAt      time.Time
-	storageSummaryVersion uint64
-	storageSummaryReady   bool
-	backend               Backend
-	sharedStore           *sharedstore.Store
-	ownerID               string
-	sharedWrites          bool
-	albumMetadata         map[string]albumMetadata
-	photoMu               sync.Mutex
-	photoRows             []catalog.File
-	photoMediaRows        []catalog.File
-	photoByID             map[string]catalog.File
-	photoByPath           map[string]int
-	photoMediaByPath      map[string]int
-	photoMediaByID        map[string]int
-	photoHiddenFolders    map[string]bool
-	photoArchivedCount    int
-	photoReady            bool
-	photoEpoch            uint64
-	photoSortedEpoch      uint64
-	photoQueryCache       map[string]photoQueryView
-	photoQueryOrder       []string
-	photoQueryEpoch       uint64
-	photoDateSummary      PhotoDateSummary
-	photoDateSummaryEpoch uint64
-	photoSave             *time.Timer
-	photoSaveEpoch        uint64
-	photoSaveWG           sync.WaitGroup
-	photoPrepMu           sync.Mutex
-	photoPrep             photoPreparation
-	photoPrepLoaded       bool
-	photoPrepRunning      bool
-	photoResumeWaiting    bool
-	photoPrepCancel       context.CancelFunc
-	photoStoppingForLock  bool
-	photoJobsMu           sync.Mutex
-	photoJobs             photos.JobQueue
-	photoJobsLoaded       bool
-	photoPrepared         map[string]int
-	photoCacheEpoch       uint64
-	photoImports          int
-	pendingPhotoIngest    map[string]catalog.File
-	photoAutoDisabled     bool
-	photoFailureMu        sync.Mutex
-	photoFailureCount     int
-	photoFailuresKnown    bool
+	metadataMu                 sync.Mutex
+	metadataJob                *PhotoMetadataJob
+	metadataRunning            bool
+	metadataCancel             context.CancelFunc
+	metadataDone               chan struct{}
+	mu                         sync.Mutex
+	stageMu                    sync.Mutex
+	activeStages               map[string]struct{}
+	resticCommits              atomic.Uint64
+	batchCommits               atomic.Uint64
+	batchMu                    sync.Mutex
+	batchPending               []batchRequest
+	batchWake                  chan struct{}
+	batchRunning               bool
+	batchDone                  chan struct{}
+	thumbMu                    sync.Mutex
+	thumbJobs                  map[string]*thumbnailJob
+	changeMu                   sync.RWMutex
+	changeSink                 ChangeSink
+	activityMu                 sync.RWMutex
+	activity                   func() func()
+	previewLease               func(context.Context) (context.Context, func(), bool)
+	previewLifetime            context.Context
+	stopPreviews               context.CancelFunc
+	repo                       string
+	vault                      *vault.Vault
+	catalog                    *catalog.Catalog
+	catalogSession             uint64
+	catalogLoaded              bool
+	storageSummary             StorageSummary
+	storageSummaryAt           time.Time
+	storageSummaryVersion      uint64
+	storageSummaryReady        bool
+	backend                    Backend
+	sharedStore                *sharedstore.Store
+	ownerID                    string
+	sharedWrites               bool
+	albumMetadata              map[string]albumMetadata
+	photoMu                    sync.Mutex
+	photoRows                  []catalog.File
+	photoMediaRows             []catalog.File
+	photoByID                  map[string]catalog.File
+	photoByPath                map[string]int
+	photoMediaByPath           map[string]int
+	photoMediaByID             map[string]int
+	photoHiddenFolders         map[string]bool
+	photoArchivedCount         int
+	photoReady                 bool
+	photoEpoch                 uint64
+	photoSortedEpoch           uint64
+	photoQueryCache            map[string]photoQueryView
+	photoQueryOrder            []string
+	photoQueryEpoch            uint64
+	photoNavigationCache       map[string]*photoNavigationProjection
+	photoNavigationEpoch       uint64
+	photoDateSummary           PhotoDateSummary
+	photoDateSummaryEpoch      uint64
+	photoSave                  *time.Timer
+	photoSaveEpoch             uint64
+	photoSaveWG                sync.WaitGroup
+	photoPrepMu                sync.Mutex
+	photoPrep                  photoPreparation
+	photoPrepLoaded            bool
+	photoPrepRunning           bool
+	photoResumeWaiting         bool
+	photoPrepCancel            context.CancelFunc
+	photoStoppingForLock       bool
+	photoJobsMu                sync.Mutex
+	photoJobs                  photos.JobQueue
+	photoJobsLoaded            bool
+	photoPrepared              map[string]int
+	photoCacheEpoch            uint64
+	photoImports               int
+	pendingPhotoIngest         map[string]catalog.File
+	pendingMetadataDirectories map[string]bool
+	photoAutoDisabled          bool
+	photoFailureMu             sync.Mutex
+	photoFailureCount          int
+	photoFailuresKnown         bool
 }
 
 const TrashLifetime = 30 * 24 * time.Hour

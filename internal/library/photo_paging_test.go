@@ -41,6 +41,9 @@ func TestPhotoTimelineAroundAnchorHasBothDirections(t *testing.T) {
 }
 
 func stopPhotoIndexSaveForTest(l *Library) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = l.Drain(ctx)
 	l.photoPrepMu.Lock()
 	if l.photoPrepRunning {
 		if l.photoPrepCancel != nil {
@@ -158,6 +161,7 @@ func TestPhotoIndexCacheIsEncryptedAndCheckedAgainstCatalog(t *testing.T) {
 	}
 	second := New(first.repo, filepath.Join(filepath.Dir(first.repo), "catalog.enc"), first.vault)
 	second.backend = &isolatedLegacy{root: filepath.Join(filepath.Dir(first.repo), "library")}
+	second.photoAutoDisabled = true
 	t.Cleanup(func() {
 		stopPhotoIndexSaveForTest(second)
 	})
@@ -170,6 +174,7 @@ func TestPhotoIndexCacheIsEncryptedAndCheckedAgainstCatalog(t *testing.T) {
 	}
 	third := New(first.repo, filepath.Join(filepath.Dir(first.repo), "catalog.enc"), first.vault)
 	third.backend = &isolatedLegacy{root: filepath.Join(filepath.Dir(first.repo), "library")}
+	third.photoAutoDisabled = true
 	t.Cleanup(func() {
 		stopPhotoIndexSaveForTest(third)
 	})

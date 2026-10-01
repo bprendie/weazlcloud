@@ -328,3 +328,22 @@ button[aria-pressed=true]{color:var(--yellow)}
 .photo-grid{display:block;min-width:0}.photo-justified-row{display:flex;gap:8px;margin-bottom:8px;overflow:hidden}.photo-grid .photo-day-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 8px;padding:0;border:0;overflow:hidden}.photo-day-heading .text-button{flex-shrink:0;font-size:11px}.photo-grid .photo-tile,.photo-grid.density-compact .photo-tile{height:100%;min-height:0;min-width:0;flex-shrink:0;border:0;padding:0;position:relative;overflow:hidden;background:#19171f}.photo-grid .photo-tile .grid-open{height:100%;width:100%;min-height:0;border:0;padding:0;display:block}.photo-grid .photo-tile .grid-preview{height:100%;width:100%;object-fit:cover}.photo-grid .photo-tile .grid-card-info{position:absolute;bottom:0;left:0;right:0;padding:18px 8px 7px;background:linear-gradient(transparent,#000b);opacity:0;pointer-events:none}.photo-grid .photo-tile:hover .grid-card-info,.photo-grid .photo-tile:focus-within .grid-card-info{opacity:1}.photo-grid .photo-tile.selected{box-shadow:inset 0 0 0 3px var(--purple)}.photo-grid .photo-tile.selected .grid-open{padding:3px}.photo-video-badge,.photo-favorite-badge{position:absolute;bottom:8px;right:8px;color:#fff;text-shadow:0 1px 5px #000}.photo-favorite-badge{right:auto;left:8px;color:var(--yellow)}.photo-viewer-actions{flex-wrap:wrap;justify-content:flex-end}.photo-viewer-top{flex-wrap:wrap}
 
 .photo-search-filters{margin:12px 0;color:var(--muted);font-size:12px}.photo-search-filters summary{cursor:pointer}.photo-search-filters>div{display:flex;gap:14px;flex-wrap:wrap;padding:12px 0}.photo-search-filters label{display:flex;gap:8px;align-items:center}.photo-search-filters input,.photo-search-filters select{min-width:0;max-width:200px;color:var(--text);background:#141518;border:1px solid #49464f;padding:8px}.duplicate-group{margin:18px 0}.duplicate-group .file-row{grid-template-columns:minmax(0,1fr) auto}.duplicate-group .file-name{overflow-wrap:anywhere}
+
+/* Capture-date navigation: quiet at rest, larger only during interaction. */
+.photo-time-rail{position:fixed;right:12px;top:150px;bottom:170px;width:52px;z-index:7;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
+.photo-time-rail button,.photo-time-track,.photo-time-picker{pointer-events:auto}
+.photo-time-rail[hidden]{display:none}
+.photo-time-track{position:relative;width:44px;flex:1;min-height:80px;touch-action:none;cursor:ns-resize;border-right:2px solid #7138ab55;outline-offset:5px}
+.photo-time-track:focus-visible{outline:2px solid var(--purple,#b66aff)}
+.photo-time-thumb{position:absolute;right:-5px;width:8px;height:20px;transform:translateY(-50%);border-radius:5px;background:#b66aff;pointer-events:none}
+.photo-time-year{position:absolute;right:7px;transform:translateY(-50%);font-size:11px;color:#b9a6c9;background:#09080dee;border:0;padding:6px 4px;cursor:pointer}
+.photo-time-badge{position:absolute;right:52px;transform:translateY(-50%);background:#100819;border:1px solid #b66aff;color:#e7caff;padding:8px 12px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none}
+.photo-time-rail.dragging .photo-time-badge,.photo-time-track:focus-visible .photo-time-badge{opacity:1}
+.photo-time-calendar,.photo-time-unknown{width:36px;height:32px;color:#c394ff;border:1px solid #7138ab55;border-radius:6px;background:#100819;cursor:pointer}
+.photo-time-picker{position:absolute;right:46px;top:0;background:#100819;border:1px solid #7138ab;padding:8px;border-radius:8px;white-space:nowrap}
+.photo-time-picker[hidden]{display:none}
+.photo-grid{margin-right:54px}
+@media(max-width:700px){.photo-time-rail{right:5px;top:155px;bottom:160px;width:44px}.photo-time-year{font-size:10px}.photo-grid{margin-right:42px}.photo-time-badge{right:44px}}
+@media(prefers-reduced-motion:reduce){.photo-time-rail *{scroll-behavior:auto}}
+/* A final row can become the viewport anchor even in a tiny collection. */
+.photo-grid{padding-bottom:max(0px,calc(100vh - 260px))}

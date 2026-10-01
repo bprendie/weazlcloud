@@ -43,6 +43,9 @@ func (l *Library) publishChange(change Change) {
 	if change.Kind == "put" || change.Kind == "restore" || change.Kind == "copy" {
 		for _, name := range change.Paths {
 			if strings.HasPrefix(name, PhotosRoot) {
+				if strings.HasSuffix(strings.ToLower(name), ".json") {
+					l.noteMetadataSidecar(name)
+				}
 				if file, ok := l.catalog.Get(name); ok && !file.Folder && photoPreviewable(file.Path) {
 					l.deferPhotoIngest(file)
 				}

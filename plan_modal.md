@@ -715,6 +715,13 @@ above that production was excluded describe the preceding local-only pass.
 
 See [the production rollout record](docs/photos-production-rollout-2026-10-01.md).
 Existing-data capture-date backfill remains **unfinished**: all 37,082 existing
-media entries have unknown capture dates. The library migration needs a safe,
-durable batched operator integration before it can repair this live collection.
-The new requested date rail is still a design discussion, not implemented work.
+media entries have unknown capture dates. The durable encrypted, batched operator integration and continuous date rail are
+now implemented locally in the October 1 timeline workbook. Live dry-run/apply
+and source/membership reconciliation remain T6 work; local fixture dates are not
+proof that the production collection has been repaired.
+
+The executable follow-up is now defined in
+[the October 1 dates/timeline workbook](photos_timeline_workbook_2026-10-01.md).
+Its T0–T6 phases cover metadata repair integration, scoped direct seeking, the
+desktop/mobile rail, local acceptance checks and a separately authorized rollout.
+Additional Immich-style features are ranked proposals, not added implementation scope.
