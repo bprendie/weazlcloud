@@ -6,3 +6,4 @@
 *.test
 /internal/desk/ui/
 /.build/
+/deploy/compose.env

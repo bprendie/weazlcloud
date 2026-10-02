@@ -1,9 +1,12 @@
 # WeazlCloud
 
 A household library node. Your files on metal you own. Send recipient a grab link.
-Mount the same library in Files over `davs://`. No FUSE. No Weazl account.
+Mount the same library in Files over `davs://`. Accounts and vaults stay on your own host.
 
 ## Photos and music in the library
+
+See the [October 2 Photos selection release](docs/release-2026-10-02.md) for
+current behavior and verification.
 
 Hover over a photo to reveal its selection circle (always visible on touch).
 Select one, then click more tiles or Shift-click a range. The selection bar offers
@@ -430,14 +433,25 @@ separate privacy decision.
 The desk mockup talks to these endpoints when it is served by the node
 (`engine.js`). `make mockup` on :3001 stays a preview with no engine.
 
-When you hang this on the Ubuntu box: join the existing Traefik network, three HTTPS names, no host-published vault port. Backup `/data` with WeazlBack. Cut two kits.
+Join the API service to your reverse-proxy network and retain a backup of `/data`.
 
 ```sh
-docker compose -f deploy/compose.yaml up --build -d
+cp deploy/compose.env.example deploy/compose.env
+# Edit the environment file for your host and existing data mount.
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml config --quiet
+docker compose --env-file deploy/compose.env -f deploy/compose.yaml up --build -d
 ```
 
+Both services build from the same checkout and use `WEAZLCLOUD_IMAGE` (default
+`weazlcloud:local`). `WEAZLCLOUD_DATA_SOURCE` can select an existing absolute host
+directory; unset keeps the named volume. Optional preview settings pass through
+without replacing automatic sizing. See the [Compose guide](docs/docker-compose.md)
+for mounts, resource settings and upgrades. Keep an existing installation's host
+override and vault mount.
+
 The container does not publish 80/443. Traefik already terminates HTTPS on
-this household. Attach the service to that network and hang three names:
+this household. Route the desk and grab listeners separately; WebDAV can stay
+private:
 
 | Name | Port | Job |
 |---|---|---|

@@ -1,6 +1,7 @@
 # Photos release and recovery runbook
 
-Updated October 1, 2026. Bob subsequently authorized production deployment.
+Updated October 2, 2026. See the [Photos selection release](release-2026-10-02.md)
+and [Compose guide](docker-compose.md) for the current UI and deployment settings.
 See [the modal rollout record](photos-production-rollout-2026-10-01.md) and
 [the timeline rollout record](photos-timeline-rollout-2026-10-01.md) for the preserved
 settings/data checkpoint, reconciliation and remaining capture-date backfill.
@@ -52,7 +53,8 @@ make smoke-photos PHOTOS_PYTHON=/path/to/playwright-venv/bin/python
 
 The authenticated Photos smoke covers preparation, Library controls, dated
 viewer navigation, album editing, guest ZIP transfers and explicit Hidden
-surfaces on both backends. CI runs it after building the container. Exercise
+surfaces on both backends, including hover/touch selection, deselection, bulk
+Archive/Hidden restore and selection toolbar clearance beside the date rail. CI runs it after building the container. Exercise
 Safari and Chromium with representative JPEG/PNG, transparency, progressive
 JPEG, HEIC/AVIF, portrait/mirrored EXIF and browser-playable videos. Unsupported
 codecs show a placeholder or download fallback; there is no playback transcoder,
@@ -137,8 +139,11 @@ Date-only changes reuse existing pixel caches. See the
    of post-backup edits/uploads/admissions, not just an image downgrade.
 
 Account deletion remains final removal of that owner's files, upload data,
-albums, device credentials and frozen grants. Hiding a folder is only Photos
-presentation within the owner's vault and is neither deletion nor grant revocation.
+albums, device credentials and frozen grants. Hiding a photo or folder is only
+Photos presentation within the owner's vault and is neither deletion nor grant
+revocation. Preserve individual asset hidden flags as well as inherited folder
+flags; an older image that understands only folder hiding can expose those
+assets in its Photos views.
 
 ## Thumbnail cache / queue upgrade (October 1, 2026)
 

@@ -1,20 +1,36 @@
+x-weazlcloud-build: &weazlcloud-build
+  context: ..
+  dockerfile: deploy/Dockerfile
+
 services:
   weazlcloud:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    image: weazlcloud:local
+    build: *weazlcloud-build
+    image: ${WEAZLCLOUD_IMAGE:-weazlcloud:local}
     environment:
-      WEAZLCLOUD_DATA: /data
-      WEAZLCLOUD_DESK_ADDR: ":7272"
-      WEAZLCLOUD_SHARE_ADDR: ":7273"
-      WEAZLCLOUD_DRIVE_ADDR: ":7274"
-      HOME: /data
-      XDG_CACHE_HOME: /data/cache
-      TMPDIR: /data/tmp
-      WEAZLCLOUD_PREVIEW_WORKER_SOCKET: /run/weazlcloud-photo/worker.sock
+      - WEAZLCLOUD_DATA=/data
+      - WEAZLCLOUD_DESK_ADDR=:7272
+      - WEAZLCLOUD_SHARE_ADDR=:7273
+      - WEAZLCLOUD_DRIVE_ADDR=:7274
+      - HOME=/data
+      - XDG_CACHE_HOME=/data/cache
+      - TMPDIR=/data/tmp
+      - WEAZLCLOUD_PREVIEW_WORKER_SOCKET=/run/weazlcloud-photo/worker.sock
+      - WEAZLCLOUD_PREVIEW_RENDERER=${WEAZLCLOUD_PREVIEW_RENDERER:-auto}
+      # Bare keys remain absent when unset, preserving automatic admission.
+      # Empty numeric values are invalid; omit them rather than assigning "".
+      - WEAZLCLOUD_PREVIEW_BACKGROUND_WORKERS
+      - WEAZLCLOUD_PREVIEW_TOTAL_WORKERS
+      - WEAZLCLOUD_PREVIEW_SOURCE_READERS
+      - WEAZLCLOUD_PREVIEW_MEMORY_BYTES
+      - WEAZLCLOUD_PREVIEW_OWNER_BYTES
+      - WEAZLCLOUD_PREVIEW_OWNER_FILES
+      - WEAZLCLOUD_PREVIEW_NODE_BYTES
+      - WEAZLCLOUD_PREVIEW_BUNDLE
+      - WEAZLCLOUD_PREVIEW_READER
+      - WEAZLCLOUD_PHOTO_SCHEDULE
+      - WEAZLCLOUD_SECURE_COOKIES
     volumes:
-      - weazlcloud-data:/data
+      - ${WEAZLCLOUD_DATA_SOURCE:-weazlcloud-data}:/data
       - weazlcloud-photo-ipc:/run/weazlcloud-photo
     depends_on:
       weazlcloud-photo-worker:
@@ -41,7 +57,8 @@ services:
       start_period: 5s
 
   weazlcloud-photo-worker:
-    image: weazlcloud:local
+    build: *weazlcloud-build
+    image: ${WEAZLCLOUD_IMAGE:-weazlcloud:local}
     entrypoint: ["/usr/local/bin/weazl-photo-worker"]
     environment:
       WEAZLCLOUD_PHOTO_WORKER_SOCKET: /run/weazlcloud-photo/worker.sock
@@ -78,7 +95,7 @@ services:
 #       name: traefik
 #       external: true
 #
-# Hang three HTTPS names on 7272 (desk), 7273 (grab), 7274 (drive).
+# Route desk HTTPS to 7272 and grab HTTPS to 7273. WebDAV on 7274 can stay private.
 # Do not put unlock on the grab hostname.
 #
 # Local loopback peek while developing (not the product default):
