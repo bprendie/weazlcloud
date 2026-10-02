@@ -4,6 +4,8 @@ Updated October 1, 2026. Bob subsequently authorized production deployment.
 See [the modal rollout record](photos-production-rollout-2026-10-01.md) and
 [the timeline rollout record](photos-timeline-rollout-2026-10-01.md) for the preserved
 settings/data checkpoint, reconciliation and remaining capture-date backfill.
+See also the [thumbnail/cache rollout](photos-thumbnail-rollout-2026-10-01.md)
+for the graceful-shutdown fix, consistent checkpoint and live reconciliation.
 The runtime keeps the encrypted catalog authoritative. SQLCipher is a prototype,
 not a new live database or a dependency needed to enable these features.
 

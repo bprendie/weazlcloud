@@ -1,8 +1,9 @@
 # Thumbnail pipeline performance — October 1, 2026
 
 Workbook: [Sol's thumbnail/cache workbook](../photos_thumbnail_cache_workbook_2026-10-01.md).
-Local implementation and functional gates passed. Production rollout evidence is
-recorded separately; the one-hour full-library preparation target is **unmeasured**.
+Local implementation and functional gates passed. The release is live;
+[production rollout evidence](photos-thumbnail-rollout-2026-10-01.md) records
+reconciliation and bounded live sampling; the one-hour full-library preparation target is **unmeasured**.
 
 Baseline revision: `3c410fd` plus the workbook and isolated measurement fixtures.
 Local host: Intel Core i7-1365U, 12 effective logical CPUs, approximately 30 GiB
@@ -188,3 +189,10 @@ not canceled and the normal app shutdown did not drain owner libraries. A follow
 fix wires that lifecycle explicitly and preserves archive outputs; a targeted
 SSE/journal/archive test passes. Final release evidence supersedes the earlier
 `d432dd7` candidate after those additional checks finish.
+
+Final release `8700c60` passed [all CI jobs](https://github.com/bprendie/weazlcloud/actions/runs/36957557012)
+and local `make check`, both-backend container smokes and SSE-aware image rollback
+drills. The post-upgrade six-variant production sample had zero errors; 30 warm
+server-local HTTP requests measured 0.78 ms p50 / 1.02 ms p95, versus 2.70 / 3.83 ms
+before. Originals, metadata, albums and the manual preview pause reconcile. This
+small warm sample does not establish sustained full-bundle throughput.

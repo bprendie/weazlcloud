@@ -3,7 +3,8 @@
 Date: October 1, 2026
 Owner: Bob
 Implementer: Sol
-Status: C0–C6 implemented and locally checked; C7 release verification and deployment in progress.
+Status: Implementation shipped and live verification complete as `8700c60`.
+Open sustained-load performance experiments are listed explicitly below.
 Performance targets not established by the small fixture remain explicit in the measurement report.
 
 ## Outcome
@@ -357,20 +358,20 @@ justify repeating the full test suite.
   `docs/photo-api.yaml`, recovery runbook and C0's performance record with actual
   behavior, limits, migration/export steps, feature fallbacks and measured results.
   Keep future capabilities labeled as future; do not claim unsupported codecs.
-- [ ] Review the complete diff, exclude screenshots/cache artifacts/credentials,
+- [x] Review the complete diff, exclude screenshots/cache artifacts/credentials,
   commit the implementation and docs when execution scope includes committing,
   and push when authorized. Check relevant CI jobs before declaring release-ready.
 - [x] For an authorized rollout, inspect current jobs and effective Compose mounts,
   CPU/RAM overrides, image versions and cache limits. The recent date-repair result
   is historical evidence; verify current status rather than assuming it finished.
-- [ ] Preserve the prior image/config and a consistent recovery point using the
+- [x] Preserve the prior image/config and a consistent recovery point using the
   existing runbook. Checkpoint affected jobs before replacing containers. Preserve
   production bind mounts/settings; never replace them with template named volumes.
-- [ ] Deploy API/worker versions that negotiate the new protocol. Smoke login,
+- [x] Deploy API/worker versions that negotiate the new protocol. Smoke login,
   Library, Photos grid/viewer/rail, Hidden and albums. Verify existing previews
   survive; originals, dates and album membership reconcile. Do not start a global
   rebuild or override a manual pause just because the code was deployed.
-- [ ] Measure a bounded authorized sample before any full preparation run. Tune
+- [x] Measure a bounded authorized sample before any full preparation run. Tune
   within existing CPU/fan and memory limits using observed throughput/RSS. Any
   production ETA uses remaining missing bundles and sustained measured rate.
 - [x] Verify image rollback with the queue compatibility export and legacy cache
@@ -393,7 +394,7 @@ candidate and leave only the live rollout boxes open.
 | C4 | Encrypted adaptive disk cache, efficient writes and eviction | Implemented; focused/race and both-backend smokes passed |
 | C5 | Private bounded RAM/browser caches and smooth repeat scroll | Implemented; focused/race and both-backend smokes passed |
 | C6 | Both-backend smokes, failure drills and measured performance | Functional and delayed-summary navigation gates passed; open performance targets recorded |
-| C7 | Accurate docs, release candidate and scoped rollout evidence | Documentation updated; CI and production rollout pending |
+| C7 | Accurate docs, release candidate and scoped rollout evidence | Shipped 8700c60; all CI, live desktop/mobile and data reconciliation passed |
 
 When handing back a phase, name the commit/diff, changed behavior, tests actually
 run, measurements and remaining limits. Do not count a placeholder, an unrun
@@ -438,3 +439,19 @@ repair complete with reported issues, preview preparation manually paused. The
 private pre-upgrade inventory contains 96,971 Library entries, 37,082 media assets,
 16 albums and three hashed sample originals. Preserve the existing pause and
 API/worker CPU, memory, storage and hostname settings during C7.
+
+The rollout gate caught an unclean shutdown of the previous image and immediately
+restarted it. Follow-up `8700c60` closes admission/SSE streams, drains owner readers
+and journals before locking vaults, and retains ready ZIPs. Targeted lifecycle,
+SSE-aware rollback, both-backend container smokes, full local checks and all final
+[CI jobs](https://github.com/bprendie/weazlcloud/actions/runs/36957557012) passed.
+The clean retry verified 275,971 backup files and brought both services healthy
+in 43.7 seconds. Full Library/photo/date/album reconciliation and three original
+hashes matched. See [the rollout record](docs/photos-thumbnail-rollout-2026-10-01.md).
+
+Live Chromium desktop/mobile smoke passed with zero page errors: menu, inset rail,
+grid, decoded viewer, date navigation, Hidden, 16 albums and Library. The warm
+production thumbnail sample measured 1.02 ms p95; the manual preparation pause
+remains intact. All implementation/release phases are shipped. The unchecked
+C0/C6 lines remain honest sustained-load measurement follow-ups, including the
+20% foreground/backfill comparison and representative one-hour throughput target.

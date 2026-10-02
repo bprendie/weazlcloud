@@ -113,7 +113,8 @@ encrypted incremental job journal. Grid and viewer requests share source reads;
 one canceled request does not cancel surviving consumers. Existing `media-v4`
 previews remain usable. Set `WEAZLCLOUD_PREVIEW_READER=off` for the bounded CLI
 reader or `WEAZLCLOUD_PREVIEW_BUNDLE=off` for the legacy single-output renderer.
-See [measurements and limits](docs/photos-thumbnail-performance-2026-10-01.md).
+See [measurements and limits](docs/photos-thumbnail-performance-2026-10-01.md) and
+[the verified rollout](docs/photos-thumbnail-rollout-2026-10-01.md).
 
 Compressed server RAM cache bytes count against preview memory, with a ceiling of
 `min(2 GiB, effective RAM/64, preview budget/4)`. Rendering reclaims them before
