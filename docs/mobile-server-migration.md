@@ -1,13 +1,13 @@
 # Mobile server migration and recovery runbook
 
-October 2, 2026. Local implementation notes and operator templates. No production
-command in this document has been executed by this agent. This is not an iOS
-physical-device acceptance report. Deployment is a separate authorized operation.
+October 2, 2026. Implementation notes and operator recovery templates. The
+[production release record](mobile-server-release-2026-10-02.md) gives the executed
+upgrade, recovery copy and integrity audit. Physical iOS testing is separate.
 
-## Observed baseline and scope
+## Pre-release baseline and scope
 
 Operator-supplied read-only observations: production app and photo worker were
-healthy again on `weazlcloud:release-813d258`; production repository HEAD remains
+healthy on `weazlcloud:release-813d258`; pre-upgrade repository HEAD was
 `e3d5ae0`, with dirty custom Compose JSON. Production data is
 `/exports/dockervolume/weazlcloud`, approximately 645 GiB of owner Restic library,
 with approximately 1.4 TB free on XFS. No active upload staging or import watcher
@@ -15,13 +15,12 @@ was observed. These observations are not a drain guarantee: recheck immediately
 before stopping services. The operator reports that GNU `cp --reflink=always`
 passed on a 1 MiB XFS test, `cmp` verified the copy, and the probe was removed.
 The sibling directory `/exports/dockervolume/weazlcloud-backups` was created with
-mode 0700. This verifies the small reflink probe only: the full consistent snapshot
-and deployment have not been performed.
+mode 0700. The later full consistent copy and deployment passed; see the release record.
 
 Local implementation baseline is `a077baf336764ead17cbe983e44907a89efa16fd` plus the
-uncommitted multi-agent working tree. Preserve that tree and the production custom
-configuration. Never pull over conflicting local work or replace the custom
-Compose file with the repository example.
+implementation later released as `15c45144b660eb5d673851d1ca0ae51396407116`.
+Preserve the production custom configuration. Never pull over conflicting local
+work or replace the custom Compose file with the repository example.
 
 ## Formats and exact paths
 
@@ -131,10 +130,10 @@ PATH="$task_restic_dir:$PATH" go test -race ./internal/library \
   -run '^TestPhotoComponentResticUsesFlatStorageKey$' -count=1
 ```
 
-These fixtures cover the owned migration and Photos failure boundaries. They do
-not establish a complete MS7 gate: full-suite, container/resource measurements,
-account lifecycle, backup/transport and physical-device evidence belong in the
-parent validation report. No production measurements are inferred from fixtures.
+These fixtures cover migration and Photos failure boundaries. Full-suite,
+container/resource, account lifecycle and backup/transport results are in the
+[validation record](mobile-server-validation-2026-10-02.md). Physical-device
+verification remains separate; local fixtures do not measure production throughput.
 
 Schema-2 collection cursors are encrypted, domain-bound (`photo-collections`),
 versioned and bound to `hidden=1` versus normal context. Old/future/other-domain

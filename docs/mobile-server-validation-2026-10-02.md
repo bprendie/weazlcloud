@@ -3,8 +3,8 @@
 Frozen candidate: `weazlcloud:smoke`, version `mobile-server-local`, image ID
 `sha256:cd7429e383ca3825a6ebef0bb737ca8e69df5347f03896bd0d11d3949dc5004d`.
 Application code and release documentation are frozen. All server release gates
-are **PASS**. Production rollout is **pending**; no release commit
-or publication is recorded. Companion documents: [contract](mobile-api.md),
+are **PASS**. Production rollout is **complete**; the [release record](mobile-server-release-2026-10-02.md)
+gives the pushed commit, deployed image, recovery copy and live audit. Companion documents: [contract](mobile-api.md),
 [OpenAPI](mobile-api.yaml), [decisions](mobile-server-decisions.md),
 [migration](mobile-server-migration.md).
 
@@ -92,4 +92,4 @@ force-quit; background scheduling; Wi-Fi/cellular transitions; phone staging lim
 and credential rotation with queued URLSession tasks. Record completion, wakeups,
 retransmits and peak staging on physical devices. Keep ordered-PATCH fallback until
 device evidence supports removal. Server passes do not establish iOS readiness.
-Production rollout remains pending a separate deployment record.
+Production rollout and audit passed; see the [release record](mobile-server-release-2026-10-02.md).

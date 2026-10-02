@@ -3,13 +3,11 @@
 Date: **October 2, 2026**
 Owner: Bob
 Implementer: Sol
-Status: **MS0–MS8 server implementation/checks complete; workbook frozen for parent release commit and deployment**
-Source baseline/current local HEAD: **a077baf336764ead17cbe983e44907a89efa16fd**;
-implementation is in the uncommitted shared worktree. The tested local candidate
-is `weazlcloud:smoke`, version `mobile-server-local`, image ID
-`sha256:cd7429e383ca3825a6ebef0bb737ca8e69df5347f03896bd0d11d3949dc5004d`
-(parent-reported). No release commit/push, completed production snapshot or
-deployment is claimed here.
+Status: **MS0–MS8 server work complete; committed, pushed and deployed**
+Source baseline: `a077baf336764ead17cbe983e44907a89efa16fd`.
+Released code: `15c45144b660eb5d673851d1ca0ae51396407116`.
+Production runs `weazlcloud:release-15c45144b660`; see the
+[release record](docs/mobile-server-release-2026-10-02.md).
 
 ## Outcome
 
@@ -32,9 +30,8 @@ Earlier workbooks describe history; current code and this workbook govern this p
 
 - Execute the workbook and record implementation and test evidence. The user has
   explicitly authorized execution, commit/push and eventual production deployment;
-  this supersedes the original planning-only text. Authorization is not evidence
-  that release checks, publication or deployment have occurred. This checkpoint
-  update changes only this workbook; the parent owns final checks and rollout.
+  this supersedes the original planning-only text. Execution and release
+  evidence are recorded below and in the linked release record.
 - Preserve users, vaults, IDs, dates, albums, Hidden state, storage references,
   existing browser/WebDAV flows, active uploads and frozen grabs. No wipe/reimport.
 - Keep Go and the existing encrypted catalog/storage backends. No database
@@ -59,64 +56,37 @@ Earlier workbooks describe history; current code and this workbook govern this p
   Complete final candidate validation and the consistent-snapshot runbook before
   exercising the already granted publication/deployment authorization.
 
-## Execution checkpoint — October 2, 2026
+## Completed execution — October 2, 2026
 
-The implementation, API docs, isolated smoke script and app-agent handoff exist.
-The authoritative release evidence is the
-[validation ledger](docs/mobile-server-validation-2026-10-02.md); companion
-[decisions](docs/mobile-server-decisions.md),
-[migration runbook](docs/mobile-server-migration.md) and
-[app handoff](docs/mobile-app-handoff.md) record contracts and remaining work.
-Checked boxes below mean implemented or evidenced as specified. Local final-image
-passes are recorded below; unchecked boxes identify remaining release deliverables.
+The [validation record](docs/mobile-server-validation-2026-10-02.md) records
+passing `make check`, builds, and browser/container/Photos/native smokes on
+both Restic and shared storage. The image pins Restic 0.18.0. Contracts and
+implementation decisions are in [mobile-api.md](docs/mobile-api.md),
+[OpenAPI](docs/mobile-api.yaml) and [decisions](docs/mobile-server-decisions.md).
+The [app handoff](docs/mobile-app-handoff.md) closes server gaps B1–B5.
 
-Read-only local inspection found HEAD above and a dirty shared worktree (180
-tracked/untracked status rows at inspection). Installed tools: Go
-`go1.27.0-X:nodwarf5 linux/amd64`, Node `v26.7.0`, Python `3.14.7`, Restic
-`0.19.1` built with `go1.26.4-X:nodwarf5`; the image pins Restic **0.18.0**.
-Host and image dependency versions are not interchangeable validation evidence.
-Fixtures cover `restic` and `shared-experimental`; the mobile smoke target uses
-an isolated local image/volume with **2 CPUs / 4 GiB** and defaults to both backends.
-Focused fixture commands are in the migration runbook and below.
+The native smoke uses isolated accounts/volumes, 2 CPUs / 4 GiB and a generated
+250 MiB original. Reordered and repeated encrypted parts survived restart,
+finalized without a client finalize request and downloaded with matching hashes.
+Sampled server RSS peaked at 145.3 MiB (Restic) and 147.1 MiB (shared).
+Before the final missing part, native staging allocated 245,506,048 bytes across
+15 authenticated encrypted payloads; after storage, 16,384 bytes remained across
+four encrypted receipts and zero payloads. These are local fixture measurements.
 
-This agent observed passing full users/accountlifecycle/app suites and a full desk
-suite (105.255 s) before subsequent parent freeze fixes. Focused publication
-lock-order/revocation race checks passed. Latest named HTTP regressions passed:
-`go test ./internal/desk -run TestMobilePartsReauthorizationRejectsChangedCommitAndResumesSameIntent -count=1`
-(8.382 s, including encrypted expired-stage fixtures) and
-`go test ./internal/desk -run TestMobilePartsCancellationSurvivesSweepRestartAndPreservesStoredOriginal -count=1`
-(8.796 s, Photos and backups). These establish immutable replay rejection,
-fresh same-ID admission, stage key/progress reset, durable cancellation across
-sweep/restart, and stored-original preservation; they do not certify the final image.
+Regression coverage includes immutable reauthorization intent, fresh same-ID
+admission after expiry, durable cancellation, preservation of stored originals,
+bad-receipt isolation, reservation restoration, source revisions, owner/device
+isolation, old-client compatibility and repeatable migration. The integrated
+owner-deletion test drains active parts/jobs and removes mappings/grabs while
+preserving another owner's deduplicated originals; it passed normally and under
+race detection.
 
-Final update supplied by the parent: **`make check` exit 0**, `make build`, and
-final-image container, browser and Photos smokes passed on **both** storage
-backends; native extended Photos plus **250 MiB** passed on both with **2 CPUs /
-4 GiB**, exit 0. These supersede the earlier pending/failed local-image gates.
-The ledger records sampled PID-1 RSS peaks of **143.7 MiB Restic / 145.6 MiB shared**;
-these are sampled observations, not unsampled maxima or physical-phone/LAN claims.
-
-The combined owner-deletion regression below passed normally (4.755 s) and with
-the race detector (7.711 s). It closes the previously missing deletion fixture.
-Together with full-suite legacy token/editor checks, final-image WebDAV/ordered
-restart/native sequences and the existing migration-twice fixture, this closes
-the MS7 compatibility matrix; no single gigantic all-client fixture is required.
-
-Final Photos **both-backend PASS** is confirmed by parent session **21528**.
-The same-image native staging-disk checks also passed on both backends: before
-the last missing part, **245,506,048 allocated bytes / 15 authenticated WZA1
-payloads**; after stored receipt recovery, **16,384 allocated bytes / zero payloads /
-four encrypted receipts**. These measurements close the pending bounded-staging
-probe; they describe the disposable fixture, not production capacity or phone disk.
-See the [validation ledger](docs/mobile-server-validation-2026-10-02.md) for
-artifact/metrics evidence, and the [migration runbook](docs/mobile-server-migration.md)
-for release snapshot and recovery instructions.
-
-Remaining parent release work only: record the exact release commit/push,
-production snapshot and deployment outcomes after those actions. **Workbook
-frozen**: no further agent writes; the main agent records the release afterward.
+The [production release record](docs/mobile-server-release-2026-10-02.md)
+records the pushed code, image, consistent pre-upgrade data copy, preserved
+Compose configuration, healthy services and data integrity audit. The
+[migration runbook](docs/mobile-server-migration.md) describes supported recovery.
 Physical iOS permissions, iCloud/provider access and background scheduling remain
-unrun; server/image passes cannot close that separate gate.
+part of the separate app/device acceptance gate.
 
 ## Historical starting points — before this implementation
 
@@ -356,8 +326,7 @@ Deliver: `docs/mobile-server-decisions.md`, `docs/mobile-api.md`,
 
 Evidence: contract/DTO/error examples and source-key vector are in the API docs
 and app handoff; owner/device/lock fixtures are distributed across users, desk,
-backup, Files and lifecycle tests. The ledger separates earlier browser/Photos
-passes from the still-pending final-image smoke.
+backup, Files and lifecycle tests. The ledger records the final passing image checks on both backends.
 
 Gate: Sol has reproducible local baselines and exact contracts. No production
 data or 500-file upload exercise is needed.
@@ -557,7 +526,7 @@ and migrate twice, preserving IDs/metadata/references/accounting; this is a
 synthetic fixture, not a full production-volume restore exercise. Future-format
 readers and recovery copies exist. Legacy devices receive compatible legacy-grant
 projections without forced rewriting of IDs/hashes/expiry. Full `make check` and
-the final two-backend smoke matrix are parent-reported passes. Physical iOS,
+the final two-backend smoke matrix passed. Physical iOS,
 sustained-load and unconstrained-profile measurements are not established.
 
 New combined fixture:
@@ -585,11 +554,11 @@ recovery are explicit. There is no wipe/reimport or silent old-writer data loss.
 
 ### MS8 — Final local smoke, documentation and app-agent handoff
 
-- [x] Run the full repository checks once after focused phase tests pass, then the relevant existing browser/container/Photos smokes and the new mobile smoke on both storage backends; final passes reported by the parent.
+- [x] Run the full repository checks once after focused phase tests pass, then the relevant existing browser/container/Photos smokes and the new mobile smoke on both storage backends; all passed.
 - [x] Add `scripts/smoke-mobile-server.py` and a documented Make target using isolated fixture accounts/volumes; it must never default to production.
 - [x] Update README, OpenAPI, Photos API notes, capability examples, migration/runbook and validation evidence. Regenerate embedded desk assets through normal build targets when needed.
 - [x] Update the app handoff's API map/B1–B5 status based on evidence; publish DTO/error fixtures and source-ID test vectors for the Swift agent.
-- [x] Record the tested local image identity, source baseline/dirty-tree status, observed resource measurements, remaining Mac/device checks and next release task. The parent records the exact release commit and deployment after execution; the local image ID is not a release commit.
+- [x] Record the tested local image identity, source baseline/dirty-tree status, observed resource measurements, remaining Mac/device checks and next release task. The release record gives the deployed code commit and image; the local image ID identifies the tested fixture artifact.
 - [x] Leave a deployment runbook: confirm active workloads, back up consistently, inspect disk headroom, deploy the candidate when authorized, preserve mounts/settings, unlock as owner when needed, verify jobs/collections/grabs, and follow the supported recovery path.
 
 Evidence: the isolated `smoke-mobile` script/Make target, README/API/Photos notes,
@@ -598,9 +567,9 @@ Final full checks/build and the rebuilt image smoke matrix now pass as recorded
 in the checkpoint/ledger. The supplemental integrated deletion test also passes
 with `-race`; it adds test coverage without changing the frozen application code.
 The candidate artifact and RAM/disk measurements are recorded above and linked
-to the validation ledger. All server checklist items are closed. Exact release
-commit/push and deployment records are reserved for the parent after execution;
-no production snapshot or rollout result is claimed by this frozen workbook.
+to the validation ledger. All server checklist items are closed. The linked
+production release record gives the exact pushed commit, image, consistent
+pre-upgrade copy and successful rollout audit.
 
 Gate: Sol can truthfully report **server additions complete and locally verified**.
 Do not report **iOS backup proven** until the physical-device matrix has passed.
