@@ -17,7 +17,11 @@ type PhotoIngestFile struct {
 }
 
 type PhotoIngestCommit struct {
+	SourceNamespace, SourceAssetID          string
+	SourceMappingRevision                   uint64
 	DeviceID, DeviceAssetID, SourceRevision string
+	Hidden                                  bool
+	OpaqueOriginal                          bool
 	Files                                   []PhotoIngestFile
 	AlbumIDs                                []string
 	Capture                                 *CaptureMetadata
@@ -77,8 +81,12 @@ func (c *Catalog) CommitPhotoIngest(commit PhotoIngestCommit) (File, error) {
 		}
 		file.Path, file.DeviceID, file.DeviceAssetID, file.SourceRevision = part.To, commit.DeviceID, commit.DeviceAssetID, commit.SourceRevision
 		file.PhotoComponents = nil
+		file.Hidden = commit.Hidden
+		if commit.OpaqueOriginal && part.ID == "original" || part.MediaType == "image/dng" {
+			file.PhotoPreviewUnsupported = true
+		}
 		if commit.Capture != nil && !file.CaptureUserCorrected && (file.CaptureSource == "" || file.CaptureSource == "client") {
-			file.CaptureTime, file.CaptureOffsetMinutes, file.CaptureSource = commit.Capture.Time, commit.Capture.OffsetMinutes, "client"
+			file.CaptureTime, file.CaptureOffsetMinutes, file.CaptureSource = commit.Capture.Time, commit.Capture.OffsetMinutes, commit.Capture.Source
 		}
 		file.Revision++
 		next[index] = file
@@ -97,6 +105,11 @@ func (c *Catalog) CommitPhotoIngest(commit PhotoIngestCommit) (File, error) {
 			next[index].PhotoParentID = primary
 		}
 	}
+	previousCollections := c.collections
+	if err := c.mapPhotoSourceLocked(commit, next[indices[0]]); err != nil {
+		return File{}, err
+	}
+	defer func() { c.collections = previousCollections }()
 	previousAlbums := c.albums
 	c.albums = cloneAlbums(c.albums)
 	for _, id := range commit.AlbumIDs {
@@ -130,5 +143,6 @@ func (c *Catalog) CommitPhotoIngest(commit PhotoIngestCommit) (File, error) {
 		return File{}, err
 	}
 	c.files = next
+	previousCollections = c.collections
 	return cloneFile(next[indices[0]]), nil
 }

@@ -37,43 +37,46 @@ type Reference struct {
 }
 
 type File struct {
-	PhotoProcessingPending bool             `json:"photo_processing_pending,omitempty"`
-	PhotoParentID          string           `json:"photo_parent_id,omitempty"`
-	PhotoComponents        []PhotoComponent `json:"photo_components,omitempty"`
-	DeviceID               string           `json:"device_id,omitempty"`
-	DeviceAssetID          string           `json:"device_asset_id,omitempty"`
-	SourceRevision         string           `json:"source_revision,omitempty"`
-	EntryID                string           `json:"entry_id,omitempty"`
-	Revision               uint64           `json:"revision,omitempty"`
-	Path                   string           `json:"path"`
-	Folder                 bool             `json:"folder,omitempty"`
-	Hidden                 bool             `json:"hidden,omitempty"`
-	Size                   int64            `json:"size"`
-	Mtime                  time.Time        `json:"mtime"`
-	ImportedAt             time.Time        `json:"imported_at,omitempty"`
-	CaptureTime            *time.Time       `json:"capture_time,omitempty"`
-	CaptureOffsetMinutes   *int             `json:"capture_offset_minutes,omitempty"`
-	CaptureSource          string           `json:"capture_source,omitempty"`
-	CaptureUserCorrected   bool             `json:"capture_user_corrected,omitempty"`
-	Width                  int              `json:"width,omitempty"`
-	Height                 int              `json:"height,omitempty"`
-	DurationMillis         int64            `json:"duration_millis,omitempty"`
-	Orientation            int              `json:"orientation,omitempty"`
-	PreferredPhoto         bool             `json:"preferred_photo,omitempty"`
-	Camera                 string           `json:"camera,omitempty"`
-	UserRotation           int              `json:"user_rotation,omitempty"`
-	Favorite               bool             `json:"favorite,omitempty"`
-	Archived               bool             `json:"archived,omitempty"`
-	Caption                string           `json:"caption,omitempty"`
-	Hash                   string           `json:"hash"`
-	Snap                   string           `json:"snap"`
-	Object                 string           `json:"object,omitempty"`
-	Reference              *Reference       `json:"reference,omitempty"`
-	Present                bool             `json:"present"`
-	DeletedAt              *time.Time       `json:"deleted_at,omitempty"`
+	PhotoPreviewUnsupported bool             `json:"photo_preview_unsupported,omitempty"`
+	PhotoProcessingPending  bool             `json:"photo_processing_pending,omitempty"`
+	PhotoParentID           string           `json:"photo_parent_id,omitempty"`
+	PhotoComponents         []PhotoComponent `json:"photo_components,omitempty"`
+	DeviceID                string           `json:"device_id,omitempty"`
+	DeviceAssetID           string           `json:"device_asset_id,omitempty"`
+	SourceRevision          string           `json:"source_revision,omitempty"`
+	EntryID                 string           `json:"entry_id,omitempty"`
+	Revision                uint64           `json:"revision,omitempty"`
+	Path                    string           `json:"path"`
+	Folder                  bool             `json:"folder,omitempty"`
+	Hidden                  bool             `json:"hidden,omitempty"`
+	Size                    int64            `json:"size"`
+	Mtime                   time.Time        `json:"mtime"`
+	ImportedAt              time.Time        `json:"imported_at,omitempty"`
+	CaptureTime             *time.Time       `json:"capture_time,omitempty"`
+	CaptureOffsetMinutes    *int             `json:"capture_offset_minutes,omitempty"`
+	CaptureSource           string           `json:"capture_source,omitempty"`
+	CaptureUserCorrected    bool             `json:"capture_user_corrected,omitempty"`
+	Width                   int              `json:"width,omitempty"`
+	Height                  int              `json:"height,omitempty"`
+	DurationMillis          int64            `json:"duration_millis,omitempty"`
+	Orientation             int              `json:"orientation,omitempty"`
+	PreferredPhoto          bool             `json:"preferred_photo,omitempty"`
+	Camera                  string           `json:"camera,omitempty"`
+	UserRotation            int              `json:"user_rotation,omitempty"`
+	Favorite                bool             `json:"favorite,omitempty"`
+	Archived                bool             `json:"archived,omitempty"`
+	Caption                 string           `json:"caption,omitempty"`
+	Hash                    string           `json:"hash"`
+	Snap                    string           `json:"snap"`
+	Object                  string           `json:"object,omitempty"`
+	Reference               *Reference       `json:"reference,omitempty"`
+	Present                 bool             `json:"present"`
+	DeletedAt               *time.Time       `json:"deleted_at,omitempty"`
 }
 
 type tree struct {
+	Schema      int                     `json:"schema,omitempty"`
+	Collections collectionState         `json:"collections,omitempty"`
 	Files       []File                  `json:"files"`
 	Albums      []Album                 `json:"albums,omitempty"`
 	Journal     Journal                 `json:"journal,omitempty"`
@@ -81,20 +84,22 @@ type tree struct {
 }
 
 type Catalog struct {
-	mu           sync.Mutex
-	path         string
-	vault        *vault.Vault
-	files        []File
-	albums       []Album
-	savedAlbums  []Album
-	journal      Journal
-	checkpoints  map[string]SyncPosition
-	children     map[string][]File
-	byPath       map[string]File
-	summary      catalogSummary
-	summaryReady bool
-	version      uint64
-	diskInfo     os.FileInfo
+	collections      collectionState
+	savedCollections collectionState
+	mu               sync.Mutex
+	path             string
+	vault            *vault.Vault
+	files            []File
+	albums           []Album
+	savedAlbums      []Album
+	journal          Journal
+	checkpoints      map[string]SyncPosition
+	children         map[string][]File
+	byPath           map[string]File
+	summary          catalogSummary
+	summaryReady     bool
+	version          uint64
+	diskInfo         os.FileInfo
 }
 
 type catalogSummary struct {
@@ -118,6 +123,7 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.files = nil
+	c.collections, c.savedCollections = collectionState{}, collectionState{}
 	c.albums = nil
 	c.savedAlbums = nil
 	c.journal = Journal{}
@@ -143,6 +149,11 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	if err := json.Unmarshal(plain, &t); err != nil {
 		return err
 	}
+	if t.Schema > 2 {
+		return ErrCollectionSchema
+	}
+	c.collections = cloneCollectionState(t.Collections)
+	c.savedCollections = cloneCollectionState(t.Collections)
 	files, changed, err := upgradeFiles(t.Files)
 	if err != nil {
 		return err
@@ -151,7 +162,12 @@ func (c *Catalog) load(persistUpgrade bool) error {
 	c.savedAlbums = cloneAlbums(t.Albums)
 	c.journal = cloneJournal(t.Journal)
 	c.checkpoints = t.Checkpoints
-	if changed && persistUpgrade {
+	if (changed || t.Schema < 2) && persistUpgrade {
+		if t.Schema < 2 {
+			if err := c.preserveMigrationRecovery(b); err != nil {
+				return err
+			}
+		}
 		if err := c.saveFilesLocked(files); err != nil {
 			return err
 		}
@@ -264,36 +280,5 @@ func (c *Catalog) Rename(oldPath, newPath string) error {
 		return err
 	}
 	c.files = next
-	return nil
-}
-
-func (c *Catalog) saveLocked() error {
-	return c.saveFilesLocked(c.files)
-}
-
-func (c *Catalog) saveFilesLocked(files []File) error {
-	journal, err := c.nextJournalLocked(files)
-	if err != nil {
-		return err
-	}
-	plain, err := json.Marshal(tree{Files: files, Albums: c.albums, Journal: journal, Checkpoints: c.checkpoints})
-	if err != nil {
-		return err
-	}
-	defer cryptox.Zero(plain)
-	raw, err := c.vault.Wrap(plain)
-	if err != nil {
-		return err
-	}
-	if err := cryptox.AtomicWrite(c.path, append(raw, '\n'), 0o600); err != nil {
-		return err
-	}
-	c.diskInfo, _ = os.Stat(c.path)
-	c.journal = journal
-	c.savedAlbums = cloneAlbums(c.albums)
-	c.summaryReady = false
-	c.children = indexChildren(files)
-	c.byPath = indexPaths(files)
-	c.version++
 	return nil
 }

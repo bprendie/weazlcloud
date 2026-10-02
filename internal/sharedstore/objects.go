@@ -12,7 +12,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 )
 
-func (s *Store) getOrWriteObject(ctx context.Context, stage *os.File, fingerprint []byte, plainLength, storedLength int64, encoding, kind, parent, op string) (string, []byte, error) {
+func (s *Store) getOrWriteObject(ctx context.Context, stage io.ReadSeeker, fingerprint []byte, plainLength, storedLength int64, encoding, kind, parent, op string) (string, []byte, error) {
 	for {
 		var id, state, storedKind string
 		var wrapped []byte

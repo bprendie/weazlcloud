@@ -70,13 +70,15 @@ func (s *Store) ChangePassword(id, current, next string) error {
 	newSaltB64, keyB64 := cryptox.B64(newSalt), cryptox.B64(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if index >= len(s.users) || s.users[index].ID != id {
+	if index >= len(s.users) || s.users[index].ID != id || s.users[index].Verifier != candidate.Verifier {
 		return errors.New("user changed while password was being updated")
 	}
 	oldSalt, oldVerifier := s.users[index].Salt, s.users[index].Verifier
+	oldDevices := s.invalidateOwnerDevicesLocked(id)
 	s.users[index].Salt, s.users[index].Verifier = newSaltB64, keyB64
 	if err := s.saveLocked(); err != nil {
 		s.users[index].Salt, s.users[index].Verifier = oldSalt, oldVerifier
+		s.devices = oldDevices
 		return err
 	}
 	s.invalidateSessionsLocked(id)

@@ -38,6 +38,9 @@ func (l *Library) writePreviewManifest(f catalog.File, hash []byte) error {
 	return l.writeThumbnailCache(key+".meta", thumbnailEnvelope{ContentType: "application/vnd.weazl.preview-manifest", Body: body, Size: 320})
 }
 func (l *Library) photoPreviewHint(f catalog.File) (string, []byte) {
+	if photoOriginalPreviewUnsupported(f) {
+		return "", nil
+	}
 	key, err := thumbnailKey(l.vault, f, 0)
 	if err != nil {
 		return "", nil

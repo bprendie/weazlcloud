@@ -23,20 +23,43 @@ type Component struct {
 }
 
 type Spec struct {
-	DeviceID       string      `json:"device_id"`
-	DeviceAssetID  string      `json:"device_asset_id"`
-	SourceRevision string      `json:"source_revision,omitempty"`
-	Filename       string      `json:"filename,omitempty"`
-	Size           int64       `json:"size,omitempty"`
-	SHA256         string      `json:"sha256,omitempty"`
-	RootID         string      `json:"root_id,omitempty"`
-	Components     []Component `json:"components,omitempty"`
-	AlbumIDs       []string    `json:"album_ids,omitempty"`
-	CapturedAt     string      `json:"captured_at,omitempty"`
-	OffsetKnown    bool        `json:"offset_known,omitempty"`
+	SourceNamespace       string      `json:"source_namespace,omitempty"`
+	SourceAssetID         string      `json:"source_asset_id,omitempty"`
+	SourceMappingRevision uint64      `json:"source_mapping_revision,omitempty"`
+	Transport             string      `json:"transport,omitempty"`
+	CommitWhenComplete    bool        `json:"commit_when_complete,omitempty"`
+	Hidden                bool        `json:"hidden,omitempty"`
+	OriginalMode          string      `json:"original_mode,omitempty"`
+	DeviceID              string      `json:"device_id"`
+	DeviceAssetID         string      `json:"device_asset_id"`
+	SourceRevision        string      `json:"source_revision,omitempty"`
+	Filename              string      `json:"filename,omitempty"`
+	Size                  int64       `json:"size,omitempty"`
+	SHA256                string      `json:"sha256,omitempty"`
+	RootID                string      `json:"root_id,omitempty"`
+	Components            []Component `json:"components,omitempty"`
+	AlbumIDs              []string    `json:"album_ids,omitempty"`
+	CapturedAt            string      `json:"captured_at,omitempty"`
+	OffsetKnown           bool        `json:"offset_known,omitempty"`
 }
 
 func (s *Spec) Normalize() error {
+	if s.SourceNamespace != "" || s.SourceAssetID != "" {
+		if s.SourceNamespace == "" || s.SourceAssetID == "" || len(s.SourceNamespace) > 200 || len(s.SourceAssetID) > 4096 {
+			return ErrInvalid
+		}
+		key := catalog.SafeSourceKey(s.SourceNamespace, s.SourceAssetID)
+		if s.DeviceAssetID != "" && s.DeviceAssetID != key {
+			return ErrInvalid
+		}
+		s.DeviceAssetID = key
+	}
+	if s.Transport != "" && s.Transport != "parts-v1" {
+		return ErrInvalid
+	}
+	if s.OriginalMode != "" && s.OriginalMode != "opaque-original-v1" {
+		return ErrInvalid
+	}
 	if s.SourceRevision == "" {
 		s.SourceRevision = "1"
 	}
@@ -68,11 +91,14 @@ func (s *Spec) Normalize() error {
 			return ErrInvalid
 		}
 		kind := MediaType(c.Filename)
+		if i == 0 && s.OriginalMode == "opaque-original-v1" {
+			kind = "application/octet-stream"
+		}
 		if kind == "" || c.MediaType != "" && c.MediaType != kind {
 			return ErrInvalid
 		}
 		c.MediaType = kind
-		if len(s.Components) == 2 && (i == 0 && !strings.HasPrefix(kind, "image/") || i == 1 && !strings.HasPrefix(kind, "video/")) {
+		if len(s.Components) == 2 && (i == 0 && kind != "application/octet-stream" && !strings.HasPrefix(kind, "image/") || i == 1 && !strings.HasPrefix(kind, "video/")) {
 			return ErrInvalid
 		}
 	}
@@ -126,6 +152,8 @@ func MediaType(name string) string {
 		return "image/heic"
 	case ".avif":
 		return "image/avif"
+	case ".dng":
+		return "image/dng"
 	case ".tif", ".tiff":
 		return "image/tiff"
 	case ".mp4", ".m4v":

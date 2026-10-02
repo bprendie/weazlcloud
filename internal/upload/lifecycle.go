@@ -85,10 +85,27 @@ func (m *Manager) ensureReservationLocked(s session) error {
 	if err := m.reservationErrors[s.ID]; err != nil {
 		return err
 	}
-	if m.reservations[s.ID] != nil {
+	if reservation := m.reservations[s.ID]; reservation != nil {
+		if s.Format == 2 {
+			bytes, err := encryptedReservation(s.Size, len(s.Parts))
+			if err != nil {
+				return err
+			}
+			return reservation.Resize(bytes)
+		}
 		return nil
 	}
-	reservation, err := m.reserveUploadBytes(s.OwnerID, s.Size, s.Offset)
+	var reservation *quota.Reservation
+	var err error
+	if s.Format == 2 {
+		var bytes int64
+		bytes, err = encryptedReservation(s.Size, len(s.Parts))
+		if err == nil {
+			reservation, err = m.reserveBytes(s.OwnerID, bytes)
+		}
+	} else {
+		reservation, err = m.reserveUploadBytes(s.OwnerID, s.Size, s.Offset)
+	}
 	if err != nil {
 		m.reservationErrors[s.ID] = err
 		return err
@@ -151,4 +168,13 @@ func (m *Manager) Resource(owner users.User) *filesvc.Resource {
 		return nil
 	}
 	return m.resourceFor(owner)
+}
+
+// RestoreOwner restores deferred reservations immediately after vault unlock.
+// Call outside users.WithDeviceGrant: quota admission invokes userCount.
+// List restores independent valid sessions despite bad neighbors and joins
+// their errors. The unlock hook may log that warning without failing unlock.
+func (m *Manager) RestoreOwner(owner users.User) error {
+	_, err := m.List(owner)
+	return err
 }

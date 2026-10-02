@@ -180,17 +180,12 @@ func (m *Manager) create(owner users.User, path string, size int64, expectedHash
 		m.releaseReservationLocked(id)
 		return SessionView{}, err
 	}
-	part, err := os.OpenFile(m.partPath(owner.ID, id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		m.releaseReservationLocked(id)
-		return SessionView{}, err
-	}
-	if err := part.Close(); err != nil {
+	if err := m.createPayload(&s); err != nil {
 		m.releaseReservationLocked(id)
 		return SessionView{}, err
 	}
 	if err := m.writeLocked(s); err != nil {
-		_ = os.Remove(m.partPath(owner.ID, id))
+		_ = os.RemoveAll(m.partPath(owner.ID, id))
 		m.releaseReservationLocked(id)
 		return SessionView{}, err
 	}
@@ -243,6 +238,9 @@ func (m *Manager) Status(owner users.User, id string) (SessionView, error) {
 	if err != nil {
 		return SessionView{}, err
 	}
+	if err := m.ensureReservationLocked(s); err != nil {
+		return view(s), err
+	}
 	return view(s), nil
 }
 
@@ -255,6 +253,7 @@ func (m *Manager) List(owner users.User) ([]SessionView, error) {
 		return nil, err
 	}
 	views := make([]SessionView, 0, len(entries))
+	var failures []error
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -265,11 +264,12 @@ func (m *Manager) List(owner users.User) ([]SessionView, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			failures = append(failures, err)
+			continue
 		}
 		views = append(views, s)
 	}
-	return views, nil
+	return views, errors.Join(failures...)
 }
 
 func (m *Manager) Cancel(owner users.User, id string) error {

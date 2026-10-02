@@ -50,6 +50,8 @@ func photoMediaType(name string) string {
 		return "image/heic"
 	case ".avif":
 		return "image/avif"
+	case ".dng":
+		return "image/dng"
 	case ".tif", ".tiff":
 		return "image/tiff"
 	case ".mp4", ".m4v":

@@ -191,6 +191,24 @@ is ready for a native client; the iOS app itself and runtime SQLCipher integrati
 remain future work. Both-backend browser/container checks and thumbnail/cache
 measurements are recorded in the [October 1 performance report](docs/photos-thumbnail-performance-2026-10-01.md).
 
+The [mobile server API](docs/mobile-api.md) adds scoped device credentials with
+retry-safe rotation, nested photo album folders, source organization, recurring
+one-way file backups, stable file reads and offline sync. Negotiated `parts-v1`
+uploads stage authenticated encrypted parts on the data volume and finalize in
+bounded server workers after all components arrive; the app need not remain open.
+Source revisions and destination revision checks prevent a backup from silently
+overwriting unrelated files. Hidden and unsupported camera originals remain
+preserved independently of preview support. Grab creation accepts an
+`Idempotency-Key` so a lost response can recover the same capsule.
+
+See the [October 2 workbook](mobile_server_workbook_2026-10-02.md),
+[mobile OpenAPI](docs/mobile-api.yaml), [migration runbook](docs/mobile-server-migration.md)
+and [validation record](docs/mobile-server-validation-2026-10-02.md).
+The server contract supports the native scaffold; PhotoKit, iCloud retrieval,
+file-provider access and iOS background scheduling still require physical-device
+validation. Never roll an older image onto a migrated catalog; use a forward fix
+or restore a complete consistent pre-upgrade copy.
+
 The supplied Docker Compose file runs a private `weazlcloud-photo-worker` sidecar
 with no network listener. The API sends it authorized media bytes through a
 permission-restricted Unix socket; the worker receives no vault keys or paths and

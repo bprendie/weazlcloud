@@ -15,6 +15,8 @@ var (
 )
 
 type Album struct {
+	ParentID    string   `json:"parent_id,omitempty"`
+	ParentSet   bool     `json:"-"`
 	ID          string   `json:"id"`
 	Revision    uint64   `json:"revision"`
 	Title       string   `json:"title"`
@@ -67,6 +69,11 @@ func (c *Catalog) SaveAlbum(album Album) (Album, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if album.ParentSet || creating {
+		if err := c.validateCollectionParentLocked(album.ParentID, ""); err != nil {
+			return Album{}, err
+		}
+	}
 	validMembers := make(map[string]bool, len(c.files))
 	for _, file := range c.files {
 		if photoAlbumMember(file) {
@@ -88,6 +95,10 @@ func (c *Catalog) SaveAlbum(album Album) (Album, error) {
 		if old.Revision == ^uint64(0) {
 			return Album{}, ErrRevisionOverflow
 		}
+		if !album.ParentSet {
+			album.ParentID = old.ParentID
+		}
+		album.ParentSet = false
 		if album.AssetIDs == nil {
 			album.AssetIDs = append([]string(nil), old.AssetIDs...)
 		}
@@ -112,6 +123,7 @@ func (c *Catalog) SaveAlbum(album Album) (Album, error) {
 	if !creating {
 		return Album{}, ErrAlbumNotFound
 	}
+	album.ParentSet = false
 	next := append(cloneAlbums(c.albums), cloneAlbum(album))
 	previous := c.albums
 	c.albums = next

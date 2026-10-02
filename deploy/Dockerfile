@@ -1,10 +1,12 @@
 FROM golang:1.25-bookworm AS build
+ARG VERSION=dev
+ARG COMMIT=unknown
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN bash scripts/generate-desk-ui.sh
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazlcloud ./cmd/weazlcloud
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/bprendie/weazlcloud/internal/buildinfo.Version=${VERSION} -X github.com/bprendie/weazlcloud/internal/buildinfo.Commit=${COMMIT}" -o /out/weazlcloud ./cmd/weazlcloud
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/takeout-layout ./cmd/takeout-layout
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazl-photo-worker ./cmd/weazl-photo-worker
 

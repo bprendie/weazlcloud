@@ -132,7 +132,15 @@ func save(res *filesvc.Resource, receipt Receipt) error {
 	if err := os.MkdirAll(res.Lib.PhotoIngestDir(), 0700); err != nil {
 		return err
 	}
-	return cryptox.AtomicWrite(receiptPath(res, receipt.ID), raw, 0600)
+	if err := cryptox.AtomicWrite(receiptPath(res, receipt.ID), raw, 0600); err != nil {
+		return err
+	}
+	dir, err := os.Open(res.Lib.PhotoIngestDir())
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (m *Manager) Create(ctx context.Context, res *filesvc.Resource, user users.User, spec Spec) (View, error) {
@@ -171,6 +179,9 @@ func (m *Manager) Create(ctx context.Context, res *filesvc.Resource, user users.
 		return View{}, upload.ErrNotFound
 	}
 	if receipt.Status == "stored" {
+		return m.view(res, user, receipt)
+	}
+	if spec.Transport == "parts-v1" {
 		return m.view(res, user, receipt)
 	}
 	for i, part := range spec.Components {

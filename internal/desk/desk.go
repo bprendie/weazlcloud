@@ -15,6 +15,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/headers"
 	"github.com/bprendie/weazlcloud/internal/idle"
 	"github.com/bprendie/weazlcloud/internal/library"
+	"github.com/bprendie/weazlcloud/internal/mobileparts"
 	"github.com/bprendie/weazlcloud/internal/photoingest"
 	"github.com/bprendie/weazlcloud/internal/quota"
 	"github.com/bprendie/weazlcloud/internal/ratelimit"
@@ -44,6 +45,7 @@ type Handler struct {
 	changes           *filesvc.Hub
 	uploads           *upload.Manager
 	photoUploads      *photoingest.Manager
+	mobileParts       *mobileparts.Manager
 	accounts          *accountlifecycle.Manager
 	maintenanceStatus interface{ Status() []idle.JobStatus }
 	importDir         string
@@ -96,7 +98,11 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 		return h.registry.For(u)
 	}, q, us.Count)
 	h.photoUploads = photoingest.New(h.uploads)
+	h.mobileParts = mobileparts.New(q)
 	h.accounts = accountlifecycle.New(us, h.registry, caps, h.uploads)
+	h.accounts.SetOwnerCleanup(func(_ context.Context, owner string) error {
+		return h.mobileParts.ReleaseOwner(owner)
+	})
 	return h
 }
 

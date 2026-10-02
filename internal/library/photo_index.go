@@ -20,6 +20,7 @@ var (
 )
 
 type PhotoItem struct {
+	PreviewUnsupported   bool                     `json:"preview_unsupported,omitempty"`
 	PreviewIdentity      string                   `json:"preview_identity,omitempty"`
 	ThumbHash            []byte                   `json:"thumbhash,omitempty"`
 	ParentAssetID        string                   `json:"parent_asset_id,omitempty"`

@@ -10,6 +10,9 @@ import (
 )
 
 func (l *Library) generateBundle(ctx context.Context, f catalog.File, job *assetPreviewJob) error {
+	if photoOriginalPreviewUnsupported(f) {
+		return ErrThumbnailUnavailable
+	}
 	l.thumbMu.Lock()
 	background := job.background
 	l.thumbMu.Unlock()
@@ -96,6 +99,9 @@ func (l *Library) generateBundle(ctx context.Context, f catalog.File, job *asset
 // On a small host that cannot fit it, retain the bounded two-read header path.
 func (l *Library) bundleSource(ctx context.Context, f catalog.File, background bool) ([]byte, func(), error) {
 	noop := func() {}
+	if photoOriginalPreviewUnsupported(f) {
+		return nil, noop, ErrThumbnailUnavailable
+	}
 	acquire := previewMemory.acquire
 	if background {
 		acquire = previewMemory.acquireBackground

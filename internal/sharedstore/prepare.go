@@ -6,10 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -32,6 +29,17 @@ func (s *Store) Prepare(ctx context.Context, owner string, v *vault.Vault, entry
 
 // PrepareWithID makes upload finalization recoverable using the caller's durable operation ID.
 func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Vault, entry string, revision uint64, input io.Reader, expected int64) (Prepared, error) {
+	return s.prepareWithID(ctx, op, owner, v, entry, revision, input, expected, false)
+}
+
+// PrepareSeekableWithID avoids source staging for encrypted mobile component
+// readers. It consumes from the current position, rewinds for chunking, and leaves
+// input open. The caller must keep the input unchanged throughout preparation.
+func (s *Store) PrepareSeekableWithID(ctx context.Context, op, owner string, v *vault.Vault, entry string, revision uint64, input io.ReadSeeker, expected int64) (Prepared, error) {
+	return s.prepareWithID(ctx, op, owner, v, entry, revision, input, expected, true)
+}
+
+func (s *Store) prepareWithID(ctx context.Context, op, owner string, v *vault.Vault, entry string, revision uint64, input io.Reader, expected int64, seekable bool) (Prepared, error) {
 	if owner == "" || entry == "" || revision == 0 || v == nil || !v.Unlocked() || expected < -1 {
 		return Prepared{}, ErrDenied
 	}
@@ -80,41 +88,16 @@ func (s *Store) PrepareWithID(ctx context.Context, op, owner string, v *vault.Va
 	if v == nil || !v.Unlocked() {
 		return Prepared{}, ErrDenied
 	}
-	stage, err := os.CreateTemp(filepath.Join(s.root, "shared-staging"), "source-")
+	reader, n, contentHash, cleanup, err := s.prepareSource(ctx, input, expected, seekable)
 	if err != nil {
 		return Prepared{}, err
 	}
-	stagePath := stage.Name()
-	defer os.Remove(stagePath)
-	if err = stage.Chmod(0o600); err != nil {
-		stage.Close()
-		return Prepared{}, err
-	}
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(stage, h), contextReader{ctx, input})
+	defer cleanup()
+	objectID, key, err := s.writeChunkedManifest(ctx, op, reader, n, contentHash)
 	if err != nil {
-		stage.Close()
 		return Prepared{}, err
 	}
-	if expected >= 0 && n != expected {
-		stage.Close()
-		return Prepared{}, fmt.Errorf("source length mismatch: got %d", n)
-	}
-	if err = stage.Sync(); err != nil {
-		stage.Close()
-		return Prepared{}, err
-	}
-	if _, err = stage.Seek(0, io.SeekStart); err != nil {
-		stage.Close()
-		return Prepared{}, err
-	}
-	contentHash := h.Sum(nil)
-	objectID, key, err := s.writeChunkedManifest(ctx, op, stage, n)
-	if err != nil {
-		stage.Close()
-		return Prepared{}, err
-	}
-	stage.Close()
+	defer cryptox.Zero(key)
 	if err = fail(s.options, "object_ready"); err != nil {
 		return Prepared{}, err
 	}

@@ -1,0 +1,3006 @@
+openapi: 3.1.0
+info:
+  title: WeazlCloud native mobile API
+  version: 1-working-tree-2026-10-02
+  description: Inspected local implementation, not a published release or full verification. x-required-scopes
+    carries HTTP bearer resource scopes; security arrays are auth alternatives. paths contains implemented
+    routes only. x-unimplemented-route-inventory records scope-only and pending patterns without generating
+    unavailable client endpoints. Legacy DTO details remain in photo-api.md/yaml.
+security:
+- DeviceBearer: []
+- OwnerSession: []
+paths:
+  /api/v1/photos:
+    get:
+      summary: GET /api/v1/photos
+      operationId: get_api_v1_photos
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: &id001
+          $ref: '#/components/responses/SharedResponse'
+        '400': &id002
+          $ref: '#/components/responses/SharedResponse2'
+        2XX: &id003
+          $ref: '#/components/responses/SharedResponse3'
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/capabilities:
+    get:
+      summary: GET /api/v1/photos/capabilities
+      operationId: get_api_v1_photos_capabilities
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/albums:
+    get:
+      summary: GET /api/v1/photos/albums
+      operationId: get_api_v1_photos_albums
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: POST /api/v1/photos/albums
+      operationId: post_api_v1_photos_albums
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/albums/memberships:
+    get:
+      summary: GET /api/v1/photos/albums/memberships
+      operationId: get_api_v1_photos_albums_memberships
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPage'
+        '400': *id002
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema: {type: string}
+      - &id007
+        $ref: '#/components/parameters/query_cursor'
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, format: int64, minimum: 1, maximum: 200, default: 100}
+      - name: hidden
+        in: query
+        required: false
+        schema: {type: string, enum: ['1']}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/search:
+    get:
+      summary: GET /api/v1/photos/search
+      operationId: get_api_v1_photos_search
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/dates:
+    get:
+      summary: GET /api/v1/photos/dates
+      operationId: get_api_v1_photos_dates
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/seek:
+    get:
+      summary: GET /api/v1/photos/seek
+      operationId: get_api_v1_photos_seek
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/sync:
+    get:
+      summary: GET /api/v1/photos/sync
+      operationId: get_api_v1_photos_sync
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      - name: cursor
+        in: query
+        schema: {type: string}
+      - &id005
+        $ref: '#/components/parameters/query_hidden'
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, default: 100}
+        description: Library clamps to 200.
+      - name: resume
+        in: query
+        schema: {type: string, enum: ['1']}
+      description: Legacy asset/folder/album snapshot then delta. Separate normal/Hidden checkpoints.
+        Skips schema-2 collection/mapping kinds; use photos/collections for those.
+  /api/v1/photos/sync/checkpoint:
+    post:
+      summary: POST /api/v1/photos/sync/checkpoint
+      operationId: post_api_v1_photos_sync_checkpoint
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkpoint: {type: string}
+                hidden: {type: boolean}
+              required:
+              - checkpoint
+  /api/v1/photos/assets/{id}:
+    get:
+      summary: GET /api/v1/photos/assets/{id}
+      operationId: get_api_v1_photos_assets__id_
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - &id004
+        $ref: '#/components/parameters/path_id'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: POST /api/v1/photos/assets/{id}
+      operationId: post_api_v1_photos_assets__id_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/assets/{id}/thumbnail:
+    get:
+      summary: GET /api/v1/photos/assets/{id}/thumbnail
+      operationId: get_api_v1_photos_assets__id__thumbnail
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/assets/{id}/original:
+    get:
+      summary: GET /api/v1/photos/assets/{id}/original
+      operationId: get_api_v1_photos_assets__id__original
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      - *id005
+      - name: download
+        in: query
+        schema: {type: string, enum: ['1']}
+      description: Captured immutable original in explicit normal/Hidden context; legacy exact ETag/If-Range
+        semantics, not the Files precondition-list contract.
+    head:
+      summary: HEAD /api/v1/photos/assets/{id}/original
+      operationId: head_api_v1_photos_assets__id__original
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      - *id005
+      - name: download
+        in: query
+        schema: {type: string, enum: ['1']}
+      description: Captured immutable original in explicit normal/Hidden context; legacy exact ETag/If-Range
+        semantics, not the Files precondition-list contract.
+  /api/v1/photos/folders:
+    post:
+      summary: POST /api/v1/photos/folders
+      operationId: post_api_v1_photos_folders
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/trash:
+    get:
+      summary: GET /api/v1/photos/trash
+      operationId: get_api_v1_photos_trash
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/trash/restore:
+    post:
+      summary: POST /api/v1/photos/trash/restore
+      operationId: post_api_v1_photos_trash_restore
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/selections:
+    post:
+      summary: POST /api/v1/photos/selections
+      operationId: post_api_v1_photos_selections
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        '201':
+          description: Complete immutable selection, not an album-summary truncation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  count: {type: integer, format: int64}
+                  hidden: {type: boolean}
+                  expires_at: {type: string, format: date-time}
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoSelectionOptions'
+  /api/v1/photos/selection-actions:
+    post:
+      summary: POST /api/v1/photos/selection-actions
+      operationId: post_api_v1_photos_selection_actions
+      x-required-scopes:
+      - photos:read
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/archives:
+    get:
+      summary: GET /api/v1/photos/archives
+      operationId: get_api_v1_photos_archives
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    delete:
+      summary: DELETE /api/v1/photos/archives
+      operationId: delete_api_v1_photos_archives
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/grabs:
+    post:
+      summary: POST /api/v1/photos/grabs
+      operationId: post_api_v1_photos_grabs
+      x-required-scopes:
+      - photos:read
+      - grabs:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '202': &id010
+          $ref: '#/components/responses/SharedResponse4'
+        '400': *id002
+        '201':
+          description: Created by existing handler; see legacy Photos/Library contract.
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema: {type: string, minLength: 1, maxLength: 200}
+        description: Owner-scoped canonical specification replay; changed specification returns 409.
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: Idempotency-Key mint/recovery wrapper. Lookup requires grabs:read; mint requires source
+        read plus grabs:write. Unkeyed mint preserves browser behavior.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                selection_id: {type: string}
+                ids:
+                  type: array
+                  items: {type: string}
+                hidden: &id006 {type: boolean}
+                confirm_hidden: *id006
+                title: {type: string}
+                gate: {type: string}
+                passphrase: {type: string}
+                expiry: {type: string}
+                grabs: {type: integer, format: int64}
+  /api/v1/photos/duplicates:
+    get:
+      summary: GET /api/v1/photos/duplicates
+      operationId: get_api_v1_photos_duplicates
+      x-required-scopes:
+      - photos:v1
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: POST /api/v1/photos/duplicates
+      operationId: post_api_v1_photos_duplicates
+      x-required-scopes:
+      - photos:v1
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/metadata-jobs:
+    get:
+      summary: GET /api/v1/photos/metadata-jobs
+      operationId: get_api_v1_photos_metadata_jobs
+      x-required-scopes:
+      - photos:v1
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: POST /api/v1/photos/metadata-jobs
+      operationId: post_api_v1_photos_metadata_jobs
+      x-required-scopes:
+      - photos:v1
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/collections:
+    get:
+      summary: GET /api/v1/photos/collections
+      operationId: get_api_v1_photos_collections
+      x-required-scopes:
+      - photos:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/CollectionPage'
+                - $ref: '#/components/schemas/CollectionDelta'
+        '400': *id002
+      parameters:
+      - *id007
+      - &id008
+        $ref: '#/components/parameters/query_limit'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      - name: hidden
+        in: query
+        schema: {type: string, enum: ['1']}
+        description: Explicit Hidden projection; cursor binds this context.
+    post:
+      summary: POST /api/v1/photos/collections
+      operationId: post_api_v1_photos_collections
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: {type: string, enum: [save-folder, delete-folder, save-album]}
+                folder:
+                  $ref: '#/components/schemas/CollectionFolder'
+                album:
+                  $ref: '#/components/schemas/AlbumHeader'
+                parent_id: {type: string}
+              required:
+              - action
+  /api/v1/photos/source-collections:
+    post:
+      summary: POST /api/v1/photos/source-collections
+      operationId: post_api_v1_photos_source_collections
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outcomes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SourceOutcome'
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceBatch'
+  /api/v1/photos/source-memberships:
+    post:
+      summary: POST /api/v1/photos/source-memberships
+      operationId: post_api_v1_photos_source_memberships
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  outcomes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SourceOutcome'
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceBatch'
+  /api/v1/photos/uploads:
+    post:
+      summary: POST /api/v1/photos/uploads
+      operationId: post_api_v1_photos_uploads
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/PartsCreateResponse'
+                - $ref: '#/components/schemas/PhotoReceipt'
+        '200':
+          description: 'Stored parts create replay: receipt only'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartsCreateResponse'
+        default: &id009
+          $ref: '#/components/responses/SharedResponse5'
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoSpec'
+      description: 'parts-v1: 201 receipt+transfer; 200 receipt on stored replay. Backup empty folder:
+        201 receipt only. Legacy create has coordinator DTO without wrapper. Owner unlock is required
+        after server restart; tokens contain no vault key. Identical unfinished create can CAS-rebind
+        private authorization after explicit fresh admission, including expired admission in the same
+        epoch. Expired inactive staging restarts with the same ID, fresh key and zero counters; accepted
+        bytes require retransmission. Active/unexpired verifying jobs conflict until drained. Any
+        immutable change, including commit_when_complete, returns 409 without refreshing authority.
+        Cancelled intents return 404; a new source revision is required.'
+  /api/v1/photos/uploads/{id}:
+    get:
+      summary: GET /api/v1/photos/uploads/{id}
+      operationId: get_api_v1_photos_uploads__id_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: parts-v1 transfer status; legacy coordinator response on legacy IDs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: 'Format dispatch: parts-v1 returns transfer status and 423 vault lock; legacy ordered
+        Photos GET still reports 401. Device credential never unlocks the vault.'
+    delete:
+      description: Native parts cancellation is durable and terminal; same-intent create returns
+        404 until a new source revision is used. Lost publication receipts can be recovered as
+        409 already_stored with transfer.status stored and coordinator receipt in transfer.result;
+        cancellation never deletes that original.
+      summary: DELETE /api/v1/photos/uploads/{id}
+      operationId: delete_api_v1_photos_uploads__id_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        '200':
+          description: Native parts cancelled status and transfer; legacy response varies by transport
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [cancelled]}
+                  transfer:
+                    $ref: '#/components/schemas/Transfer'
+        '409':
+          description: Conflict, or recovered already_stored publication (original preserved)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Error'
+                - type: object
+                  properties:
+                    code: {type: string, enum: [already_stored]}
+                    transfer:
+                      $ref: '#/components/schemas/Transfer'
+                  required: [code, transfer]
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    patch:
+      summary: PATCH /api/v1/photos/uploads/{id}
+      operationId: patch_api_v1_photos_uploads__id_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/uploads/{id}/parts:
+    get:
+      summary: GET /api/v1/photos/uploads/{id}/parts
+      operationId: get_api_v1_photos_uploads__id__parts
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Bounded missing part indices; cursor is numeric scan index
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingParts'
+        '400': *id002
+      parameters:
+      - *id004
+      - name: component
+        in: query
+        required: false
+        schema: {type: string, enum: [original, motion], default: original}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: integer, format: int64, minimum: 0, default: 0}
+      - *id008
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/uploads/{id}/retry:
+    post:
+      summary: POST /api/v1/photos/uploads/{id}/retry
+      operationId: post_api_v1_photos_uploads__id__retry
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Queue complete unstored parts session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/uploads/{id}/finalize:
+    post:
+      summary: POST /api/v1/photos/uploads/{id}/finalize
+      operationId: post_api_v1_photos_uploads__id__finalize
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: parts-v1 queues finalization; legacy path finalizes coordinator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/uploads/{id}/components/{component}:
+    patch:
+      summary: PATCH /api/v1/photos/uploads/{id}/components/{component}
+      operationId: patch_api_v1_photos_uploads__id__components__component_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: true
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - name: component
+        in: path
+        required: true
+        schema: {type: string}
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/photos/uploads/{id}/components/{component}/parts/{index}:
+    put:
+      summary: PUT /api/v1/photos/uploads/{id}/components/{component}/parts/{index}
+      operationId: put_api_v1_photos_uploads__id__components__component__parts__index_
+      x-required-scopes:
+      - photos:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '200':
+          description: Accepted or matching repeat; transfer wrapper
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400':
+          description: Invalid part/length
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Committed part conflicts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: Staging inactivity expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Checksum mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: Vault locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '507':
+          description: Storage admission failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - *id004
+      - name: component
+        in: path
+        required: true
+        schema: {type: string, enum: [original, motion]}
+      - name: index
+        in: path
+        required: true
+        schema: {type: integer, format: int64, minimum: 0}
+      - $ref: '#/components/parameters/MutationHeader'
+      - name: Content-Length
+        in: header
+        required: true
+        schema: {type: integer, format: int64, minimum: 1, maximum: 16777216}
+        description: Exact computed part length; unknown/chunked length rejected.
+      - name: X-Weazl-SHA256
+        in: header
+        required: true
+        schema: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: Independent zero-based part, 16 MiB except exact last remainder. Same accepted hash/length
+        repeats idempotently. Part acceptance is not stored-original success. Device grant is checked
+        before/after each body Read; vault session cancels streaming; native vault lock is 423.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+  /api/v1/files/{id}:
+    get:
+      summary: GET /api/v1/files/{id}
+      operationId: get_api_v1_files__id_
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileItem'
+        '400': *id002
+        '304':
+          description: Metadata unchanged; no response body.
+        '412':
+          description: Revision precondition failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      - name: If-Match
+        in: header
+        schema: {type: string}
+      - name: If-None-Match
+        in: header
+        schema: {type: string}
+      - name: If-Modified-Since
+        in: header
+        schema: {type: string}
+      - name: If-Unmodified-Since
+        in: header
+        schema: {type: string}
+  /api/v1/files/{id}/content:
+    get:
+      summary: GET /api/v1/files/{id}/content
+      operationId: get_api_v1_files__id__content
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '200':
+          description: Full content; HEAD has headers only.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '206':
+          description: GET single byte range
+        '304':
+          description: Unchanged representation
+        '412': *id009
+        '416': *id009
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - name: Range
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Range
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Match
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-None-Match
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Unmodified-Since
+        in: header
+        required: false
+        schema: {type: string}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: One immutable owner-scoped revision; ETag/HTTP preconditions. HEAD ignores Range. GET
+        If-Range mismatch returns full 200.
+    head:
+      summary: HEAD /api/v1/files/{id}/content
+      operationId: head_api_v1_files__id__content
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '200':
+          description: Full content; HEAD has headers only.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '206':
+          description: GET single byte range
+        '304':
+          description: Unchanged representation
+        '412': *id009
+        '416': *id009
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - name: Range
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Range
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Match
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-None-Match
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Modified-Since
+        in: header
+        required: false
+        schema: {type: string}
+      - name: If-Unmodified-Since
+        in: header
+        required: false
+        schema: {type: string}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: One immutable owner-scoped revision; ETag/HTTP preconditions. HEAD ignores Range. GET
+        If-Range mismatch returns full 200.
+  /api/v1/files/sync/checkpoint:
+    post:
+      summary: POST /api/v1/files/sync/checkpoint
+      operationId: post_api_v1_files_sync_checkpoint
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkpoint: {type: string}
+                prefix: {type: string}
+                device_id: {type: string}
+              required:
+              - checkpoint
+  /api/v1/backups/sources:
+    get:
+      summary: GET /api/v1/backups/sources
+      operationId: get_api_v1_backups_sources
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BackupSource'
+                  next: {type: string}
+        '400': *id002
+      parameters:
+      - name: after
+        in: query
+        required: false
+        schema: {type: string}
+      - name: device_id
+        in: query
+        required: false
+        schema: {type: string}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: POST /api/v1/backups/sources
+      operationId: post_api_v1_backups_sources
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupSource'
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupSource'
+  /api/v1/backups/sources/{sourceId}:
+    patch:
+      summary: PATCH /api/v1/backups/sources/{sourceId}
+      operationId: patch_api_v1_backups_sources__sourceId_
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - name: sourceId
+        in: path
+        required: true
+        schema: {type: string}
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: {type: string, enum: [active, paused, detached]}
+                expected_revision: {type: integer, format: int64, minimum: 1}
+              required:
+              - status
+              - expected_revision
+  /api/v1/backups/uploads:
+    post:
+      summary: POST /api/v1/backups/uploads
+      operationId: post_api_v1_backups_uploads
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/PartsCreateResponse'
+                - $ref: '#/components/schemas/BackupReceipt'
+        '200':
+          description: 'Stored parts create replay: receipt only'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartsCreateResponse'
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupSpec'
+      description: 'parts-v1: 201 receipt+transfer; 200 receipt on stored replay. Backup empty folder:
+        201 receipt only. Legacy create has coordinator DTO without wrapper. Owner unlock is required
+        after server restart; tokens contain no vault key. Identical unfinished create can CAS-rebind
+        private authorization after explicit fresh admission, including expired admission in the same
+        epoch. Expired inactive staging restarts with the same ID, fresh key and zero counters; accepted
+        bytes require retransmission. Active/unexpired verifying jobs conflict until drained. Any
+        immutable change, including commit_when_complete, returns 409 without refreshing authority.
+        Cancelled intents return 404; a new source revision is required.'
+  /api/v1/backups/uploads/{id}:
+    get:
+      summary: GET /api/v1/backups/uploads/{id}
+      operationId: get_api_v1_backups_uploads__id_
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: parts-v1 transfer status; legacy coordinator response on legacy IDs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: 'Format dispatch: parts-v1 returns transfer status and 423 vault lock; legacy ordered
+        Photos GET still reports 401. Device credential never unlocks the vault.'
+    delete:
+      description: Native parts cancellation is durable and terminal; same-intent create returns
+        404 until a new source revision is used. Lost publication receipts can be recovered as
+        409 already_stored with transfer.status stored and coordinator receipt in transfer.result;
+        cancellation never deletes that original.
+      summary: DELETE /api/v1/backups/uploads/{id}
+      operationId: delete_api_v1_backups_uploads__id_
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        '200':
+          description: Native parts cancelled status and transfer; legacy response varies by transport
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [cancelled]}
+                  transfer:
+                    $ref: '#/components/schemas/Transfer'
+        '409':
+          description: Conflict, or recovered already_stored publication (original preserved)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Error'
+                - type: object
+                  properties:
+                    code: {type: string, enum: [already_stored]}
+                    transfer:
+                      $ref: '#/components/schemas/Transfer'
+                  required: [code, transfer]
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    patch:
+      summary: PATCH /api/v1/backups/uploads/{id}
+      operationId: patch_api_v1_backups_uploads__id_
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/backups/uploads/{id}/parts:
+    get:
+      summary: GET /api/v1/backups/uploads/{id}/parts
+      operationId: get_api_v1_backups_uploads__id__parts
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Bounded missing part indices; cursor is numeric scan index
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissingParts'
+        '400': *id002
+      parameters:
+      - *id004
+      - name: component
+        in: query
+        required: false
+        schema: {type: string, enum: [original], default: original}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: integer, format: int64, minimum: 0, default: 0}
+      - *id008
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/backups/uploads/{id}/retry:
+    post:
+      summary: POST /api/v1/backups/uploads/{id}/retry
+      operationId: post_api_v1_backups_uploads__id__retry
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: Queue complete unstored parts session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/backups/uploads/{id}/components/{component}/parts/{index}:
+    put:
+      summary: PUT /api/v1/backups/uploads/{id}/components/{component}/parts/{index}
+      operationId: put_api_v1_backups_uploads__id__components__component__parts__index_
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        '200':
+          description: Accepted or matching repeat; transfer wrapper
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400':
+          description: Invalid part/length
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Committed part conflicts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '410':
+          description: Staging inactivity expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Checksum mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: Vault locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '507':
+          description: Storage admission failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - *id004
+      - name: component
+        in: path
+        required: true
+        schema: {type: string, enum: [original]}
+      - name: index
+        in: path
+        required: true
+        schema: {type: integer, format: int64, minimum: 0}
+      - $ref: '#/components/parameters/MutationHeader'
+      - name: Content-Length
+        in: header
+        required: true
+        schema: {type: integer, format: int64, minimum: 1, maximum: 16777216}
+        description: Exact computed part length; unknown/chunked length rejected.
+      - name: X-Weazl-SHA256
+        in: header
+        required: true
+        schema: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: Independent zero-based part, 16 MiB except exact last remainder. Same accepted hash/length
+        repeats idempotently. Part acceptance is not stored-original success. Device grant is checked
+        before/after each body Read; vault session cancels streaming; native vault lock is 423.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary}
+  /api/v1/backups/uploads/{id}/finalize:
+    post:
+      summary: POST /api/v1/backups/uploads/{id}/finalize
+      operationId: post_api_v1_backups_uploads__id__finalize
+      x-required-scopes:
+      - backup:write
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '200':
+          description: parts-v1 queues finalization; legacy path finalizes coordinator
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransferResponse'
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/library:
+    get:
+      summary: GET /api/library
+      operationId: get_api_library
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+    put:
+      summary: PUT /api/library
+      operationId: put_api_library
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+    delete:
+      summary: DELETE /api/library
+      operationId: delete_api_library
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/library/page:
+    get:
+      summary: GET /api/library/page
+      operationId: get_api_library_page
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/search/page:
+    get:
+      summary: GET /api/library/search/page
+      operationId: get_api_library_search_page
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/thumbnail:
+    get:
+      summary: GET /api/library/thumbnail
+      operationId: get_api_library_thumbnail
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/music:
+    get:
+      summary: GET /api/library/music
+      operationId: get_api_library_music
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/capability:
+    get:
+      summary: GET /api/library/capability
+      operationId: get_api_library_capability
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/events:
+    get:
+      summary: GET /api/library/events
+      operationId: get_api_library_events
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /api/library/folder:
+    post:
+      summary: POST /api/library/folder
+      operationId: post_api_library_folder
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '201':
+          description: Created by existing handler; see legacy Photos/Library contract.
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/library/rename:
+    post:
+      summary: POST /api/library/rename
+      operationId: post_api_library_rename
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/library/copy:
+    post:
+      summary: POST /api/library/copy
+      operationId: post_api_library_copy
+      x-required-scopes:
+      - files:read
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/trash:
+    get:
+      summary: GET /api/trash
+      operationId: get_api_trash
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+    delete:
+      summary: DELETE /api/trash
+      operationId: delete_api_trash
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/trash/restore:
+    post:
+      summary: POST /api/trash/restore
+      operationId: post_api_trash_restore
+      x-required-scopes:
+      - files:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/library/archive:
+    get:
+      summary: GET /api/library/archive
+      operationId: get_api_library_archive
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+    post:
+      summary: POST /api/library/archive
+      operationId: post_api_library_archive
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+    delete:
+      summary: DELETE /api/library/archive
+      operationId: delete_api_library_archive
+      x-required-scopes:
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/capsules:
+    get:
+      summary: GET /api/capsules
+      operationId: get_api_capsules
+      x-required-scopes:
+      - grabs:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+    post:
+      summary: POST /api/capsules
+      operationId: post_api_capsules
+      x-required-scopes:
+      - grabs:write
+      - files:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '202': *id010
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema: {type: string, minLength: 1, maxLength: 200}
+        description: Owner-scoped canonical specification replay; changed specification returns 409.
+      description: Idempotency-Key mint/recovery wrapper. Lookup requires grabs:read; mint requires source
+        read plus grabs:write. Unkeyed mint preserves browser behavior.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path: {type: string}
+                kind: {type: string}
+                gate: {type: string}
+                passphrase: {type: string}
+                label: {type: string}
+                expiry: {type: string}
+                grabs: {type: integer, format: int64}
+    delete:
+      summary: DELETE /api/capsules
+      operationId: delete_api_capsules
+      x-required-scopes:
+      - grabs:write
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+  /api/v1/grabs/operations:
+    get:
+      summary: GET /api/v1/grabs/operations
+      operationId: get_api_v1_grabs_operations
+      x-required-scopes:
+      - grabs:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        '202': *id010
+        '400': *id002
+        2XX: *id003
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: {type: string, minLength: 1, maxLength: 200}
+        description: Owner-scoped canonical specification replay; changed specification returns 409.
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      description: Idempotency-Key mint/recovery wrapper. Lookup requires grabs:read; mint requires source
+        read plus grabs:write. Unkeyed mint preserves browser behavior.
+  /api/quota:
+    get:
+      summary: GET /api/quota
+      operationId: get_api_quota
+      x-required-scopes:
+      - storage:read
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      responses:
+        default: *id001
+        2XX: *id003
+      parameters: []
+  /.well-known/weazlcloud:
+    get:
+      summary: Minimal public instance discovery
+      operationId: get__well_known_weazlcloud
+      security: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Discovery'
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/mobile/capabilities:
+    get:
+      summary: Authenticated capability projection
+      operationId: get_api_v1_mobile_capabilities
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': &id011
+          $ref: '#/components/responses/SharedResponse6'
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/mobile/profile:
+    get:
+      summary: Same capability projection; narrow profile
+      operationId: get_api_v1_mobile_profile
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id011
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/mobile/status:
+    get:
+      summary: Same capability projection; vault status
+      operationId: get_api_v1_mobile_status
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id011
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/devices:
+    get:
+      summary: Self device for bearer; owner devices for cookie
+      operationId: get_api_v1_devices
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': &id012
+          $ref: '#/components/responses/SharedResponse7'
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+    post:
+      summary: Owner-cookie enrollment; vault must be unlocked
+      operationId: post_api_v1_devices
+      security:
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device:
+                    $ref: '#/components/schemas/Device'
+                  token: {type: string}
+                  scopes:
+                    type: array
+                    items: {type: string}
+                  scope: {type: string}
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                scopes:
+                  type: array
+                  items: {type: string, enum: ['photos:read', 'photos:write', 'files:read', 'files:write',
+                      'backup:write', 'grabs:read', 'grabs:write', 'storage:read']}
+              required:
+              - name
+  /api/v1/devices/{id}:
+    get:
+      summary: Bearer self status or owner-cookie device status
+      operationId: get_api_v1_devices__id_
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id012
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/devices/{id}/rotate:
+    post:
+      summary: Rotate the same device using client-prepared replacement
+      operationId: post_api_v1_devices__id__rotate
+      security:
+      - DeviceBearer: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id012
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operation_id: {type: string}
+                expected_generation: {type: integer, format: int64, minimum: 1}
+                replacement_token: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+              required:
+              - operation_id
+              - expected_generation
+              - replacement_token
+  /api/v1/devices/{id}/reauthorize:
+    post:
+      summary: Owner-cookie reauthorize existing stable identity
+      operationId: post_api_v1_devices__id__reauthorize
+      security:
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id012
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                replacement_token: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+                scopes:
+                  type: array
+                  items: {type: string}
+              required:
+              - replacement_token
+  /api/v1/devices/{id}/revoke:
+    post:
+      summary: Revoke self or owner-cookie device
+      operationId: post_api_v1_devices__id__revoke
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id012
+        default: *id009
+        '400': *id002
+      parameters:
+      - *id004
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+  /api/v1/devices/revoke:
+    post:
+      summary: Legacy body-based self/owner revoke
+      operationId: post_api_v1_devices_revoke
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      x-required-scopes: []
+      x-implementation-state: implemented
+      responses:
+        '200': *id012
+        default: *id009
+        '400': *id002
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: {type: string}
+              required:
+              - id
+  /api/v1/files/sync:
+    get:
+      summary: Snapshot then bounded Files deltas
+      operationId: filesSync
+      security:
+      - DeviceBearer: []
+      x-required-scopes:
+      - files:read
+      x-implementation-state: implemented
+      parameters:
+      - *id007
+      - name: prefix
+        in: query
+        required: false
+        schema: {type: string}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, format: int64, minimum: 1, maximum: 200, default: 100}
+      - name: resume
+        in: query
+        required: false
+        schema: {type: string, enum: ['1']}
+      - name: device_id
+        in: query
+        required: false
+        schema: {type: string}
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilesPage'
+        '409':
+          description: resync_required; discard cursor and restart snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default: *id009
+        '400': *id002
+components:
+  securitySchemes:
+    DeviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: 64 hexadecimal characters encoding 32 random bytes
+    OwnerSession:
+      type: apiKey
+      in: cookie
+      name: weazl_session
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+        code: {type: string}
+        retryable: *id006
+        resync_required: *id006
+        supported_contract_versions:
+          type: array
+          items: {type: integer, enum: [1]}
+    Discovery:
+      type: object
+      properties:
+        instance_id: {type: string, pattern: '^[a-f0-9]{32}$'}
+        contract_version: {type: integer, format: int64, enum: [1]}
+        capabilities_path: {type: string}
+      required:
+      - instance_id
+      - contract_version
+      - capabilities_path
+    Device:
+      type: object
+      properties:
+        id: {type: string}
+        owner_id: {type: string}
+        name: {type: string}
+        scopes:
+          type:
+          - array
+          - 'null'
+          items: {type: string}
+        generation: {type: integer, format: int64}
+        authorization_version: {type: integer, format: int64}
+        revoked: *id006
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+      x-source-type: internal/users/devices.go:Device
+    Capabilities:
+      type: object
+      properties:
+        instance_id: {type: string}
+        contract_version: {type: integer, format: int64}
+        owner_id: {type: string}
+        profile:
+          type: object
+          properties:
+            username: {type: string}
+            full_name: {type: string}
+        vault_unlocked: *id006
+        device_id: {type: string}
+        generation: {type: integer, format: int64}
+        grants:
+          type: array
+          items: {type: string}
+        expires_at: {type: string, format: date-time}
+        authentication: {type: string}
+        features:
+          type: object
+          properties:
+            scoped_devices: {type: boolean}
+            credential_rotation: {type: boolean}
+            photo_collections: {type: boolean}
+            source_collections: {type: boolean}
+            source_memberships: {type: boolean}
+            file_reads: {type: boolean}
+            files_sync: {type: boolean}
+            recurring_backups: {type: boolean}
+            idempotent_grabs: {type: boolean}
+            parts_v1: {type: boolean}
+            auto_finalize: {type: boolean}
+          description: Actual advertised flags. parts_v1/auto_finalize depend on initialized manager;
+            advertisement is not documentation-run test evidence.
+        transports:
+          type: array
+          items: {type: string}
+        limits:
+          type: object
+          properties:
+            active_devices: {type: integer, const: 32}
+            credential_ttl_seconds: {type: integer, const: 7776000}
+            rotation_grace_seconds: {type: integer, const: 900}
+            staging_expiry_seconds: {type: integer, const: 86400}
+            ordered_chunk_bytes: {type: integer, const: 16777216}
+            part_bytes: {type: integer, const: 16777216}
+            missing_parts_page: {type: integer, const: 200}
+            mobile_finalize_workers_per_owner: {type: integer, const: 1}
+            mobile_finalize_workers:
+              type: integer
+              minimum: 1
+              maximum: 2
+              description: min(2,max(1,GOMAXPROCS/2)); small two-CPU profile = 1.
+          additionalProperties: true
+    FileItem:
+      type: object
+      properties:
+        id: {type: string}
+        revision: {type: integer, format: int64, minimum: 1}
+        path: {type: string}
+        folder: *id006
+        size: {type: integer, format: int64, minimum: 0}
+        mtime: {type: string, format: date-time}
+      required:
+      - id
+      - revision
+      - path
+      - folder
+      - size
+      - mtime
+      x-source-type: internal/library/mobile_files.go:MobileFileItem
+    FileChange:
+      type: object
+      properties:
+        sequence: {type: integer, format: int64}
+        kind: {type: string, enum: [asset, folder]}
+        id: {type: string}
+        deleted: *id006
+        item:
+          $ref: '#/components/schemas/FileItem'
+      x-source-type: internal/library/mobile_files_sync.go:MobileFilesChange
+    FilesPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileItem'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileChange'
+        next_cursor: {type: string}
+        checkpoint: {type: string}
+        has_more: *id006
+        resync_required: *id006
+      required:
+      - items
+      - has_more
+      - resync_required
+      x-source-type: internal/library/mobile_files_sync.go:MobileFilesPage
+    Component:
+      type: object
+      properties:
+        id: {type: string, enum: [original, motion]}
+        filename: {type: string, maxLength: 255}
+        media_type: {type: string}
+        size: {type: integer, format: int64, minimum: 1}
+        sha256: {type: string, pattern: '^[a-fA-F0-9]{64}$'}
+      required:
+      - id
+      - filename
+      - size
+      - sha256
+      x-source-type: internal/photoingest/spec.go:Component
+    PhotoSpec:
+      type: object
+      properties:
+        device_id: {type: string}
+        device_asset_id: {type: string}
+        source_revision: {type: string, default: '1'}
+        source_namespace: {type: string, maxLength: 200}
+        source_asset_id: {type: string, maxLength: 4096}
+        source_mapping_revision: {type: integer, format: int64}
+        root_id: {type: string, default: 'root:photos'}
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Component'
+          minItems: 1
+          maxItems: 2
+        filename: {type: string}
+        size: {type: integer, format: int64}
+        sha256: {type: string}
+        album_ids:
+          type: array
+          items: {type: string}
+          maxItems: 100
+        captured_at: {type: string, format: date-time}
+        offset_known: *id006
+        hidden: *id006
+        original_mode: {type: string, enum: ['', opaque-original-v1]}
+        transport: {type: string, enum: ['', parts-v1]}
+        commit_when_complete: *id006
+      allOf:
+      - anyOf:
+        - required:
+          - device_asset_id
+        - required:
+          - source_namespace
+          - source_asset_id
+      - anyOf:
+        - required:
+          - components
+        - required:
+          - filename
+          - size
+          - sha256
+      description: Bearer imposes device_id; cookie must supply a valid enrolled owner device. Use components
+        OR legacy filename/size/sha256; media framing, normalized identity and byte-length checks run
+        server-side.
+      x-source-type: internal/photoingest/spec.go:Spec
+    BackupSource:
+      type: object
+      properties:
+        device_id: {type: string}
+        source_id: {type: string}
+        destination_id: {type: string}
+        name: {type: string}
+        status: {type: string, enum: [active, paused, detached]}
+        revision: {type: integer, format: int64}
+      x-source-type: internal/backup/types.go:Source
+    BackupSpec:
+      type: object
+      properties:
+        device_id: {type: string}
+        source_id: {type: string, maxLength: 1024}
+        source_item_id: {type: string, maxLength: 1024}
+        source_revision: {type: string, maxLength: 1024}
+        relative_path: {type: string, maxLength: 4096}
+        filename: {type: string}
+        kind: {type: string, enum: [file, folder], default: file}
+        size: {type: integer, format: int64, minimum: 0}
+        sha256: {type: string}
+        mtime: {type: string, format: date-time}
+        expected_entry_id: {type: string}
+        expected_revision: {type: integer, format: int64}
+        transport: {type: string, enum: ['', sequential, parts-v1], default: sequential}
+        commit_when_complete: *id006
+      required:
+      - source_id
+      - source_item_id
+      - source_revision
+      - size
+      description: Expected entry ID/revision must both be present for replacement; folder size=0/hash
+        empty, file SHA256 required including empty-file digest. commit_when_complete is consumed by parts
+        HTTP adapter.
+      allOf:
+      - anyOf:
+        - required:
+          - relative_path
+        - required:
+          - filename
+      x-source-type: internal/backup/types.go:Spec
+    BackupReceipt:
+      type: object
+      properties:
+        id: {type: string}
+        receipt_id: {type: string}
+        status: {type: string}
+        spec:
+          $ref: '#/components/schemas/BackupSpec'
+        upload_id: {type: string}
+        file:
+          type: object
+          description: Existing catalog File DTO; may include storage fields. Files native metadata uses
+            FileItem instead.
+      x-source-type: internal/backup/types.go:View
+    PhotoReceipt:
+      type: object
+      properties:
+        upload:
+          $ref: '#/components/schemas/SessionView'
+        component:
+          $ref: '#/components/schemas/PhotoComponentView'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhotoComponentView'
+        asset_id: {type: string}
+        device_asset_id: {type: string}
+        source_revision: {type: string}
+        path: {type: string}
+        revision: {type: integer, format: int64}
+        status: {type: string}
+        processing_state: {type: string}
+      x-source-type: internal/photoingest/manager.go:View
+    PartsComponent:
+      type: object
+      properties:
+        id: {type: string, enum: [original, motion]}
+        size: {type: integer, format: int64, minimum: 0}
+        sha256: {type: string}
+        received_parts: {type: integer, format: int64, minimum: 0}
+        received_bytes: {type: integer, format: int64, minimum: 0}
+      x-source-type: internal/mobileparts/model.go:Component
+    Transfer:
+      type: object
+      properties:
+        id: {type: string}
+        transport: {type: string, enum: [parts-v1]}
+        status: {type: string, enum: [uploading, queued, verifying, stored, failed, cancelled]}
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartsComponent'
+        part_size: {type: integer, format: int64, enum: [16777216]}
+        error_code:
+          type: string
+          description: Background failure code; includes stale_revision, source_inactive,
+            insufficient_storage, device_authorization_required, vault_locked and fallback commit_failed.
+        result:
+          oneOf:
+          - $ref: '#/components/schemas/PhotoReceipt'
+          - $ref: '#/components/schemas/BackupReceipt'
+        updated_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+      required:
+      - id
+      - transport
+      - status
+      - components
+      - part_size
+      - updated_at
+      - expires_at
+      x-source-type: internal/mobileparts/model.go:View
+    TransferResponse:
+      type: object
+      properties:
+        transfer:
+          $ref: '#/components/schemas/Transfer'
+      required:
+      - transfer
+    PartsCreateResponse:
+      type: object
+      properties:
+        receipt:
+          oneOf:
+          - $ref: '#/components/schemas/PhotoReceipt'
+          - $ref: '#/components/schemas/BackupReceipt'
+        transfer:
+          $ref: '#/components/schemas/Transfer'
+      required:
+      - receipt
+    MissingParts:
+      type: object
+      properties:
+        missing:
+          type: array
+          items: {type: integer, format: int64, minimum: 0}
+        next: {type: integer, format: int64, minimum: 0}
+        has_more: *id006
+      required:
+      - missing
+      - next
+      - has_more
+      x-source-type: internal/mobileparts/model.go:PartPage
+    CollectionFolder:
+      type: object
+      properties:
+        id: {type: string}
+        parent_id: {type: string}
+        title: {type: string, maxLength: 200}
+        position: {type: integer, format: int64, minimum: 0, maximum: 100000}
+        revision: {type: integer, format: int64}
+      x-source-type: internal/catalog/collections.go:CollectionFolder
+    AlbumHeader:
+      type: object
+      properties:
+        id: {type: string}
+        revision: {type: integer, format: int64}
+        parent_id: {type: string}
+        title: {type: string}
+        description: {type: string}
+        position: {type: integer, format: int64}
+        asset_ids:
+          type:
+          - array
+          - 'null'
+          items: {type: string}
+          description: May be null in header-only collection projection; use context-filtered membership
+            pages for complete IDs.
+        cover_id: {type: string}
+      x-source-type: internal/catalog/albums.go:Album
+    SourceOperation:
+      type: object
+      properties:
+        operation_id: {type: string, maxLength: 200}
+        namespace: {type: string, maxLength: 200}
+        source_id: {type: string, maxLength: 4096}
+        source_revision: {type: string, maxLength: 200}
+        kind: {type: string, enum: [folder, album]}
+        parent_source_id: {type: string, maxLength: 4096}
+        title: {type: string}
+        position: {type: integer, format: int64}
+        expected_revision: {type: integer, format: int64}
+        deleted: *id006
+        add_ids:
+          type: array
+          items: {type: string}
+          maxItems: 200
+      required:
+      - operation_id
+      - namespace
+      - source_id
+      - source_revision
+      - kind
+      x-source-type: internal/catalog/photo_sources.go:SourceOperation
+    SourceOutcome:
+      type: object
+      properties:
+        operation_id: {type: string}
+        status: {type: string, enum: [applied, conflict, invalid, retryable, dependency-blocked]}
+        code: {type: string}
+        server_id: {type: string}
+        revision: {type: integer, format: int64}
+      x-source-type: internal/catalog/photo_sources.go:SourceOutcome
+    SourceBatch:
+      type: object
+      properties:
+        device_id: {type: string}
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceOperation'
+          minItems: 1
+          maxItems: 200
+      required:
+      - operations
+    CollectionPage:
+      type: object
+      properties:
+        schema: {type: integer, format: int64, enum: [2]}
+        position: {type: object}
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              folder:
+                $ref: '#/components/schemas/CollectionFolder'
+              album:
+                $ref: '#/components/schemas/AlbumHeader'
+        next: {type: string}
+        checkpoint: {type: string}
+        has_more: *id006
+      x-source-type: internal/catalog/collections.go:CollectionPage
+    CollectionDelta:
+      type: object
+      properties:
+        schema: {type: integer, format: int64, enum: [2]}
+        position: {type: object}
+        changes:
+          type: array
+          items:
+            type: object
+            description: 'Journal records: album, collection, source-mapping; no album member IDs/covers
+              or asset mappings.'
+        next_cursor: {type: string}
+        checkpoint: {type: string}
+        has_more: *id006
+      x-source-type: internal/library/photo_collections.go:PhotoCollectionDelta
+    MembershipPage:
+      type: object
+      properties:
+        id: {type: string}
+        revision: {type: integer, format: int64}
+        asset_ids:
+          type: array
+          items: {type: string}
+        next_cursor: {type: string}
+        has_more: *id006
+      x-source-type: internal/library/photo_sync_albums.go:PhotoAlbumMembershipPage
+    SessionView:
+      type: object
+      properties:
+        id: {type: string}
+        path: {type: string}
+        size: {type: integer, format: int64}
+        offset: {type: integer, format: int64}
+        hash: {type: string}
+        chunk_hashes:
+          type: array
+          items: {type: string}
+        status: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+      x-source-type: internal/upload/manager.go:SessionView
+    PhotoComponentView:
+      type: object
+      properties:
+        id: {type: string, enum: [original, motion]}
+        offset: {type: integer, format: int64}
+        size: {type: integer, format: int64}
+        status: {type: string}
+        chunk_limit: {type: integer, format: int64}
+      x-source-type: internal/photoingest/manager.go:ComponentView
+    SourceMapping:
+      type: object
+      properties:
+        device_id: {type: string}
+        namespace: {type: string}
+        source_id: {type: string}
+        kind: {type: string}
+        server_id: {type: string}
+        source_revision: {type: string}
+        server_revision: {type: integer, format: int64}
+      x-source-type: internal/catalog/photo_sources.go:SourceMapping
+    PhotoSelectionOptions:
+      type: object
+      properties:
+        ids:
+          type: array
+          items: {type: string}
+        filter:
+          type: object
+          description: Existing PhotoSearchOptions, including album and explicit Hidden filters.
+        mode: {type: string}
+        date: {type: string}
+        search: {type: boolean}
+      x-source-type: internal/library/photo_selections.go:PhotoSelectionOptions
+  parameters:
+    MobileContractHeader:
+      name: X-Weazl-Mobile-Contract
+      in: header
+      required: false
+      schema: {type: string, enum: ['1']}
+      description: Optional version negotiation. Duplicate/future/empty/mismatched header/query gives
+        400 unsupported_contract_version.
+    MobileContractQuery:
+      name: contract_version
+      in: query
+      required: false
+      schema: {type: string, enum: ['1']}
+      description: Alternative to version header; omission preserves legacy behavior.
+    MutationHeader:
+      name: X-Weazl-Desk
+      in: header
+      required: true
+      schema: {type: string, enum: ['1']}
+    query_cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string}
+    query_hidden:
+      name: hidden
+      in: query
+      schema: {type: string, enum: ['1']}
+    path_id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    query_limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, format: int64, minimum: 1, maximum: 200, default: 200}
+  responses:
+    SharedResponse:
+      description: Handler-specific failure; code can be absent in legacy/delegated errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SharedResponse2:
+      description: Invalid request or unsupported_contract_version on invalid/duplicate negotiation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SharedResponse3:
+      description: Existing handler response; see mobile-api.md and photo-api.md for legacy DTOs.
+    SharedResponse4:
+      description: Lookup may report active mint without consuming a guest grab.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              operation_id: {type: string}
+              state: {type: string, enum: [minting]}
+    SharedResponse5:
+      description: Successful response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    SharedResponse6:
+      description: Successful response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Capabilities'
+    SharedResponse7:
+      description: Successful response
+x-source-baseline: a077baf336764ead17cbe983e44907a89efa16fd
+x-release-status: uncommitted; verification pending beyond recorded evidence
+x-part-size-bytes: 16777216
+x-staging-inactivity-seconds: 86400
+x-legacy-reference: photo-api.md and photo-api.yaml
+x-finalizer-limit: min(2, max(1, runtime.GOMAXPROCS(0)/2)); one per owner per round
+x-unimplemented-route-inventory:
+- method: PATCH
+  path: /api/v1/photos/collections/{id}
+  required_scopes:
+  - photos:write
+  state: allowlisted-only
+  note: 'Scope allowlist entry only: the inspected dispatcher has no matching operation. Do not treat
+    this as an available endpoint.'
+- method: DELETE
+  path: /api/v1/photos/collections/{id}
+  required_scopes:
+  - photos:write
+  state: allowlisted-only
+  note: 'Scope allowlist entry only: the inspected dispatcher has no matching operation. Do not treat
+    this as an available endpoint.'
+- method: PUT
+  path: /api/v1/backups/uploads/{id}/parts/{index}
+  required_scopes:
+  - backup:write
+  - files:write
+  state: allowlisted-only
+  note: 'Scope allowlist entry only: the inspected dispatcher has no matching operation. Do not treat
+    this as an available endpoint.'
+- method: GET
+  path: /api/v1/photos/uploads/{id}/receipt
+  required_scopes:
+  - photos:write
+  state: pending
+  note: Requested receipt alias; pending parent implementation
+- method: GET
+  path: /api/v1/backups/uploads/{id}/receipt
+  required_scopes:
+  - backup:write
+  - files:write
+  state: pending
+  note: Requested receipt alias; pending parent implementation
+x-staging-formats:
+  ordered_new:
+    format: 2
+    manifest_prefix: WZU2\n
+    encrypted: true
+  ordered_legacy:
+    format: 0
+    encrypted: false
+    behavior: retain raw read/resume/finalize adapter until drain
+  backup_private_records:
+    version: 1
+    accept_compatible_version: 0
+    reject_future_versions: true
+    public_version_field: false

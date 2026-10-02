@@ -24,7 +24,7 @@ type StreamSource func(io.Writer) error
 // MintStream stores authenticated chunks without building the payload in RAM.
 // Mint continues to write the legacy one-shot format for compatibility tests
 // and any callers that still provide an in-memory payload.
-func (s *Store) MintStream(rec Record, phrase string, source StreamSource) (Record, error) {
+func (s *Store) mintStream(rec Record, phrase string, source StreamSource, identity string, publish MobilePublicationGuard) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if source == nil {
@@ -35,6 +35,12 @@ func (s *Store) MintStream(rec Record, phrase string, source StreamSource) (Reco
 		return Record{}, err
 	}
 	rec.ID = encodeToken(id)
+	if identity != "" {
+		if err := s.prepareMobileDirectory(identity); err != nil {
+			return Record{}, err
+		}
+		rec.ID = identity
+	}
 	key, err := cryptox.Random(cryptox.KeyBytes)
 	if err != nil {
 		return Record{}, err
@@ -89,34 +95,11 @@ func (s *Store) MintStream(rec Record, phrase string, source StreamSource) (Reco
 			return Record{}, err
 		}
 	}
-	if err := writeMeta(dir, rec); err != nil {
+	if err := writeMobileMeta(dir, rec, publish); err != nil {
 		return Record{}, err
 	}
 	committed = true
 	return rec, nil
-}
-
-func encryptStream(dst io.Writer, key []byte, source StreamSource) (int64, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return 0, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := io.WriteString(dst, streamMagic); err != nil {
-		return 0, err
-	}
-	var count countingWriter
-	count.w = &streamEncryptWriter{dst: dst, gcm: gcm}
-	if err := source(&count); err != nil {
-		return count.n, err
-	}
-	if err := count.w.(*streamEncryptWriter).finish(); err != nil {
-		return count.n, err
-	}
-	return count.n, nil
 }
 
 type countingWriter struct {

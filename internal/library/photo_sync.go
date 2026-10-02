@@ -113,7 +113,7 @@ func (l *Library) photoSyncDeltaLocked(cursor photoSyncCursor, limit int) (Photo
 	l.photoMu.Lock()
 	defer l.photoMu.Unlock()
 	for _, record := range records {
-		if !record.Photos {
+		if !record.Photos || record.Kind == "collection" || record.Kind == "source-mapping" {
 			continue
 		}
 		change := PhotoSyncChange{Sequence: record.Sequence, Kind: record.Kind, ID: record.ID, Deleted: record.Deleted}
@@ -149,7 +149,7 @@ func (l *Library) photoSyncDeltaLocked(cursor photoSyncCursor, limit int) (Photo
 // Requires photoMu. Membership stays private and complete in the catalog;
 // presentation excludes unavailable and out-of-context members.
 func (l *Library) syncAlbumLocked(album catalog.Album, hidden bool) PhotoAlbum {
-	view := PhotoAlbum{ID: album.ID, Revision: album.Revision, Path: "album:" + album.ID, Title: album.Title, Description: album.Description, Position: album.Position, Source: "custom", AssetIDs: []string{}}
+	view := PhotoAlbum{ID: album.ID, ParentID: album.ParentID, Revision: album.Revision, Path: "album:" + album.ID, Title: album.Title, Description: album.Description, Position: album.Position, Source: "custom", AssetIDs: []string{}}
 	for _, id := range album.AssetIDs {
 		file, ok := l.photoByID[id]
 		if !ok || file.Folder || file.PhotoParentID != "" || !photoMedia(file.Path) || l.photoPathHiddenLocked(file.Path) != hidden {

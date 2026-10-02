@@ -16,6 +16,7 @@ func (h *Handler) multiPhotoAlbumMutation(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var body struct {
+		ParentID    *string  `json:"parent_id"`
 		Selection   string   `json:"selection_id"`
 		Hidden      bool     `json:"hidden"`
 		Action      string   `json:"action"`
@@ -35,6 +36,9 @@ func (h *Handler) multiPhotoAlbumMutation(w http.ResponseWriter, r *http.Request
 	switch body.Action {
 	case "save":
 		requested := catalog.Album{ID: body.ID, Revision: body.Revision, Title: body.Title, Description: body.Description, CoverID: body.CoverID, Position: body.Position, AssetIDs: body.AssetIDs}
+		if body.ParentID != nil {
+			requested.ParentID, requested.ParentSet = *body.ParentID, true
+		}
 		var album catalog.Album
 		var saveErr error
 		if body.Selection != "" {
@@ -84,7 +88,7 @@ func albumMutationError(w http.ResponseWriter, err error) {
 	if errors.Is(err, catalog.ErrAlbumNotFound) {
 		status = http.StatusNotFound
 	}
-	if errors.Is(err, catalog.ErrRevisionMismatch) || errors.Is(err, library.ErrPhotoCursorStale) {
+	if errors.Is(err, catalog.ErrSyncExpired) || errors.Is(err, catalog.ErrSourceConflict) || errors.Is(err, catalog.ErrRevisionMismatch) || errors.Is(err, library.ErrPhotoCursorStale) {
 		status = http.StatusConflict
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})

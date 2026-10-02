@@ -166,17 +166,14 @@ func (h *Handler) v1PhotoUploadFinalize(w http.ResponseWriter, r *http.Request, 
 		}
 		capture = &metadata
 	}
-	view, err := h.uploads.Finalize(r.Context(), user, id, func(ctx context.Context, session upload.SessionView, source io.Reader) error {
-		if existing, metadataErr := res.Lib.Metadata(ctx, session.Path); metadataErr == nil {
-			if existing.Hash == session.Hash && existing.Size == session.Size {
-				return nil
-			}
-			return upload.ErrIdempotencyConflict
-		} else if !errors.Is(metadataErr, library.ErrFileNotFound) {
-			return metadataErr
-		}
-		_, putErr := res.Lib.PutReader(ctx, session.Path, source, session.Size)
-		return putErr
+	ctx, guard, cancel, err := h.photoUploadCommitGuard(r, res)
+	if err != nil {
+		apiUsersError(w, err)
+		return
+	}
+	defer cancel()
+	view, err := h.uploads.Finalize(ctx, user, id, func(ctx context.Context, session upload.SessionView, source io.Reader) error {
+		return res.Lib.CommitLegacyPhotoStreamGuarded(ctx, session.ID, session.Path, session.Size, session.Hash, source, capture, guard)
 	})
 	if err != nil {
 		uploadError(w, err)
@@ -187,7 +184,7 @@ func (h *Handler) v1PhotoUploadFinalize(w http.ResponseWriter, r *http.Request, 
 		apiError(w, err)
 		return
 	}
-	if capture != nil {
+	if capture != nil && guard == nil {
 		file, err = res.Lib.SetPhotoCapture(r.Context(), destination, *capture)
 		if err != nil {
 			apiError(w, err)

@@ -39,6 +39,13 @@ type GallerySource struct {
 // MintGallery writes a frozen, encrypted selection and its ZIP. No private
 // vault keys or library paths become part of the guest-facing manifest.
 func (s *Store) MintGallery(rec Record, phrase string, sources []GallerySource) (Record, error) {
+	if s.mobileOrigin != nil {
+		return s.mobileOrigin.mintGallery(rec, phrase, sources, s.mobileID, s.mobilePublish)
+	}
+	return s.mintGallery(rec, phrase, sources, "", nil)
+}
+
+func (s *Store) mintGallery(rec Record, phrase string, sources []GallerySource, identity string, publish MobilePublicationGuard) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(sources) == 0 || len(sources) > 10_000 || rec.Limit < 1 || rec.Limit > 10000 {
@@ -49,6 +56,12 @@ func (s *Store) MintGallery(rec Record, phrase string, sources []GallerySource) 
 		return Record{}, err
 	}
 	rec.ID, rec.Kind, rec.Files = encodeToken(raw), "gallery", nil
+	if identity != "" {
+		if err := s.prepareMobileDirectory(identity); err != nil {
+			return Record{}, err
+		}
+		rec.ID = identity
+	}
 	key, err := cryptox.Random(cryptox.KeyBytes)
 	if err != nil {
 		return Record{}, err
@@ -146,7 +159,7 @@ func (s *Store) MintGallery(rec Record, phrase string, sources []GallerySource) 
 	if err != nil {
 		return Record{}, err
 	}
-	if err := writeMeta(dir, rec); err != nil {
+	if err := writeMobileMeta(dir, rec, publish); err != nil {
 		return Record{}, err
 	}
 	committed = true

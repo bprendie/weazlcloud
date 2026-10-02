@@ -14,6 +14,13 @@ import (
 )
 
 func (m *Manager) Append(ctx context.Context, owner users.User, id string, offset, length int64, chunkHash string, body io.Reader) (SessionView, error) {
+	encrypted, err := m.isEncrypted(owner.ID, id)
+	if err != nil {
+		return SessionView{}, err
+	}
+	if encrypted {
+		return m.appendEncrypted(ctx, owner, id, offset, length, chunkHash, body)
+	}
 	if length > MaxChunkBytes {
 		return SessionView{}, ErrChunkTooLarge
 	}
@@ -146,6 +153,13 @@ func (m *Manager) Append(ctx context.Context, owner users.User, id string, offse
 }
 
 func (m *Manager) Finalize(ctx context.Context, owner users.User, id string, commit CommitFunc) (SessionView, error) {
+	encrypted, err := m.isEncrypted(owner.ID, id)
+	if err != nil {
+		return SessionView{}, err
+	}
+	if encrypted {
+		return m.finalizeEncrypted(ctx, owner, id, commit)
+	}
 	unlock := m.lockSession(id)
 	defer unlock()
 	m.mu.Lock()

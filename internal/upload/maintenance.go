@@ -3,7 +3,10 @@ package upload
 import (
 	"context"
 	"errors"
+	"github.com/bprendie/weazlcloud/internal/vault"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -51,6 +54,11 @@ func (m *Manager) SweepExpiredDetailed(ctx context.Context, now time.Time) (int,
 				unlock()
 				continue
 			}
+			if errors.Is(loadErr, vault.ErrLocked) {
+				m.mu.Unlock()
+				unlock()
+				continue
+			}
 			if loadErr != nil {
 				m.mu.Unlock()
 				unlock()
@@ -90,7 +98,26 @@ func pathBytes(paths []string) (int64, error) {
 		if err != nil {
 			return total, err
 		}
-		total += info.Size()
+		if info.IsDir() {
+			err := filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() {
+					stat, e := entry.Info()
+					if e != nil {
+						return e
+					}
+					total += stat.Size()
+				}
+				return nil
+			})
+			if err != nil {
+				return total, err
+			}
+		} else {
+			total += info.Size()
+		}
 	}
 	return total, nil
 }

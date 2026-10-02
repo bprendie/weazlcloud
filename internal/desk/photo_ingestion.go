@@ -125,7 +125,13 @@ func (h *Handler) v1PhotoUploadRoute(w http.ResponseWriter, r *http.Request) {
 				capture.OffsetMinutes = &offset
 			}
 		}
-		view, err = h.photoUploads.Finalize(r.Context(), res, user, parts[0], deviceID, capture)
+		ctx, guard, cancel, e := h.photoUploadCommitGuard(r, res)
+		if e != nil {
+			apiUsersError(w, e)
+			return
+		}
+		defer cancel()
+		view, err = h.photoUploads.FinalizeGuarded(ctx, res, user, parts[0], deviceID, capture, guard)
 		if err != nil {
 			photoIngestError(w, err)
 			return

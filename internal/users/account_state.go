@@ -20,7 +20,7 @@ func (s *Store) SetDisabled(id string, disabled bool) error {
 	if disabled {
 		s.users[idx].DisablePending = true
 		s.users[idx].DisableError = ""
-		s.removeOwnerDevicesLocked(id)
+		s.invalidateOwnerDevicesLocked(id)
 	}
 	if !disabled && (s.users[idx].DisableError != "" || s.users[idx].DisablePending) {
 		s.users[idx] = old
@@ -68,7 +68,7 @@ func (s *Store) BeginDelete(id string) (User, error) {
 		return User{}, errors.New("cannot delete the last active administrator")
 	}
 	old := u
-	oldDevices := s.removeOwnerDevicesLocked(id)
+	oldDevices := s.invalidateOwnerDevicesLocked(id)
 	u.Disabled, u.Deleting, u.DeleteError = true, true, ""
 	s.users[idx] = u
 	if err := s.saveLocked(); err != nil {

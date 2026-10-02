@@ -11,14 +11,27 @@ import (
 )
 
 type Manager struct {
-	users    *users.Store
-	registry *filesvc.Registry
-	capsules *capsule.Store
-	uploads  *upload.Manager
+	users        *users.Store
+	registry     *filesvc.Registry
+	capsules     *capsule.Store
+	uploads      *upload.Manager
+	ownerCleanup func(context.Context, string) error
 }
 
 func New(us *users.Store, registry *filesvc.Registry, caps *capsule.Store, uploads *upload.Manager) *Manager {
 	return &Manager{users: us, registry: registry, capsules: caps, uploads: uploads}
+}
+
+// SetOwnerCleanup installs cleanup for external staging leases after owner drain.
+// Configure before serving requests. It must be idempotent for restart recovery.
+func (m *Manager) SetOwnerCleanup(cleanup func(context.Context, string) error) {
+	m.ownerCleanup = cleanup
+}
+func (m *Manager) cleanupOwner(ctx context.Context, owner string) error {
+	if m.ownerCleanup == nil {
+		return nil
+	}
+	return m.ownerCleanup(ctx, owner)
 }
 
 func (m *Manager) SetDisabled(ctx context.Context, id string, disabled bool) error {
@@ -39,6 +52,9 @@ func (m *Manager) SetDisabled(ctx context.Context, id string, disabled bool) err
 	}
 	if err := m.registry.DrainResource(ctx, id); err != nil {
 		return fail("draining", err)
+	}
+	if err := m.cleanupOwner(ctx, id); err != nil {
+		return fail("mobile staging", err)
 	}
 	if err := m.capsules.RevokeAll(u.ID); err != nil {
 		return fail("grab links", err)
@@ -79,6 +95,9 @@ func (m *Manager) finish(ctx context.Context, u users.User) error {
 	}
 	if err := m.registry.DrainResource(ctx, u.ID); err != nil {
 		return fail("draining", err)
+	}
+	if err := m.cleanupOwner(ctx, u.ID); err != nil {
+		return fail("mobile staging", err)
 	}
 	if err := m.uploads.DeleteOwner(u.ID); err != nil {
 		return fail("uploads", err)

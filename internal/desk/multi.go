@@ -9,6 +9,9 @@ import (
 )
 
 func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
+	if h.rejectMobileContract(w, r) || h.tryMobileIdentity(w, r) || h.tryMobileParts(w, r) || h.tryMobileBackups(w, r) || h.tryMobileFiles(w, r) || h.tryGuardedMobileRoutes(w, r) {
+		return
+	}
 	switch {
 	case r.URL.Path == "/live" && r.Method == http.MethodGet:
 		ready.Live(w, r)
@@ -195,7 +198,7 @@ func (h *Handler) multiGuard(w http.ResponseWriter, r *http.Request, auth bool, 
 	if auth {
 		u, err := h.users.Current(r)
 		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			apiUsersError(w, err)
 			return
 		}
 		ctx, release, ok := h.registry.Enter(r.Context(), u.ID)

@@ -20,14 +20,16 @@ type SyncPosition struct {
 }
 
 type ChangeRecord struct {
-	Sequence uint64 `json:"sequence"`
-	Hash     string `json:"hash"`
-	Kind     string `json:"kind"`
-	ID       string `json:"id"`
-	Deleted  bool   `json:"deleted,omitempty"`
-	Photos   bool   `json:"photos_scope,omitempty"`
-	File     *File  `json:"file,omitempty"`
-	Album    *Album `json:"album,omitempty"`
+	Collection    *CollectionFolder `json:"collection,omitempty"`
+	SourceMapping *SourceMapping    `json:"source_mapping,omitempty"`
+	Sequence      uint64            `json:"sequence"`
+	Hash          string            `json:"hash"`
+	Kind          string            `json:"kind"`
+	ID            string            `json:"id"`
+	Deleted       bool              `json:"deleted,omitempty"`
+	Photos        bool              `json:"photos_scope,omitempty"`
+	File          *File             `json:"file,omitempty"`
+	Album         *Album            `json:"album,omitempty"`
 }
 
 type Journal struct {
@@ -94,6 +96,9 @@ func (c *Catalog) nextJournalLocked(files []File) (Journal, error) {
 			return Journal{}, err
 		}
 	}
+	if err := c.journalCollections(&journal); err != nil {
+		return Journal{}, err
+	}
 	if len(journal.Records) > ChangeRetention {
 		journal.Records = append([]ChangeRecord(nil), journal.Records[len(journal.Records)-ChangeRetention:]...)
 	}
@@ -124,6 +129,14 @@ func cloneJournal(journal Journal) Journal {
 	journal.Records = append([]ChangeRecord(nil), journal.Records...)
 	for i := range journal.Records {
 		record := &journal.Records[i]
+		if record.Collection != nil {
+			value := *record.Collection
+			record.Collection = &value
+		}
+		if record.SourceMapping != nil {
+			value := *record.SourceMapping
+			record.SourceMapping = &value
+		}
 		if record.File != nil {
 			file := cloneFile(*record.File)
 			record.File = &file

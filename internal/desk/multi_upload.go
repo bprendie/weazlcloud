@@ -103,7 +103,12 @@ func (h *Handler) multiUploadRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) RunUploads(ctx context.Context) { h.uploads.Run(ctx) }
+func (h *Handler) RunUploads(ctx context.Context) {
+	done := make(chan struct{})
+	go func() { defer close(done); h.runMobileParts(ctx) }()
+	h.uploads.Run(ctx)
+	<-done
+}
 
 func (h *Handler) CleanupExpiredUploads(ctx context.Context) (int64, error) {
 	_, bytes, err := h.uploads.SweepExpiredDetailed(ctx, time.Now().UTC())

@@ -39,7 +39,7 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 	}
 	queued := false
 	for _, file := range files {
-		if file.Folder || file.PhotoParentID != "" || !photoPreviewable(file.Path) {
+		if photoOriginalPreviewUnsupported(file) || file.Folder || file.PhotoParentID != "" || !photoPreviewable(file.Path) {
 			continue
 		}
 		job := photos.NewMediaJob(l.ownerID, file.EntryID, file.Revision, photoJobOperation, thumbnailRenderer, 1)

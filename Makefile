@@ -1,7 +1,8 @@
-.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container smoke-sharedstore smoke-photos
+.PHONY: mockup desk-assets test vet race lines js-check build run check compose smoke-recovery smoke-browser smoke-container smoke-sharedstore smoke-photos smoke-mobile
 
 VERSION ?= dev
 PHOTOS_PYTHON ?= python3
+MOBILE_PYTHON ?= python3
 LDFLAGS := -s -w -X github.com/bprendie/weazlcloud/internal/buildinfo.Version=$(VERSION)
 export PATH := $(CURDIR)/.build:$(PATH)
 
@@ -72,6 +73,11 @@ smoke-sharedstore:
 smoke-photos:
 	WEAZLCLOUD_IMAGE=weazlcloud:smoke WEAZLCLOUD_SMOKE_CPUS=2 WEAZLCLOUD_SMOKE_MEMORY=4g $(PHOTOS_PYTHON) -u scripts/smoke-photo-albums.py
 	WEAZLCLOUD_IMAGE=weazlcloud:smoke WEAZLCLOUD_SMOKE_CPUS=2 WEAZLCLOUD_SMOKE_MEMORY=4g WEAZLCLOUD_SMOKE_STORAGE_BACKEND=shared-experimental $(PHOTOS_PYTHON) -u scripts/smoke-photo-albums.py
+
+# Build a local weazlcloud:smoke image first; standard-library Python, both backends.
+# WEAZLCLOUD_IMAGE may select another already-built local release candidate.
+smoke-mobile:
+	WEAZLCLOUD_SMOKE_CPUS=2 WEAZLCLOUD_SMOKE_MEMORY=4g $(MOBILE_PYTHON) -u scripts/smoke-mobile-server.py
 
 compose:
 	docker compose -f deploy/compose.yaml up --build -d

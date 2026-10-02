@@ -54,3 +54,5 @@ jobs:
           /tmp/weazlcloud-photos-venv/bin/playwright install --with-deps chromium
       - name: Photos and gallery browser smokes on both storage backends
         run: make smoke-photos PHOTOS_PYTHON=/tmp/weazlcloud-photos-venv/bin/python
+      - name: Native mobile API smokes on both storage backends
+        run: WEAZLCLOUD_IMAGE=weazlcloud:smoke make smoke-mobile

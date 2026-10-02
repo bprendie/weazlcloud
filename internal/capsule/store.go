@@ -11,6 +11,10 @@ import (
 
 type Store struct {
 	mu                sync.Mutex
+	mobileOrigin      *Store
+	mobileID          string
+	mobilePrepare     MobilePrepare
+	mobilePublish     MobilePublicationGuard
 	root              string
 	gallerySecret     []byte
 	galleryCache      map[string]GalleryManifest

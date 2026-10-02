@@ -49,6 +49,9 @@ func (l *Library) PhotoProcessingState(ctx context.Context, id string) (string, 
 	l.photoMu.Lock()
 	file, found := l.photoByID[id]
 	l.photoMu.Unlock()
+	if found && photoOriginalPreviewUnsupported(file) {
+		return "unsupported", nil
+	}
 	if found {
 		key, keyErr := thumbnailKey(l.vault, file, 320)
 		if keyErr == nil {

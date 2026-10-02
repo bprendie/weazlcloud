@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -145,7 +144,7 @@ func allocated(root string) int64 {
 	return total
 }
 
-func pendingUploads(dataDir string, store *users.Store, user users.User) (int, error) {
+func pendingOrderedUploads(dataDir string, store *users.Store, user users.User) (int, error) {
 	dataPath, err := store.DataPath(user)
 	if err != nil {
 		return 0, err
@@ -165,13 +164,11 @@ func pendingUploads(dataDir string, store *users.Store, user users.User) (int, e
 			if readErr != nil {
 				return count, readErr
 			}
-			var session struct {
-				Status string `json:"status"`
+			status, decodeErr := migrationUploadStatus(store, user, entry.Name(), manifest)
+			if decodeErr != nil {
+				return count, decodeErr
 			}
-			if readErr = json.Unmarshal(manifest, &session); readErr != nil {
-				return count, readErr
-			}
-			if session.Status != "complete" {
+			if status != "complete" {
 				count++
 			}
 		}

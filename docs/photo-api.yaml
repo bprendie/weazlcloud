@@ -5,7 +5,8 @@ info:
   description: 'Local identity and owner-private encrypted Photos. Mutations require X-Weazl-Desk: 1.
     Hidden is explicit Photos presentation context, not a separate vault. Backup is one-way; a stored
     original is independent of derivative readiness. See photo-api.md and photos-local-verification-2026-09-30.md
-    for behavior and release gates.'
+    for behavior and release gates. Additive scoped credentials, nested collections, source mappings,
+    parts-v1 transport and opaque originals are specified in mobile-api.yaml and mobile-api.md.'
 servers:
 - url: /
 security:

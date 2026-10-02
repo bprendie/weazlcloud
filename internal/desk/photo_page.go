@@ -98,6 +98,7 @@ func (h *Handler) multiPhotoDates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) multiPhotoAsset(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
 	res, _, err := h.currentResource(r)
 	if err != nil {
 		apiUsersError(w, err)

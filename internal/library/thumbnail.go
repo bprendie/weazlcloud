@@ -144,6 +144,9 @@ func (l *Library) photoThumbnail(ctx context.Context, entryID string, size int, 
 }
 
 func (l *Library) thumbnailFor(ctx context.Context, f catalog.File, size int, background bool) ([]byte, string, error) {
+	if photoOriginalPreviewUnsupported(f) {
+		return nil, "", ErrThumbnailUnavailable
+	}
 	ctx, release := l.previewContext(ctx)
 	defer release()
 	if size < 96 {

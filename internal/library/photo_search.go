@@ -96,7 +96,12 @@ func (l *Library) PhotoSearchPage(ctx context.Context, options PhotoSearchOption
 }
 
 func photoItemFromFile(f catalog.File) PhotoItem {
-	return PhotoItem{Components: append([]catalog.PhotoComponent(nil), f.PhotoComponents...), DeviceID: f.DeviceID, DeviceAssetID: f.DeviceAssetID, SourceRevision: f.SourceRevision, ID: f.EntryID, Revision: f.Revision, Folder: f.Folder, Path: f.Path, Size: f.Size, Modified: f.Mtime, ImportedAt: f.ImportedAt, CapturedAt: photoCaptureTime(f), CaptureOffsetMinutes: f.CaptureOffsetMinutes, CaptureSource: f.CaptureSource, MediaType: photoMediaType(f.Path), Width: f.Width, Height: f.Height, DurationMillis: f.DurationMillis, Orientation: f.Orientation, UserRotation: f.UserRotation, PreferredPhoto: f.PreferredPhoto, Camera: f.Camera, Favorite: f.Favorite, Archived: f.Archived, Caption: f.Caption}
+	mediaType := photoMediaType(f.Path)
+	unsupported := photoOriginalPreviewUnsupported(f)
+	if unsupported && mediaType != "image/dng" {
+		mediaType = "application/octet-stream"
+	}
+	return PhotoItem{PreviewUnsupported: unsupported, Components: append([]catalog.PhotoComponent(nil), f.PhotoComponents...), DeviceID: f.DeviceID, DeviceAssetID: f.DeviceAssetID, SourceRevision: f.SourceRevision, ID: f.EntryID, Revision: f.Revision, Folder: f.Folder, Path: f.Path, Size: f.Size, Modified: f.Mtime, ImportedAt: f.ImportedAt, CapturedAt: photoCaptureTime(f), CaptureOffsetMinutes: f.CaptureOffsetMinutes, CaptureSource: f.CaptureSource, MediaType: mediaType, Width: f.Width, Height: f.Height, DurationMillis: f.DurationMillis, Orientation: f.Orientation, UserRotation: f.UserRotation, PreferredPhoto: f.PreferredPhoto, Camera: f.Camera, Favorite: f.Favorite, Archived: f.Archived, Caption: f.Caption}
 }
 
 func photoSearchMatches(file catalog.File, options PhotoSearchOptions, pattern *regexp.Regexp) bool {

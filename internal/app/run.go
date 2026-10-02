@@ -30,21 +30,22 @@ import (
 )
 
 type Node struct {
-	cfg        config.Config
-	desk       net.Listener
-	share      net.Listener
-	drive      net.Listener
-	svcs       []*http.Server
-	vault      *vault.Vault
-	lib        *library.Library
-	caps       *capsule.Store
-	activity   *idle.Coordinator
-	idleCancel context.CancelFunc
-	idleDone   chan struct{}
-	shared     *sharedstore.Store
-	registry   *filesvc.Registry
-	closeOnce  sync.Once
-	closeErr   error
+	cfg          config.Config
+	desk         net.Listener
+	share        net.Listener
+	drive        net.Listener
+	svcs         []*http.Server
+	vault        *vault.Vault
+	lib          *library.Library
+	caps         *capsule.Store
+	activity     *idle.Coordinator
+	idleCancel   context.CancelFunc
+	idleDone     chan struct{}
+	uploadWorker func(context.Context)
+	shared       *sharedstore.Store
+	registry     *filesvc.Registry
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -212,6 +213,7 @@ func (n *Node) bind() error {
 	deskHandler := desk.NewMulti(us, n.caps, q, n.cfg.PublicBase, n.cfg.DriveBase, n.cfg.DataDir, registry)
 	deskHandler.EnableTakeout(os.Getenv("WEAZLCLOUD_IMPORT_DIR"), os.Getenv("WEAZLCLOUD_IMPORT_OWNER"))
 	deskHandler.SetMaintenanceStatus(n.activity)
+	n.uploadWorker = deskHandler.RunUploads
 	n.activity.RegisterNamed("pending-account-cleanup", func(ctx context.Context) error {
 		return deskHandler.ResumeDeletes(ctx)
 	})
@@ -257,6 +259,13 @@ func (n *Node) startIdleMaintenance(parent context.Context) {
 	n.idleDone = make(chan struct{})
 	go func() {
 		defer close(n.idleDone)
-		n.activity.Run(ctx)
+		var workers sync.WaitGroup
+		workers.Add(1)
+		go func() { defer workers.Done(); n.activity.Run(ctx) }()
+		if n.uploadWorker != nil {
+			workers.Add(1)
+			go func() { defer workers.Done(); n.uploadWorker(ctx) }()
+		}
+		workers.Wait()
 	}()
 }

@@ -59,6 +59,12 @@ func (m *Manager) Append(ctx context.Context, res *filesvc.Resource, user users.
 }
 
 func (m *Manager) Finalize(ctx context.Context, res *filesvc.Resource, user users.User, id, device string, capture *catalog.CaptureMetadata) (View, error) {
+	return m.FinalizeGuarded(ctx, res, user, id, device, capture, nil)
+}
+
+// FinalizeGuarded retains ordered transport and guards only catalog publication,
+// through Library's library -> users -> catalog lock order.
+func (m *Manager) FinalizeGuarded(ctx context.Context, res *filesvc.Resource, user users.User, id, device string, capture *catalog.CaptureMetadata, guard func(func() error) error) (View, error) {
 	release := m.lock(user.ID, id)
 	defer release()
 	receipt, err := load(res, id)
@@ -70,6 +76,9 @@ func (m *Manager) Finalize(ctx context.Context, res *filesvc.Resource, user user
 	}
 	if receipt.Status == "stored" {
 		return m.view(res, user, receipt)
+	}
+	if receipt.Spec.Transport == "parts-v1" {
+		return View{}, ErrInvalid
 	}
 	if capture != nil {
 		// Persist the first finalize metadata before publishing originals. A lost
@@ -98,7 +107,7 @@ func (m *Manager) Finalize(ctx context.Context, res *filesvc.Resource, user user
 	if err != nil {
 		return View{}, err
 	}
-	commit := catalog.PhotoIngestCommit{DeviceID: receipt.Spec.DeviceID, DeviceAssetID: receipt.Spec.DeviceAssetID, SourceRevision: receipt.Spec.SourceRevision, AlbumIDs: receipt.Spec.AlbumIDs}
+	commit := catalog.PhotoIngestCommit{SourceNamespace: receipt.Spec.SourceNamespace, SourceAssetID: receipt.Spec.SourceAssetID, SourceMappingRevision: receipt.Spec.SourceMappingRevision, DeviceID: receipt.Spec.DeviceID, DeviceAssetID: receipt.Spec.DeviceAssetID, SourceRevision: receipt.Spec.SourceRevision, Hidden: receipt.Spec.Hidden, OpaqueOriginal: receipt.Spec.OriginalMode == "opaque-original-v1", AlbumIDs: receipt.Spec.AlbumIDs}
 	commit.Capture, err = receipt.Spec.Capture()
 	if err != nil {
 		return View{}, err
@@ -120,15 +129,18 @@ func (m *Manager) Finalize(ctx context.Context, res *filesvc.Resource, user user
 			if err != nil {
 				return err
 			}
-			_, err = res.Lib.PutReader(ctx, session.Path, reader, part.Size)
+			_, err = res.Lib.StorePhotoComponent(ctx, session.Path, reader, part.Size, part.SHA256)
+			if errors.Is(err, library.ErrPhotoComponentChecksum) {
+				return upload.ErrHashMismatch
+			}
 			return err
 		})
 		if err != nil {
 			return View{}, err
 		}
-		commit.Files = append(commit.Files, catalog.PhotoIngestFile{ID: part.ID, From: pendingPath(receipt, part), To: strings.TrimSuffix(root, "/") + "/Mobile/" + receipt.Spec.DeviceID + "/" + receipt.Spec.DeviceAssetID + "/" + receipt.Spec.SourceRevision + "/" + part.Filename, Hash: part.SHA256, Size: part.Size, MediaType: part.MediaType})
+		commit.Files = append(commit.Files, catalog.PhotoIngestFile{ID: part.ID, From: pendingPath(receipt, part), To: strings.TrimSuffix(root, "/") + "/Mobile/" + receipt.Spec.DeviceID + "/" + receipt.Spec.DeviceAssetID + "/" + receipt.Spec.SourceRevision + "/" + destinationName(receipt.Spec, part), Hash: part.SHA256, Size: part.Size, MediaType: part.MediaType})
 	}
-	file, err := res.Lib.CommitPhotoIngest(ctx, commit)
+	file, err := res.Lib.CommitPhotoIngestGuarded(ctx, commit, guard)
 	if err != nil {
 		return View{}, err
 	}
@@ -145,6 +157,12 @@ func (m *Manager) Cancel(res *filesvc.Resource, user users.User, id, device stri
 	receipt, err := load(res, id)
 	if err != nil {
 		return err
+	}
+	if receipt.Spec.Transport == "parts-v1" {
+		if device != "" && receipt.Spec.DeviceID != device {
+			return upload.ErrNotFound
+		}
+		return cancelParts(res, receipt)
 	}
 	if err := authorized(receipt, device); err != nil {
 		return err

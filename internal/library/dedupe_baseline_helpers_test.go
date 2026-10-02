@@ -204,15 +204,13 @@ func verifyBatchCatalog(t *testing.T, store *users.Store, alice users.User, fixt
 		t.Fatal(err)
 	}
 	defer clear(plain)
-	var tree struct {
-		Files []catalog.File `json:"files"`
-	}
-	if err := json.Unmarshal(plain, &tree); err != nil {
+	files, err := catalog.DecodeFilesJSON(plain)
+	if err != nil {
 		t.Fatal(err)
 	}
 	snapshots := make(map[string]string)
 	trashedV1, liveV2 := 0, 0
-	for _, file := range tree.Files {
+	for _, file := range files {
 		if file.Present && (file.Path == "batch/one.txt" || file.Path == "batch/two.txt") {
 			snapshots[file.Path] = file.Snap
 		}

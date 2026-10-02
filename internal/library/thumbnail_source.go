@@ -26,6 +26,9 @@ func sourceAllowance(f catalog.File) int64 {
 
 func (l *Library) renderThumbnail(ctx context.Context, f catalog.File, size int, background bool) ([]byte, string, func(), error) {
 	noop := func() {}
+	if photoOriginalPreviewUnsupported(f) {
+		return nil, "", noop, ErrThumbnailUnavailable
+	}
 	acquire := previewMemory.acquire
 	if background {
 		acquire = previewMemory.acquireBackground

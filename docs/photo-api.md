@@ -1,8 +1,15 @@
 # Photos API v1
 
-Updated September 30, 2026. The versioned routes are implemented locally; the
+Updated October 2, 2026. The versioned routes are implemented locally; the
 browser/container release gates are tracked in
 [plan_modal.md](../plan_modal.md). This is a web/API foundation, not an iOS app.
+
+The mobile additions preserve this ordered-upload contract and add negotiated
+`parts-v1` encrypted transfers with autonomous finalization, nested collection
+folders, source organization and atomic initial Hidden state. DNG and negotiated
+`opaque-original-v1` resources retain originals independently of preview support.
+Use [mobile-api.md](mobile-api.md) for current DTOs, scope rules and examples;
+physical iOS scheduling is a separate device gate.
 
 Authenticate with the local account. An approved account may enroll a device
 from an authenticated, unlocked account session with `POST /api/v1/devices`
@@ -11,10 +18,14 @@ the server stores only its hash. Native requests send `Authorization: Bearer
 <token>`. Mutations also send `X-Weazl-Desk: 1`. If an Origin header is supplied,
 it must match the request origin. No third-party identity or helper is involved.
 
-Credentials expire after 90 days and are limited to Photos/device routes. A
+Legacy credentials remain limited to their existing Photos/device routes. New
+scoped credentials and retry-safe rotation are defined in the
+[mobile API](mobile-api.md) and [mobile OpenAPI](mobile-api.yaml). Credentials
+expire after 90 days. A
 device cannot enroll other devices or change the node hostname. Password change,
 account disable/delete and explicit device revocation invalidate credentials.
-`GET /api/v1/devices` lists only the owner's devices; `POST
+`GET /api/v1/devices` lists the owner's devices for an account session and
+only the authenticated device for a bearer; `POST
 /api/v1/devices/revoke` accepts an `id`. A bearer credential may revoke itself;
 the owner's account session may revoke any of its own devices.
 

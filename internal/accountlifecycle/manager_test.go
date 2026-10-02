@@ -43,6 +43,11 @@ func TestDeleteResumesAndOnlyRemovesOwnerData(t *testing.T) {
 	}
 	quotaManager := quota.New(root)
 	registry := filesvc.NewRegistry(us, quotaManager)
+	for _, owner := range []users.User{alice, bob} {
+		if err := registry.For(owner).Vault.Forge([]byte("lifecycle-vault"), []byte("lifecycle-vault")); err != nil {
+			t.Fatal(err)
+		}
+	}
 	uploads := upload.New(filepath.Join(root, "uploads"), registry.For, quotaManager, us.Count)
 	if _, err := uploads.Create(alice, "alice.iso", 20, ""); err != nil {
 		t.Fatal(err)
@@ -87,6 +92,9 @@ func TestDeleteResumesAndOnlyRemovesOwnerData(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "uploads", alice.ID)); !os.IsNotExist(err) {
 		t.Fatal("deleted upload state still exists")
+	}
+	if err := restartedRegistry.For(bob).Vault.UnlockNode(); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := restartedUploads.Status(bob, bobUpload.ID); err != nil {
 		t.Fatal("other user's upload state changed:", err)
@@ -187,6 +195,9 @@ func TestDeleteReplaysAfterEveryCleanupBoundary(t *testing.T) {
 			reg := filesvc.NewRegistry(us, q)
 			uploads := upload.New(filepath.Join(root, "uploads"), reg.For, q, us.Count)
 			for _, owner := range []users.User{alice, bob} {
+				if err := reg.For(owner).Vault.Forge([]byte("lifecycle-vault"), []byte("lifecycle-vault")); err != nil {
+					t.Fatal(err)
+				}
 				if _, err := uploads.Create(owner, owner.Username+".iso", 12, ""); err != nil {
 					t.Fatal(err)
 				}
@@ -234,6 +245,9 @@ func TestDeleteReplaysAfterEveryCleanupBoundary(t *testing.T) {
 			remaining, err := os.ReadFile(bobPath)
 			if err != nil || sha256.Sum256(remaining) != hash {
 				t.Fatal("other user's data changed")
+			}
+			if err := rr.For(bob).Vault.UnlockNode(); err != nil {
+				t.Fatal(err)
 			}
 			if _, err := ru.List(bob); err != nil {
 				t.Fatal("other user's upload state changed:", err)

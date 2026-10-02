@@ -102,7 +102,7 @@ func samePhotoRows(current, cached []catalog.File) bool {
 		if !slices.Equal(a.PhotoComponents, b.PhotoComponents) {
 			return false
 		}
-		if a.PhotoParentID != b.PhotoParentID || a.DeviceID != b.DeviceID || a.DeviceAssetID != b.DeviceAssetID || a.SourceRevision != b.SourceRevision || a.EntryID != b.EntryID || a.Revision != b.Revision || a.Path != b.Path || a.Folder != b.Folder || a.Hidden != b.Hidden || a.Size != b.Size || a.Hash != b.Hash || !a.Mtime.Equal(b.Mtime) || !a.ImportedAt.Equal(b.ImportedAt) || !samePhotoCapture(a, b) || a.Width != b.Width || a.Height != b.Height || a.DurationMillis != b.DurationMillis || a.Orientation != b.Orientation || a.Camera != b.Camera || a.UserRotation != b.UserRotation || a.PreferredPhoto != b.PreferredPhoto || a.Favorite != b.Favorite || a.Archived != b.Archived || a.Caption != b.Caption {
+		if a.PhotoPreviewUnsupported != b.PhotoPreviewUnsupported || a.PhotoParentID != b.PhotoParentID || a.DeviceID != b.DeviceID || a.DeviceAssetID != b.DeviceAssetID || a.SourceRevision != b.SourceRevision || a.EntryID != b.EntryID || a.Revision != b.Revision || a.Path != b.Path || a.Folder != b.Folder || a.Hidden != b.Hidden || a.Size != b.Size || a.Hash != b.Hash || !a.Mtime.Equal(b.Mtime) || !a.ImportedAt.Equal(b.ImportedAt) || !samePhotoCapture(a, b) || a.Width != b.Width || a.Height != b.Height || a.DurationMillis != b.DurationMillis || a.Orientation != b.Orientation || a.Camera != b.Camera || a.UserRotation != b.UserRotation || a.PreferredPhoto != b.PreferredPhoto || a.Favorite != b.Favorite || a.Archived != b.Archived || a.Caption != b.Caption {
 			return false
 		}
 	}

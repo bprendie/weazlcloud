@@ -122,42 +122,19 @@ func clearMigrationBlockers(t *testing.T, root string, store *users.Store, user 
 
 func ageTrash(t *testing.T, v *vault.Vault, path, entry string, at time.Time) {
 	t.Helper()
-	sealed, err := os.ReadFile(path)
-	if err != nil {
+	c := catalog.New(path, v)
+	if err := c.Load(); err != nil {
 		t.Fatal(err)
 	}
-	plain, err := v.Unwrap(sealed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer clear(plain)
-	var tree struct {
-		Files []catalog.File `json:"files"`
-	}
-	if err = json.Unmarshal(plain, &tree); err != nil {
-		t.Fatal(err)
-	}
-	found := false
-	for i := range tree.Files {
-		if tree.Files[i].Path == entry && !tree.Files[i].Present {
-			tree.Files[i].DeletedAt = &at
-			found = true
+	for _, file := range c.Trash() {
+		if file.Path == entry {
+			if err := c.SetTrashDate(file.EntryID, file.Revision, at); err != nil {
+				t.Fatal(err)
+			}
+			return
 		}
 	}
-	if !found {
-		t.Fatalf("Trash entry %q not found", entry)
-	}
-	updated, err := json.Marshal(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updatedSealed, err := v.Wrap(updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = os.WriteFile(path, updatedSealed, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	t.Fatalf("Trash entry %q not found", entry)
 }
 
 func newMigrationUsers(t *testing.T, root string) *users.Store {

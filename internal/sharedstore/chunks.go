@@ -1,6 +1,7 @@
 package sharedstore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -49,7 +50,7 @@ func ensureChunkSettings(db *sql.DB) error {
 	return nil
 }
 
-func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.File, length int64) (string, []byte, error) {
+func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage io.Reader, length int64, contentHash []byte) (string, []byte, error) {
 	raw, err := cryptox.Random(24)
 	if err != nil {
 		return "", nil, err
@@ -80,18 +81,12 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 			_ = s.removeClaimedObject(id)
 		}
 	}()
-	plain, err := os.CreateTemp(filepath.Join(s.root, "shared-staging"), "manifest-")
+	plain, err := s.newEncryptedStage("manifest-")
 	if err != nil {
 		cryptox.Zero(key)
 		return "", nil, err
 	}
-	plainPath := plain.Name()
-	defer os.Remove(plainPath)
-	if err = plain.Chmod(0o600); err != nil {
-		plain.Close()
-		cryptox.Zero(key)
-		return "", nil, err
-	}
+	defer plain.Close()
 	writeLine := func(line manifestLine) error {
 		encoded, marshalErr := json.Marshal(line)
 		if marshalErr != nil {
@@ -101,20 +96,14 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 		return writeAll(plain, encoded)
 	}
 	if err = writeLine(manifestLine{Type: "header", Version: chunkFormatVersion, Chunker: chunkSettings}); err != nil {
-		plain.Close()
 		cryptox.Zero(key)
 		return "", nil, err
 	}
-	if _, err = stage.Seek(0, io.SeekStart); err != nil {
-		plain.Close()
-		cryptox.Zero(key)
-		return "", nil, err
-	}
-	c := chunker.New(contextReader{ctx, stage}, chunkPol, chunker.WithBoundaries(chunkMin, chunkMax), chunker.WithAverageBits(chunkAvgBits))
+	hash := sha256.New()
+	c := chunker.New(io.TeeReader(contextReader{ctx, stage}, hash), chunkPol, chunker.WithBoundaries(chunkMin, chunkMax), chunker.WithAverageBits(chunkAvgBits))
 	buffer := make([]byte, chunkMax)
 	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderCRC(true))
 	if err != nil {
-		plain.Close()
 		cryptox.Zero(key)
 		return "", nil, err
 	}
@@ -127,42 +116,36 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 			break
 		}
 		if nextErr != nil {
-			plain.Close()
 			cryptox.Zero(key)
 			return "", nil, nextErr
 		}
 		if chunk.Length == 0 || chunk.Length > chunkMax || int64(chunk.Start) != offset {
-			plain.Close()
 			cryptox.Zero(key)
 			return "", nil, ErrFormat
 		}
 		chunkKey, objectID, chunkErr := s.writeChunk(ctx, op, id, encoder, chunk.Data)
 		if chunkErr != nil {
-			plain.Close()
 			cryptox.Zero(key)
 			return "", nil, chunkErr
 		}
 		chunkErr = writeLine(manifestLine{Type: "chunk", ObjectID: objectID, Key: cryptox.B64(chunkKey), Offset: offset, Length: int64(chunk.Length)})
 		cryptox.Zero(chunkKey)
 		if chunkErr != nil {
-			plain.Close()
 			cryptox.Zero(key)
 			return "", nil, chunkErr
 		}
 		offset += int64(chunk.Length)
 		count++
 	}
-	if offset != length {
-		plain.Close()
+	if offset != length || !equalBytes(hash.Sum(nil), contentHash) {
 		cryptox.Zero(key)
 		return "", nil, ErrState
 	}
-	if err = writeLine(manifestLine{Type: "footer", Length: length, Count: count}); err == nil {
-		err = plain.Sync()
+	if err = writeLine(manifestLine{Type: "footer", Length: length, Count: count}); err != nil {
+		cryptox.Zero(key)
+		return "", nil, err
 	}
-	if closeErr := plain.Close(); err == nil {
-		err = closeErr
-	}
+	src, err := plain.Open(ctx)
 	if err != nil {
 		cryptox.Zero(key)
 		return "", nil, err
@@ -175,12 +158,7 @@ func (s *Store) writeChunkedManifest(ctx context.Context, op string, stage *os.F
 	cipherPath := cipherFile.Name()
 	defer os.Remove(cipherPath)
 	if err = cipherFile.Chmod(0o600); err == nil {
-		var src *os.File
-		src, err = os.Open(plainPath)
-		if err == nil {
-			err = encryptFile(src, cipherFile, id, key)
-			_ = src.Close()
-		}
+		err = encryptFile(src, cipherFile, id, key)
 	}
 	if err == nil {
 		err = cipherFile.Sync()
@@ -218,37 +196,15 @@ func (s *Store) removeClaimedObject(id string) error {
 }
 
 func (s *Store) writeChunk(ctx context.Context, op, parent string, encoder *zstd.Encoder, data []byte) ([]byte, string, error) {
+	if len(data) == 0 || len(data) > chunkMax {
+		return nil, "", ErrFormat
+	}
 	encoded, encoding, err := encodeChunkWith(encoder, data)
 	if err != nil {
 		return nil, "", err
 	}
-	file, err := os.CreateTemp(filepath.Join(s.root, "shared-staging"), "chunk-")
-	if err != nil {
-		return nil, "", err
-	}
-	path := file.Name()
-	if err = file.Chmod(0o600); err == nil {
-		err = writeAll(file, encoded)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		os.Remove(path)
-		return nil, "", err
-	}
 	hash := sha256.Sum256(data)
 	fingerprint := s.keys.chunkFingerprint(int64(len(data)), hash[:])
-	file, err = os.Open(path)
-	if err != nil {
-		os.Remove(path)
-		return nil, "", err
-	}
-	id, key, err := s.getOrWriteObject(ctx, file, fingerprint, int64(len(data)), int64(len(encoded)), encoding, "chunk", parent, op)
-	_ = file.Close()
-	_ = os.Remove(path)
+	id, key, err := s.getOrWriteObject(ctx, bytes.NewReader(encoded), fingerprint, int64(len(data)), int64(len(encoded)), encoding, "chunk", parent, op)
 	return key, id, err
 }

@@ -1,6 +1,9 @@
 x-weazlcloud-build: &weazlcloud-build
   context: ..
   dockerfile: deploy/Dockerfile
+  args:
+    VERSION: ${WEAZLCLOUD_VERSION:-dev}
+    COMMIT: ${WEAZLCLOUD_COMMIT:-unknown}
 
 services:
   weazlcloud:

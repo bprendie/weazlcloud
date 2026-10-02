@@ -61,15 +61,32 @@ func (l *Library) ResolvePhotoUploadRoot(ctx context.Context, id string) (string
 }
 
 func (l *Library) CommitPhotoIngest(ctx context.Context, commit catalog.PhotoIngestCommit) (catalog.File, error) {
+	return l.CommitPhotoIngestGuarded(ctx, commit, nil)
+}
+
+// CommitPhotoIngestGuarded acquires the library mutation lock before the grant
+// guard, matching backup publication: library -> users -> catalog. The guard
+// invokes publish synchronously; publish only calls the catalog, never Library.
+func (l *Library) CommitPhotoIngestGuarded(ctx context.Context, commit catalog.PhotoIngestCommit, guard func(func() error) error) (catalog.File, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return catalog.File{}, err
+	}
 	if !l.vault.Unlocked() {
 		return catalog.File{}, vault.ErrLocked
 	}
 	if err := l.ensure(ctx); err != nil {
 		return catalog.File{}, err
 	}
-	file, err := l.catalog.CommitPhotoIngest(commit)
+	var file catalog.File
+	publish := func() error { var e error; file, e = l.catalog.CommitPhotoIngest(commit); return e }
+	var err error
+	if guard != nil {
+		err = guard(publish)
+	} else {
+		err = publish()
+	}
 	if err != nil {
 		return catalog.File{}, err
 	}

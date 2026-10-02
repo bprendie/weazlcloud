@@ -3,6 +3,7 @@ package desk
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 
@@ -28,6 +29,11 @@ func (h *Handler) multiUnlock(w http.ResponseWriter, r *http.Request) {
 	if err := res.Vault.Unlock([]byte(b.Passphrase)); err != nil {
 		apiError(w, err)
 		return
+	}
+	if h.uploads != nil {
+		if err := h.uploads.RestoreOwner(u); err != nil {
+			log.Printf("upload reservation recovery deferred: owner=%s error=%v", u.ID, err)
+		}
 	}
 	res.Lib.ResumePhotoPreparation(r.Context())
 	h.authLimit.Reset(key)

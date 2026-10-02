@@ -12,7 +12,7 @@ import (
 
 var objectMagic = []byte("WZLOBJ01")
 
-func encryptFile(src, dst *os.File, objectID string, key []byte) error {
+func encryptFile(src io.Reader, dst *os.File, objectID string, key []byte) error {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err

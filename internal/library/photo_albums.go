@@ -20,6 +20,7 @@ const albumMetadataLimit = 1 << 20
 var photoYearFolder = regexp.MustCompile(`(?i)^(photos from )?[0-9]{4}$`)
 
 type PhotoAlbum struct {
+	ParentID        string   `json:"parent_id,omitempty"`
 	ID              string   `json:"id"`
 	Revision        uint64   `json:"revision,omitempty"`
 	Path            string   `json:"path"`
@@ -42,13 +43,15 @@ type albumMetadata struct {
 
 func photoMedia(name string) bool {
 	switch strings.ToLower(path.Ext(name)) {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".tif", ".tiff", ".mp4", ".mov", ".m4v", ".webm", ".mkv":
+	case ".dng", ".opaque", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".tif", ".tiff", ".mp4", ".mov", ".m4v", ".webm", ".mkv":
 		return true
 	}
 	return false
 }
 
-func photoPreviewable(name string) bool { return photoMedia(name) }
+func photoPreviewable(name string) bool {
+	return photoMedia(name) && !strings.EqualFold(path.Ext(name), ".dng") && !strings.EqualFold(path.Ext(name), ".opaque")
+}
 
 func photoPreviewKind(name string) string {
 	switch strings.ToLower(path.Ext(name)) {
@@ -206,7 +209,7 @@ func (l *Library) PhotoAlbums(ctx context.Context, hiddenView ...bool) ([]PhotoA
 		}
 	}
 	for _, album := range l.catalog.Albums() {
-		view := PhotoAlbum{ID: album.ID, Revision: album.Revision, Path: "album:" + album.ID, Title: album.Title, Description: album.Description, Source: "custom", Position: album.Position}
+		view := PhotoAlbum{ID: album.ID, ParentID: album.ParentID, Revision: album.Revision, Path: "album:" + album.ID, Title: album.Title, Description: album.Description, Source: "custom", Position: album.Position}
 		for _, id := range album.AssetIDs {
 			file, exists := byID[id]
 			if !exists || file.PhotoParentID != "" || !photoMedia(file.Path) || photoPathHidden(file.Path, hiddenFolders) != includeHidden {
@@ -245,4 +248,9 @@ func isPhotoVideo(name string) bool {
 		return true
 	}
 	return false
+}
+
+func photoOriginalPreviewUnsupported(f catalog.File) bool {
+	ext := strings.ToLower(path.Ext(f.Path))
+	return f.PhotoPreviewUnsupported || ext == ".dng" || ext == ".opaque"
 }

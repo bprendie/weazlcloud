@@ -76,6 +76,7 @@ type Store struct {
 	devices       []Device
 	sessions      map[string]session
 	secureCookies bool
+	clock         func() time.Time
 }
 
 func (s *Store) load(persistUpgrade bool) error {
@@ -96,6 +97,9 @@ func (s *Store) load(persistUpgrade bool) error {
 	s.requests = f.AccessRequests
 	s.devices = f.Devices
 	changed := false
+	if f.StateVersion > 2 {
+		return errors.New("unsupported user state version")
+	}
 	if f.StateVersion < 1 {
 		for i := range s.users {
 			if s.users[i].Disabled && !s.users[i].Deleting {
@@ -287,7 +291,7 @@ func (s *Store) invalidateSessionsLocked(userID string) {
 }
 
 func (s *Store) saveLocked() error {
-	b, err := json.MarshalIndent(file{StateVersion: 1, Users: s.users, AccessRequests: s.requests, Devices: s.devices}, "", "  ")
+	b, err := json.MarshalIndent(file{StateVersion: 2, Users: s.users, AccessRequests: s.requests, Devices: s.devices}, "", "  ")
 	if err != nil {
 		return err
 	}
