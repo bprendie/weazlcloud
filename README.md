@@ -79,8 +79,8 @@ when supported by the installed FFmpeg build, plus a bounded first-frame poster
 for supported video files. HEIC/HEIF and AVIF use libheif through anonymous
 memory files because Alpine FFmpeg lacks their demuxer; unavailable codecs use
 the preview fallback. Preparation shows active render count and average source-read
-progress. Video playback still uses the original browser-compatible stream; no
-playback transcode is generated. The originals are unchanged. The automatic disk
+progress. Ordinary video playback uses the original browser-compatible stream. Paired Live
+Photos have an explicit, bounded compatible motion preview. The originals are unchanged. The automatic disk
 cache target is the smaller of 64 GiB and one tenth of current cache bytes plus
 free space above the silent system reserve. Owners share this allowance; there is
 no implicit 4-GiB owner cap. The default is 200,000 encrypted cache records per
@@ -92,6 +92,12 @@ These limits apply to generated previews, not the library quota.
 The Photos timeline uses an inset date rail clear of the browser scrollbar. Dragging
 from year labels works with mouse or touch; date labels update locally and one
 seek is issued on release. Current cards remain visible while that seek loads.
+Wheel scrolling continues in both directions after a date jump; the grid and rail
+share one scroll pane with bounded page retention. Live Photos open as a still
+with explicit motion playback. The Photos menu can inspect/repair imported pairs
+using embedded identifiers and report preview failures. See the
+[browsing/Live Photo release](docs/photos-browsing-remediation-2026-10-02.md) for
+contracts, recovery scope and device-validation limits.
 The timeline groups items by capture day, offers a Recently added view
 and month jump, and opens images and videos in a full-screen viewer. The viewer
 supports keyboard/swipe navigation, adjacent-image prefetch, capture metadata

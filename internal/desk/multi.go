@@ -99,6 +99,12 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.photoSync)
 	case r.URL.Path == "/api/v1/photos/sync/checkpoint" && r.Method == http.MethodPost:
 		h.multiGuard(w, r, true, h.photoSyncCheckpoint)
+	case r.URL.Path == "/api/v1/photos/live-jobs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
+		h.multiGuard(w, r, true, h.multiLivePhotos)
+	case r.URL.Path == "/api/v1/photos/live-pair" && r.Method == http.MethodPost:
+		h.multiGuard(w, r, true, h.multiLivePair)
+	case r.URL.Path == "/api/v1/photos/failures" && r.Method == http.MethodGet:
+		h.multiGuard(w, r, true, h.multiPhotoFailures)
 	case r.URL.Path == "/api/v1/photos/metadata-jobs" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		h.multiGuard(w, r, true, h.photoMetadataJob)
 	case r.URL.Path == "/api/v1/photos/dates" && r.Method == http.MethodGet:
@@ -111,7 +117,7 @@ func (h *Handler) serveMulti(w http.ResponseWriter, r *http.Request) {
 		h.multiGuard(w, r, true, h.multiPhotoDates)
 	case r.URL.Path == "/api/photos" && r.Method == http.MethodGet:
 		h.multiGuard(w, r, true, h.multiPhotoPage)
-	case strings.HasPrefix(r.URL.Path, "/api/v1/photos/assets/") && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodHead && strings.HasSuffix(r.URL.Path, "/original")):
+	case strings.HasPrefix(r.URL.Path, "/api/v1/photos/assets/") && (r.Method == http.MethodGet || r.Method == http.MethodPost || r.Method == http.MethodHead && (strings.HasSuffix(r.URL.Path, "/original") || strings.HasSuffix(r.URL.Path, "/motion"))):
 		h.multiGuard(w, r, true, h.multiPhotoAsset)
 	case r.URL.Path == "/api/photos/preparation" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
 		h.multiGuard(w, r, true, h.multiPhotoPreparation)

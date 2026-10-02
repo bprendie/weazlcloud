@@ -181,13 +181,13 @@ def smoke_touch(context,page,rail,seeks):
     expect(rail).to_have_attribute('aria-valuetext','Unknown date')
     wait_idle(page)
     assert len(seeks)==1,seeks
-    before=page.evaluate('() => scrollY')
+    before=page.evaluate("() => document.querySelector('#content.photos-scrollport').scrollTop")
     cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':200,'y':650}]})
     for y in [600,500,400,300]:
         cdp.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':200,'y':y}]})
         page.wait_for_timeout(30)
     cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
-    page.wait_for_function('(before) => scrollY > before',arg=before)
+    page.wait_for_function("(before) => document.querySelector('#content.photos-scrollport').scrollTop > before",arg=before)
     cdp.send('Emulation.setTouchEmulationEnabled',{'enabled':False})
     print('PASS: Chromium touch rail releases once; ordinary grid touch scrolling remains enabled')
 

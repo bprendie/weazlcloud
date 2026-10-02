@@ -73,7 +73,7 @@ func RenderBundle(ctx context.Context, socket string, source []byte, sizes []int
 	for i, size := range sizes {
 		values[i] = strconv.Itoa(size)
 	}
-	url := "http://photo-worker/v2/thumbnails?sizes=" + strings.Join(values, ",") + "&media=" + media
+	url := "http://photo-worker/v3/thumbnails?sizes=" + strings.Join(values, ",") + "&media=" + media
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(source))
 	if err != nil {
 		return err
@@ -84,6 +84,16 @@ func RenderBundle(ctx context.Context, socket string, source []byte, sizes []int
 		return ErrUnavailable
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		res.Body.Close()
+		req.URL.Path = "/v2/thumbnails"
+		req.Body = io.NopCloser(bytes.NewReader(source))
+		res, err = workerClient(socket).Do(req)
+		if err != nil {
+			return ErrUnavailable
+		}
+		defer res.Body.Close()
+	}
 	if res.StatusCode == http.StatusNotFound {
 		for _, size := range sizes {
 			body, mime, err := Render(ctx, socket, source, size, media)
@@ -97,7 +107,7 @@ func RenderBundle(ctx context.Context, socket string, source []byte, sizes []int
 		return nil
 	}
 	if res.StatusCode != http.StatusOK {
-		return ErrRejected
+		return ResponseError(res)
 	}
 	if res.Header.Get("Content-Type") != "application/vnd.weazl.preview-bundle" {
 		return ErrUnavailable
@@ -123,6 +133,16 @@ func ReadBundle(input io.Reader, sizes []int, emit func(Variant) error) error {
 		size, kind, n := int(binary.BigEndian.Uint16(header[:2])), header[2], int(binary.BigEndian.Uint32(header[3:]))
 		if n > maxOutput || int64(n) > limited.N || limited.N <= 0 {
 			return ErrTooLarge
+		}
+		if kind == 254 {
+			if size != 0 || n < 1 || n > 64 {
+				return ErrUnavailable
+			}
+			code := make([]byte, n)
+			if _, err := io.ReadFull(limited, code); err != nil {
+				return ErrUnavailable
+			}
+			return ErrorForCode(string(code))
 		}
 		if kind == 0 || kind == 255 {
 			if n != 0 || size != 0 || kind == 255 || len(want) != 0 {
@@ -157,4 +177,9 @@ func ReadBundle(input io.Reader, sizes []int, emit func(Variant) error) error {
 			return err
 		}
 	}
+}
+
+// Version 3 failure frame; version 2 peers keep their original framing.
+func EndBundleError(out io.Writer, err error) error {
+	return writeFrame(out, 0, 254, []byte(ErrorCode(err)))
 }

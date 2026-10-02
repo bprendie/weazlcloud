@@ -319,7 +319,7 @@ export function toFixture(row) {
   if (row.folder) return {id: 'folder:' + row.path, path: row.path, title, folders: parts, kind: 'DIR', size: 'folder', folder: true, hidden: Boolean(row.hidden), mtime: row.mtime};
   const ext = title.includes('.') ? title.slice(title.lastIndexOf('.') + 1).toUpperCase() : 'FILE';
   const size = row.size >= 1048576 ? `${(row.size / 1048576).toFixed(1)} MB` : row.size >= 1024 ? `${Math.round(row.size / 1024)} KB` : `${row.size} B`;
-  return { previewIdentity:row.preview_identity, thumbHash:row.thumbhash, id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified, importedAt: row.imported_at, captureTime: row.captured_at, captureOffsetMinutes:row.capture_offset_minutes, revision:row.revision, captureSource: row.capture_source, mediaType: row.media_type, width: row.width, height: row.height, favorite: row.favorite, archived: row.archived, caption: row.caption, durationMillis: row.duration_millis, userRotation: row.user_rotation || 0, orientation: row.orientation };
+  return { components:row.components||[], parentAssetID:row.parent_asset_id, previewIdentity:row.preview_identity, thumbHash:row.thumbhash, id: row.id || row.path, path: row.path, entryID: row.id || '', title, folders: parts, kind: ext.slice(0, 3), size, bytes: row.size, mtime: row.mtime || row.modified, importedAt: row.imported_at, captureTime: row.captured_at, captureOffsetMinutes:row.capture_offset_minutes, revision:row.revision, captureSource: row.capture_source, mediaType: row.media_type, width: row.width, height: row.height, favorite: row.favorite, archived: row.archived, caption: row.caption, durationMillis: row.duration_millis, userRotation: row.user_rotation || 0, orientation: row.orientation };
 }
 
 const photoNavigationQuery = options => {
@@ -332,3 +332,6 @@ export const navigatePhotos = options => uploadJSON('/api/v1/photos/seek?'+photo
 export const photoTimelineDates = options => uploadJSON('/api/v1/photos/dates?'+photoNavigationQuery(options),{signal:options.signal});
 export const photoMetadata = () => uploadJSON('/api/v1/photos/metadata-jobs');
 export const setPhotoMetadata = action => post('/api/v1/photos/metadata-jobs',{action});
+
+export const livePhotoJob = action => action ? post("/api/v1/photos/live-jobs",{action}) : uploadJSON("/api/v1/photos/live-jobs");
+export const linkLivePhoto = body => post("/api/v1/photos/live-pair",body);

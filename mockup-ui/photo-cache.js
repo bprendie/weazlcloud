@@ -2,7 +2,7 @@
 export class PhotoBlobCache {
   constructor({bytes=32*1024*1024,entries=256,fetcher=fetch,urls=URL}={}) {
     Object.assign(this,{limit:bytes,max:entries,fetcher,urls});
-    this.items=new Map();this.pending=new Map();this.bytes=0;this.generation=0;this.hits=0;
+    this.failures=new Map();this.items=new Map();this.pending=new Map();this.bytes=0;this.generation=0;this.hits=0;
   }
   discard(key,item) { this.items.delete(key);this.bytes-=item.bytes;this.urls.revokeObjectURL(item.url); }
   space(bytes) {
@@ -19,6 +19,7 @@ export class PhotoBlobCache {
   }
   async acquire(key,url,{signal}={}) {
     if(signal?.aborted)throw new DOMException('Canceled','AbortError');
+    const failed=this.failures.get(key);if(failed?.until>Date.now())throw failed.error;this.failures.delete(key);
     const cached=this.items.get(key);
     if(cached){this.hits++;return this.lease(key,cached);}
     let request=this.pending.get(key);
@@ -27,7 +28,12 @@ export class PhotoBlobCache {
       request={controller,users:0};
       request.promise=(async()=>{
         const response=await (0,this.fetcher)(url,{signal:controller.signal,cache:'no-store'});
-        if(!response.ok)throw new Error('Preview unavailable');
+        if(!response.ok){
+         const error=new Error(response.status>=500?'Preview temporarily unavailable':'Preview unavailable');
+         if(this.failures.size>=this.max)this.failures.delete(this.failures.keys().next().value);
+         if(generation===this.generation)this.failures.set(key,{error,until:Date.now()+(response.status>=500?10000:60000)});
+         throw error;
+        }
         const blob=await response.blob();
         if(controller.signal.aborted || generation!==this.generation)throw new DOMException('Canceled','AbortError');
         if(!['image/jpeg','image/png'].includes(blob.type) || !this.space(blob.size))throw new Error('Preview cache is full');
@@ -46,7 +52,7 @@ export class PhotoBlobCache {
     } finally {signal?.removeEventListener('abort',abort);if(--request.users===0)this.pending.get(key)?.controller.abort();}
   }
   clear() {
-    this.generation++;
+    this.generation++;this.failures.clear();
     for(const request of this.pending.values())request.controller.abort();
     this.pending.clear();
     for(const [key,item] of this.items)this.discard(key,item);

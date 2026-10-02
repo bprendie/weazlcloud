@@ -58,6 +58,7 @@ func relinkCopiedPhotoPairs(files []File, copiedStart int, oldIDs []string) {
 	for i := copiedStart; i < len(files); i++ {
 		file := &files[i]
 		file.DeviceID, file.DeviceAssetID, file.SourceRevision = "", "", ""
+		file.PhotoPairAlbums = nil
 		file.PhotoParentID = mapped[file.PhotoParentID]
 		parts := []PhotoComponent{}
 		for _, part := range file.PhotoComponents {

@@ -28,3 +28,5 @@ export async function prefetchPhotoImage(state,item,size){
   const lease=await photoBlobCache.acquire(key,`/api/v1/photos/assets/${encodeURIComponent(id)}/thumbnail?size=${size}${state.photosMode==='hidden'?'&hidden=1':''}`);
   lease.release();
 }
+
+export const clearPhotoImageFailures=()=>photoBlobCache.failures.clear();

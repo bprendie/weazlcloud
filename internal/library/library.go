@@ -17,6 +17,10 @@ import (
 )
 
 type Library struct {
+	liveMu                     sync.Mutex
+	liveJob                    *LivePhotoJob
+	liveRunning                bool
+	liveCancel                 context.CancelFunc
 	readerMu                   sync.Mutex
 	previewReader              *previewReaderSession
 	readerPaused               int

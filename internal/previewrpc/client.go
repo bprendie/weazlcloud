@@ -65,13 +65,7 @@ func Render(ctx context.Context, socket string, source []byte, size int, media s
 		return nil, "", ErrUnavailable
 	}
 	if response.StatusCode != http.StatusOK {
-		if response.StatusCode >= 500 {
-			return nil, "", ErrUnavailable
-		}
-		if response.StatusCode == http.StatusRequestEntityTooLarge {
-			return nil, "", ErrTooLarge
-		}
-		return nil, "", ErrRejected
+		return nil, "", ResponseError(response)
 	}
 	mime := response.Header.Get("Content-Type")
 	if mime != "image/jpeg" && mime != "image/png" {

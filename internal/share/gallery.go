@@ -72,15 +72,25 @@ func (h *Handler) gallery(w http.ResponseWriter, r *http.Request, id, rest strin
 		writeJSON(w, 200, job)
 		return
 	}
-	if len(parts) == 2 && parts[0] == "preview" {
+	if len(parts) == 2 && (parts[0] == "preview" || parts[0] == "motion") {
 		var raw bytes.Buffer
-		item, err := h.store.GalleryPreview(id, auth, parts[1], &raw)
+		var item capsule.GalleryItem
+		var err error
+		if parts[0] == "motion" {
+			item, err = h.store.GalleryMotion(id, auth, parts[1], &raw)
+		} else {
+			item, err = h.store.GalleryPreview(id, auth, parts[1], &raw)
+		}
 		defer clear(raw.Bytes())
 		if err != nil {
 			writeGone(w, err)
 			return
 		}
-		w.Header().Set("Content-Type", item.PreviewType)
+		kind := item.PreviewType
+		if parts[0] == "motion" {
+			kind = item.MotionType
+		}
+		w.Header().Set("Content-Type", kind)
 		w.Header().Set("Content-Length", strconv.Itoa(raw.Len()))
 		_, _ = w.Write(raw.Bytes())
 		return

@@ -143,7 +143,7 @@ def smoke_photo_performance(context, page, base, backend, jump_ms):
     page.set_viewport_size({'width': 390, 'height': 600})
     for i in range(20):
         before = {m['name']: m['value'] for m in cdp.send('Performance.getMetrics')['metrics']}
-        page.evaluate('(n) => scrollTo(0, n % 2 ? 0 : document.body.scrollHeight)', i)
+        page.evaluate("(n) => {const el=document.querySelector('#content.photos-scrollport');el.scrollTo(0,n%2?0:el.scrollHeight);}", i)
         page.wait_for_timeout(80)
         after = {m['name']: m['value'] for m in cdp.send('Performance.getMetrics')['metrics']}
         work.append((after['ScriptDuration'] - before['ScriptDuration']) * 1000)
@@ -178,7 +178,11 @@ def smoke_photo_selection(context, page, base):
     page.locator('.photo-grid [data-select-file]').nth(1).click()
     expect(page.locator('.selection-toolbar')).to_contain_text('2 selected')
     page.locator('[data-photo-visibility="hide"]').click()
-    expect(page.locator('.photo-grid .photo-tile')).to_have_count(3)
+    try:
+        expect(page.locator('.photo-grid .photo-tile')).to_have_count(3)
+    except AssertionError:
+        print('HIDE SCROLL DIAGNOSTIC:',page.evaluate("async()=>{const {state}=await import('/data.js');return {error:state.photoError,anchor:state.photoAnchor,seek:state.photoSeek,jump:state.photoJumpAnchor,loading:state.photoLoading,items:state.photoItems.map(x=>x.id),scroll:document.querySelector('#content').scrollTop,content:document.querySelector('#content').innerText};}"),flush=True)
+        raise
     expect(page.locator('.selection-toolbar')).to_have_count(0)
     page.locator('[data-photos-mode="hidden"]').click()
     expect(page.locator('.photo-grid .photo-tile')).to_have_count(2)

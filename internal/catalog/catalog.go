@@ -39,6 +39,7 @@ type Reference struct {
 type File struct {
 	PhotoPreviewUnsupported bool             `json:"photo_preview_unsupported,omitempty"`
 	PhotoProcessingPending  bool             `json:"photo_processing_pending,omitempty"`
+	PhotoPairAlbums         []string         `json:"photo_pair_albums,omitempty"`
 	PhotoParentID           string           `json:"photo_parent_id,omitempty"`
 	PhotoComponents         []PhotoComponent `json:"photo_components,omitempty"`
 	DeviceID                string           `json:"device_id,omitempty"`

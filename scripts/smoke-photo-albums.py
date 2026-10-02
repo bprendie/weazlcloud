@@ -17,6 +17,8 @@ from smoke_music_grid import smoke_music
 from smoke_library_ui import smoke_library_ui
 from smoke_photo_preparation import smoke_photo_preparation
 from smoke_modal_photos import smoke_modal_photos
+from smoke_photo_browsing import smoke_bidirectional_photos
+from smoke_live_photos import smoke_live_photos
 
 name = 'weazl-albums-' + uuid.uuid4().hex[:10]
 volume = name + '-data'
@@ -194,13 +196,27 @@ try:
             smoke_library_ui(page, storage_backend)
             assert not errors, errors
             smoke_modal_photos(context, page, post, browser, base, storage_backend)
+            smoke_bidirectional_photos(page,base)
             assert not errors, errors
             smoke_music(context, page, post)
+            assert not errors, errors
+            def restart_live():
+                docker('restart', name)
+                for _ in range(80):
+                    try:
+                        if context.request.get('/ready', timeout=2000).ok: break
+                    except Exception: pass
+                    time.sleep(.25)
+                post('/api/login', {'username':'albums','password':'album-test-pass'})
+                post('/api/unlock', {'passphrase':'album-test-pass'})
+            smoke_live_photos(context,page,post,browser,base,image,restart_live)
             assert not errors, errors
             assert (Path(root)/'part1.zip').exists()
             browser.close()
             print(f'PHOTOS SMOKE: first 4 cards {first_screen_ms:.0f} ms; first thumbnail {first_thumbnail_ms:.0f} ms; DOM cards {photo_dom_cards}')
             print(f'PASS ({storage_backend}): paginated Photos without full-library listing, thumbnail IDs, preview preparation, split albums, metadata titles, covers, deep links and restart; ZIPs retained')
 finally:
+    if globals().get('errors'):
+        print('BROWSER ERRORS:', errors, flush=True)
     subprocess.run(['docker','rm','-f',name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['docker','volume','rm',volume], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

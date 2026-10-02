@@ -27,7 +27,13 @@ set `WEAZLCLOUD_DATA_SOURCE` to its absolute directory, for example
 a new directory must be writable by that identity. Preserve the existing mount
 and permissions when upgrading an installation. Vaults, accounts, catalogs,
 originals, previews, archives and temporary Restic packs live under `/data`.
-The worker receives only the IPC volume and ephemeral scratch storage.
+The worker receives only the IPC volume and ephemeral scratch storage. Its
+`TMPDIR=/tmp`, `HOME=/tmp` and `XDG_CACHE_HOME=/tmp/cache` overrides are required;
+its isolated `/data` tmpfs has no `/data/tmp`. Preserve those overrides in custom
+Compose configurations. The API continues using `/data/tmp` on the data volume.
+Run `docker compose -f deploy/compose.yaml exec weazlcloud-photo-worker
+/usr/local/bin/weazl-photo-worker -probe` to verify real HEIC variants, not just
+a listening socket.
 
 The desk, grab and WebDAV listeners are internal ports 7272, 7273 and 7274.
 Attach the API service to your existing reverse-proxy network or use an operator

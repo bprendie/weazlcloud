@@ -17,6 +17,9 @@ import (
 
 type GalleryItem struct {
 	ID          string `json:"id"`
+	ParentID    string `json:"parent_id,omitempty"`
+	MotionID    string `json:"motion_id,omitempty"`
+	MotionType  string `json:"motion_type,omitempty"`
 	Name        string `json:"name"`
 	MediaType   string `json:"media_type"`
 	PreviewType string `json:"preview_type,omitempty"`
@@ -31,9 +34,11 @@ type GalleryManifest struct {
 }
 
 type GallerySource struct {
-	Item     GalleryItem
-	Original StreamSource
-	Preview  func() ([]byte, string, error)
+	SourceID, ParentID string
+	MotionPreview      func() ([]byte, error)
+	Item               GalleryItem
+	Original           StreamSource
+	Preview            func() ([]byte, string, error)
 }
 
 // MintGallery writes a frozen, encrypted selection and its ZIP. No private
@@ -115,7 +120,38 @@ func (s *Store) mintGallery(rec Record, phrase string, sources []GallerySource, 
 			}
 			item.PreviewType = kind
 		}
+		if source.MotionPreview != nil && source.ParentID != "" {
+			body, e := source.MotionPreview()
+			if e == nil && len(body) > 0 && len(body) <= 8<<20 {
+				motionKey := galleryKey(key, item.ID+".motion")
+				_, e = writeGalleryStream(filepath.Join(dir, "gallery", item.ID+".motion"), motionKey, func(w io.Writer) error { _, err := w.Write(body); return err })
+				clear(motionKey)
+				clear(body)
+				if e != nil {
+					return Record{}, e
+				}
+				item.MotionType = "video/mp4"
+			} else {
+				clear(body)
+			}
+		}
 		manifest.Items = append(manifest.Items, item)
+	}
+	galleryIDs := map[string]string{}
+	for i, source := range sources {
+		if source.SourceID != "" {
+			galleryIDs[source.SourceID] = manifest.Items[i].ID
+		}
+	}
+	for i, source := range sources {
+		if parent := galleryIDs[source.ParentID]; parent != "" {
+			manifest.Items[i].ParentID = parent
+			for j := range manifest.Items {
+				if manifest.Items[j].ID == parent && manifest.Items[i].MotionType != "" {
+					manifest.Items[j].MotionID = manifest.Items[i].ID
+				}
+			}
+		}
 	}
 	plain, err := json.Marshal(manifest)
 	if err != nil {

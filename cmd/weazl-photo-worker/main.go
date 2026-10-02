@@ -53,7 +53,7 @@ func main() {
 		}
 		return
 	}
-	if err := library.ValidatePhotoRenderer(); err != nil {
+	if err := library.ValidatePhotoWorker(); err != nil {
 		fmt.Fprintln(os.Stderr, "photo renderer configuration is invalid")
 		os.Exit(1)
 	}
@@ -78,7 +78,26 @@ func probeWorker(socket string) error {
 	if err != nil || format != "png" || config.Width != 96 || config.Height != 57 {
 		return errors.New("worker returned an invalid derivative")
 	}
-	return nil
+	ctxHEIC, cancelHEIC := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelHEIC()
+	sourceHEIC := library.PhotoWorkerProbeHEIC()
+	defer clear(sourceHEIC)
+	for _, size := range []int{320, 1280} {
+		body, mime, err := previewrpc.Render(ctxHEIC, socket, sourceHEIC, size, "heif")
+		cfg, format, decodeErr := image.DecodeConfig(bytes.NewReader(body))
+		clear(body)
+		if err != nil || mime != "image/jpeg" || decodeErr != nil || format != "jpeg" || cfg.Width < 1 || cfg.Width > size {
+			return errors.New("invalid single HEIC derivative")
+		}
+	}
+	return previewrpc.RenderBundle(ctxHEIC, socket, sourceHEIC, []int{320, 1280}, "heif", func(v previewrpc.Variant) error {
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(v.Body))
+		clear(v.Body)
+		if err != nil || format != "jpeg" || cfg.Width < 1 || cfg.Height < 1 || cfg.Width > v.Size || cfg.Height > v.Size {
+			return errors.New("invalid HEIC derivative")
+		}
+		return nil
+	})
 }
 
 func serve(socket string) error {
@@ -128,7 +147,11 @@ func newHandler() http.Handler {
 }
 
 func render(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/v2/thumbnails" {
+	if r.URL.Path == "/v1/live-identity" || r.URL.Path == "/v1/live-motion" {
+		renderLive(w, r)
+		return
+	}
+	if r.URL.Path == "/v2/thumbnails" || r.URL.Path == "/v3/thumbnails" {
 		renderBundle(w, r)
 		return
 	}
@@ -162,7 +185,7 @@ func render(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	body, contentType, err := library.RenderPhotoPreview(ctx, source, size, media)
 	if err != nil {
-		http.Error(w, "preview unavailable", http.StatusUnprocessableEntity)
+		workerError(w, err)
 		return
 	}
 	if len(body) == 0 || len(body) > maxOutput {

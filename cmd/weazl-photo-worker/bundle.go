@@ -67,5 +67,9 @@ func renderBundle(w http.ResponseWriter, r *http.Request) {
 		}
 		return err
 	})
-	_ = previewrpc.EndBundle(w, err != nil)
+	if r.URL.Path == "/v3/thumbnails" && err != nil {
+		_ = previewrpc.EndBundleError(w, err)
+	} else {
+		_ = previewrpc.EndBundle(w, err != nil)
+	}
 }

@@ -4,7 +4,7 @@ from pathlib import Path
 
 def smoke_photo_cache(context,page,base,backend):
     page.goto(base+'/#photos')
-    page.wait_for_function("""() => {const images=[...document.querySelectorAll('.photo-grid [data-photo-thumbnail]')];return images.length && images.every(img=>img.complete&&img.naturalWidth);}""")
+    page.wait_for_function("""() => {const pane=document.querySelector('#content.photos-scrollport').getBoundingClientRect();const images=[...document.querySelectorAll('.photo-grid [data-photo-thumbnail]')].filter(img=>{const r=img.getBoundingClientRect();return r.bottom>pane.top && r.top<pane.bottom;});return images.length && images.every(img=>img.complete&&img.naturalWidth);}""")
     requests=[]
     listener=lambda r:requests.append(r.url) if '/thumbnail?' in r.url else None
     page.on('request',listener)
@@ -15,7 +15,7 @@ def smoke_photo_cache(context,page,base,backend):
           for(let i=0;i<30;i++){
             const start=performance.now();renderMain();
             await new Promise((resolve,reject)=>{const poll=()=>{
-              const images=[...document.querySelectorAll('.photo-grid [data-photo-thumbnail]')];
+              const pane=document.querySelector('#content.photos-scrollport').getBoundingClientRect();const images=[...document.querySelectorAll('.photo-grid [data-photo-thumbnail]')].filter(img=>{const r=img.getBoundingClientRect();return r.bottom>pane.top && r.top<pane.bottom;});
               if(images.length && images.every(img=>img.complete&&img.naturalWidth)){requestAnimationFrame(resolve);return;}
               if(performance.now()-start>5000){reject(Error('warm preview did not paint'));return;}
               requestAnimationFrame(poll);

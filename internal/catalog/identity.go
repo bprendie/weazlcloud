@@ -118,6 +118,7 @@ func validateReference(f File) error {
 func ValidateFileReference(f File) error { return validateReference(f) }
 
 func cloneFile(f File) File {
+	f.PhotoPairAlbums = append([]string(nil), f.PhotoPairAlbums...)
 	f.PhotoComponents = append([]PhotoComponent(nil), f.PhotoComponents...)
 	if f.Reference != nil {
 		ref := *f.Reference

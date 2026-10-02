@@ -2,6 +2,7 @@ package share
 
 const galleryScript = `
 $=s=>document.querySelector(s); let items=[],session='',sessionAt=0,page=0,index=-1,generation=0,renewing=null;
+let motionURL='',motionRequest=0;
 const urls=new Map(),picked=new Set(),controllers=new Set(); let queue=[],active=0;
 async function post(route,body={}) {
  const controller=new AbortController();controllers.add(controller);
@@ -16,10 +17,11 @@ async function ensureSession(){
  await renewing;
 }
 async function call(route,body={}){await ensureSession();return post(route,body);}
-function releaseImages(){generation++;queue=[];observer.disconnect();for(const c of controllers)c.abort();controllers.clear();for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();$('#large').removeAttribute('src');}
+function stopMotion(){motionRequest++;const v=$('#motion');v.pause();v.removeAttribute('src');v.load();if(motionURL)URL.revokeObjectURL(motionURL);motionURL='';v.hidden=true;$('#large').hidden=false;}
+function releaseImages(){stopMotion();generation++;queue=[];observer.disconnect();for(const c of controllers)c.abort();controllers.clear();for(const url of urls.values())URL.revokeObjectURL(url);urls.clear();$('#large').removeAttribute('src');}
 function fail(e){if(e.name==='AbortError')return;$('#error').textContent=e.message;if(e.status===401||e.status===404){releaseImages();session='';$('#all').hidden=$('#selected').hidden=true;$('#viewer').close();$('#grid').replaceChildren();$('#gate').hidden=false;$('#note').textContent='The session expired or this link is no longer available.';}}
 async function open(phrase=''){
- try {releaseImages();picked.clear();page=0;const j=await(await post('gallery',{session:'',passphrase:phrase})).json();items=j.gallery.items;session=j.session;sessionAt=Date.now();$('#gate').hidden=true;$('#title').textContent=j.gallery.title;$('#note').textContent=items.length+' photos and videos';$('#error').textContent='';$('#all').hidden=false;render();}
+ try {releaseImages();picked.clear();page=0;const j=await(await post('gallery',{session:'',passphrase:phrase})).json();items=j.gallery.items.filter(item=>!item.parent_id);session=j.session;sessionAt=Date.now();$('#gate').hidden=true;$('#title').textContent=j.gallery.title;$('#note').textContent=items.length+' photos and videos';$('#error').textContent='';$('#all').hidden=false;render();}
  catch(e){if(e.status===401){$('#gate').hidden=false;$('#note').textContent='Enter the gallery passphrase.';}else{fail(e);}}
 }
 function trimURLs(){const keep=new Set(items.slice(page*60,page*60+60).map(i=>i.id));if(index>=0)keep.add(items[index]?.id);for(const [id,url]of urls){if(urls.size<=120)break;if(!keep.has(id)){URL.revokeObjectURL(url);urls.delete(id);}}}
@@ -32,13 +34,14 @@ function render(){
  $('#more').hidden=end===items.length;$('#page-prev').hidden=page===0;$('#page-number').textContent=items.length?(start+1)+'–'+end+' of '+items.length:'';selectionLabel();trimURLs();
 }
 function selectionLabel(){$('#selected').hidden=!picked.size;$('#selected').textContent='Download selected ('+picked.size+')';}
-async function view(n){index=n;const item=items[n];$('#name').textContent=item.name;$('#prev').disabled=n===0;$('#next').disabled=n===items.length-1;$('#large').removeAttribute('src');$('#large').alt=item.preview_type?'':'Preview unavailable; download the original to view it.';if(!$('#viewer').open)$('#viewer').showModal();try{const url=await preview(item);if(index===n&&url)$('#large').src=url;}catch(e){fail(e);}}
+async function view(n){stopMotion();index=n;const item=items[n];$('#name').textContent=item.name;$('#play-motion').hidden=!item.motion_id;$('#prev').disabled=n===0;$('#next').disabled=n===items.length-1;$('#large').removeAttribute('src');$('#large').alt=item.preview_type?'':'Preview unavailable; download the original to view it.';if(!$('#viewer').open)$('#viewer').showModal();try{const url=await preview(item);if(index===n&&url)$('#large').src=url;}catch(e){fail(e);}}
 async function download(route,ids=[]){
  try {await ensureSession();if(ids.length){$('#note').textContent='Preparing selected ZIP…';let job=await(await call('zip/jobs',{ids})).json();while(job.status==='queued'||job.status==='preparing'){await new Promise(r=>setTimeout(r,1000));job=await(await call('zip/jobs/'+job.id)).json();}if(job.status!=='ready')throw new Error(job.error||'ZIP preparation failed');route='zip/jobs/'+job.id+'/download';}
  const form=document.createElement('form');form.method='POST';form.action=base+route;form.target='download-target';const input=document.createElement('input');input.type='hidden';input.name='session';input.value=session;form.append(input);document.body.append(form);form.submit();form.remove();$('#note').textContent='Download requested. Each explicit transfer uses one retry, including an interrupted transfer.';
  }catch(e){fail(e);}
 }
-$('#gate').onsubmit=e=>{e.preventDefault();const phrase=new FormData(e.target).get('passphrase');e.target.reset();open(phrase);};$('#all').onclick=()=>download('zip');$('#selected').onclick=()=>download('zip',[...picked]);$('#original').onclick=()=>download('original/'+items[index].id);$('#more').onclick=()=>{page++;render();};$('#page-prev').onclick=()=>{page=Math.max(0,page-1);render();};$('#close').onclick=()=>$('#viewer').close();$('#prev').onclick=()=>view(Math.max(0,index-1));$('#next').onclick=()=>view(Math.min(items.length-1,index+1));
+$('#gate').onsubmit=e=>{e.preventDefault();const phrase=new FormData(e.target).get('passphrase');e.target.reset();open(phrase);};$('#all').onclick=()=>download('zip');$('#selected').onclick=()=>download('zip',[...picked]);$('#original').onclick=()=>download('original/'+items[index].id);$('#more').onclick=()=>{page++;render();};$('#page-prev').onclick=()=>{page=Math.max(0,page-1);render();};$('#close').onclick=()=>{stopMotion();$('#viewer').close();};$('#prev').onclick=()=>view(Math.max(0,index-1));$('#next').onclick=()=>view(Math.min(items.length-1,index+1));
+$('#viewer').addEventListener('close',stopMotion);$('#play-motion').onclick=async()=>{const item=items[index],epoch=generation,n=index;if(!item?.motion_id)return;try{stopMotion();const request=motionRequest;const r=await call('motion/'+item.motion_id),blob=await r.blob();if(epoch!==generation || n!==index || request!==motionRequest || !$('#viewer').open)return;const url=URL.createObjectURL(blob);motionURL=url;const v=$('#motion');v.src=url;v.hidden=false;$('#large').hidden=true;v.onended=stopMotion;v.onerror=()=>{stopMotion();$('#error').textContent='Motion playback unavailable. Download both originals as a ZIP.';};await v.play();}catch(e){stopMotion();fail(e);}};
 document.addEventListener('keydown',e=>{if(!$('#viewer').open)return;if(e.key==='ArrowLeft'&&index>0)view(index-1);if(e.key==='ArrowRight'&&index+1<items.length)view(index+1);});
 $('iframe').onload=()=>{try{const text=$('iframe').contentDocument.body.textContent.trim();if(text)$('#error').textContent=text;}catch{}};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)ensureSession().catch(fail);});

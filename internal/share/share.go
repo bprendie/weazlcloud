@@ -47,7 +47,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeGrabPage(w, id)
 		}
-	case rest == "gallery" || rest == "zip" || strings.HasPrefix(rest, "zip/") || strings.HasPrefix(rest, "preview/") || strings.HasPrefix(rest, "original/"):
+	case rest == "gallery" || rest == "zip" || strings.HasPrefix(rest, "zip/") || strings.HasPrefix(rest, "preview/") || strings.HasPrefix(rest, "motion/") || strings.HasPrefix(rest, "original/"):
 		h.gallery(w, r, id, rest)
 	case rest == "meta" && r.Method == http.MethodGet:
 		h.meta(w, id)

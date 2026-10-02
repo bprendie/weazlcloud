@@ -64,6 +64,9 @@ services:
     image: ${WEAZLCLOUD_IMAGE:-weazlcloud:local}
     entrypoint: ["/usr/local/bin/weazl-photo-worker"]
     environment:
+      TMPDIR: /tmp
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/cache
       WEAZLCLOUD_PHOTO_WORKER_SOCKET: /run/weazlcloud-photo/worker.sock
       WEAZLCLOUD_PREVIEW_RENDERER: ${WEAZLCLOUD_PREVIEW_RENDERER:-auto}
     volumes:

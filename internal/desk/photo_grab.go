@@ -60,11 +60,11 @@ func (h *Handler) multiPhotoGrab(w http.ResponseWriter, r *http.Request) {
 	sources := make([]capsule.GallerySource, 0, len(exports))
 	for _, item := range exports {
 		// Frozen originals, ZIP, authenticated framing and the bounded preview.
-		if item.Size > ((1<<63-1)-bytes-(9<<20))/2 {
+		if item.Size > ((1<<63-1)-bytes-(17<<20))/2 {
 			writeJSON(w, 400, map[string]string{"error": "gallery size overflow"})
 			return
 		}
-		bytes += 2*item.Size + (8 << 20) + (1 << 20)
+		bytes += 2*item.Size + (16 << 20) + (1 << 20)
 		preview := func() ([]byte, string, error) {
 			body, kind, err := item.Preview()
 			if err != nil && !errors.Is(err, vault.ErrLocked) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == nil {
@@ -75,7 +75,7 @@ func (h *Handler) multiPhotoGrab(w http.ResponseWriter, r *http.Request) {
 			}
 			return body, kind, err
 		}
-		sources = append(sources, capsule.GallerySource{Item: capsule.GalleryItem{Name: item.Name, MediaType: item.MediaType, Size: item.Size, Revision: item.Revision}, Original: capsule.StreamSource(item.Original), Preview: preview})
+		sources = append(sources, capsule.GallerySource{SourceID: item.ID, ParentID: item.ParentID, MotionPreview: item.MotionPreview, Item: capsule.GalleryItem{Name: item.Name, MediaType: item.MediaType, Size: item.Size, Revision: item.Revision}, Original: capsule.StreamSource(item.Original), Preview: preview})
 	}
 	if h.quota != nil {
 		used, err := res.Lib.Usage(r.Context())

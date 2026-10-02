@@ -3,6 +3,8 @@ package library
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/bprendie/weazlcloud/internal/previewrpc"
 	"io"
 	"os"
 	"os/exec"
@@ -18,7 +20,7 @@ import (
 func convertHEIFPipe(parent context.Context, data []byte) ([]byte, error) {
 	tool, err := exec.LookPath("heif-convert")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: HEIF environment", previewrpc.ErrEnvironment)
 	}
 	ctx, cancel := context.WithTimeout(parent, 35*time.Second)
 	defer cancel()
@@ -42,7 +44,7 @@ func convertHEIFPipe(parent context.Context, data []byte) ([]byte, error) {
 	defer outFile.Close()
 	dir, err := os.MkdirTemp("", "weazl-heif-")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: HEIF scratch", previewrpc.ErrEnvironment)
 	}
 	defer os.RemoveAll(dir)
 	inPath, outPath := filepath.Join(dir, "source.heic"), filepath.Join(dir, "preview.jpg")
@@ -57,7 +59,10 @@ func convertHEIFPipe(parent context.Context, data []byte) ([]byte, error) {
 	cmd.WaitDelay = time.Second
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, previewrpc.ErrTimeout
+		}
+		return nil, previewrpc.ErrRejected
 	}
 	if _, err := outFile.Seek(0, io.SeekStart); err != nil {
 		return nil, err

@@ -361,3 +361,11 @@ button[aria-pressed=true]{color:var(--yellow)}
 .photo-heading~.selection-toolbar{position:sticky;top:0;z-index:6;margin-right:84px}
 @media(max-width:700px){.photo-heading~.selection-toolbar{margin-right:64px}}
 @media(hover:none){.photo-grid .photo-selector{opacity:1;pointer-events:auto;width:44px;height:44px}}
+
+/* Photos owns scrolling; the date rail operates on this same pane. */
+.app.photos-mode{height:100dvh;min-height:0;overflow:hidden;padding-bottom:0}
+#content.photos-scrollport{height:var(--photo-pane-height,calc(100dvh - var(--photo-pane-top,100px) - 110px));overflow-y:auto;overscroll-behavior:contain;overflow-anchor:none;scrollbar-gutter:stable;min-height:180px}
+.photos-scrollport .photo-grid{padding-bottom:max(24px,calc(var(--photo-pane-height,100dvh) - 140px))}
+.photos-scrollport .photo-earlier{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden}
+.photos-scrollport .photo-earlier:focus{position:static;width:auto;height:auto;clip-path:none}
+.photo-live-controls{display:flex;gap:8px;align-items:center}

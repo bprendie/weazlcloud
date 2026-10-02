@@ -1,3 +1,4 @@
+import {photoViewport} from './photo-scroll.js';
 // Metadata-only rail geometry. No asset bytes or whole-library pages are needed.
 export function timelineTarget(summary, fraction) {
   const total = summary?.total || 0;
@@ -132,7 +133,8 @@ export function installPhotoTimeline({state,summaryForMonth,jump}) {
       let lastTick=-Infinity;const height=track.clientHeight;
       track.querySelectorAll('[data-time-percent]').forEach(tick=>{const top=Number(tick.dataset.timePercent);tick.style.top=`${top}%`;const pixel=height*top/100;tick.hidden=pixel-lastTick<32;if(!tick.hidden)lastTick=pixel;});
       const tiles=[...document.querySelectorAll('.photo-grid [data-select-file]')];
-      const visible=tiles.find(el=>el.getBoundingClientRect().top>=140) || tiles.find(el=>el.getBoundingClientRect().bottom>140);
+      const viewport=photoViewport();
+      const visible=tiles.find(el=>{const rect=el.getBoundingClientRect();return rect.bottom>viewport.top+1 && rect.top<viewport.top+viewport.height;});
       if(visible && !state.photoJumpAnchor){const index=state.photoItems.findIndex(item=>item.id===visible.dataset.selectFile);if(index>=0)state.photoPosition=(state.photoStart||0)+index;}
       const item=state.photoItems[(state.photoPosition||0)-(state.photoStart||0)];
       update(track,(state.photoPosition||0)/Math.max(1,(state.photoDateSummary?.total||1)-1),state.photoJumpAnchor?null:item?.captureTime?.slice(0,7)||'unknown');

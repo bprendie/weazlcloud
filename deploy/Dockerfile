@@ -25,7 +25,7 @@ COPY native/preview/main.c /src/main.c
 RUN cc -O3 -Wall -Wextra -Werror -o /weazl-preview-turbo /src/main.c -ljpeg
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata libjpeg-turbo ffmpeg libheif-tools \
+RUN apk add --no-cache ca-certificates tzdata libjpeg-turbo ffmpeg libheif-tools exiftool \
  && adduser -D -H -u 7272 -g "" weazl \
  && mkdir -p /data/tmp /run/weazlcloud-photo \
  && chown -R weazl:weazl /data /run/weazlcloud-photo

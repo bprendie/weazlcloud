@@ -1,5 +1,7 @@
+import {sizePhotoPane,photoGeometry,photoPane,photoViewport,viewScrollTop,viewScrollTo,viewScrollBy} from './photo-scroll.js';
+import {mergePhotoPage} from './photo-pages.js';
 import {photoPlaceholder} from './photo-placeholder.js';
-import {clearPhotoImages, releaseDetachedPhotoImages, photoImageScope, mountPhotoImage, prefetchPhotoImage} from './photo-images.js';
+import {clearPhotoImageFailures,clearPhotoImages, releaseDetachedPhotoImages, photoImageScope, mountPhotoImage, prefetchPhotoImage} from './photo-images.js';
 import {layoutPhotos} from './photo-layout.js';
 import {installPhotoTimeline} from './photo-timeline.js';
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
@@ -260,6 +262,7 @@ function cancelDetachedGridRequests() {
 }
 
 function hydratePhotoPager() {
+ if(photoPane())return;
   const button = document.querySelector('[data-photo-load-more]');
   if (button && photoMoreObserver && button.dataset.photoObserved !== '1') {
     button.dataset.photoObserved = '1';
@@ -291,8 +294,10 @@ function hydrateGridTextPreviews() {
 
 function updatePhotoGridWindow() {
   photoWindowFrame = 0;
+  sizePhotoPane();
   refreshPhotoGrid();
   photoTimeline.sync();
+ checkPhotoBoundaries();
 }
 
 function schedulePhotoGridWindow() {
@@ -300,6 +305,8 @@ function schedulePhotoGridWindow() {
   photoWindowFrame = requestAnimationFrame(updatePhotoGridWindow);
 }
 window.addEventListener('scroll', schedulePhotoGridWindow, {passive: true});
+$('#content').addEventListener('scroll',schedulePhotoGridWindow,{passive:true});
+document.addEventListener('wheel',e=>{if(e.target.closest('.photo-time-rail') && photoPane()){e.preventDefault();photoPane().scrollBy({top:e.deltaY*(e.deltaMode===1?20:e.deltaMode===2?photoPane().clientHeight:1)});}},{passive:false});
 window.addEventListener('resize', schedulePhotoGridWindow, {passive: true});
 
 const contentObserver = new MutationObserver(() => { cancelDetachedGridRequests(); hydrateGridTextPreviews(); hydratePhotoPager(); schedulePhotoGridWindow(); });
@@ -669,6 +676,7 @@ let photoViewerIndex = -1;
 let photoViewerHistoryPushed = false;
 let photoRouteViewerID = '';
 let photoViewerReturnHash = '#photos';
+let photoViewerReturnScroll = null;
 function openPhotoViewer(id, pushHistory = true) {
   const index = state.photoItems.findIndex(item => item.id === id);
   if (index < 0) return previewFile(id);
@@ -677,6 +685,7 @@ function openPhotoViewer(id, pushHistory = true) {
     history.pushState({photoViewer: true, photoID: id, returnHash}, '', '#photos/view/' + encodeURIComponent(id));
     photoViewerHistoryPushed = true;
   }
+  if (!$('#modal').open) photoViewerReturnScroll = viewScrollTop();
   photoViewerIndex = index;
   state.selected = {type: 'file', id};
   state.selectedFiles = [id];
@@ -733,10 +742,12 @@ async function restorePhotoViewerRoute(id) {
 }
 
 function renderPhotoViewer() {
+ const oldMotion=document.querySelector('[data-live-motion]');if(oldMotion){oldMotion.pause();oldMotion.removeAttribute('src');oldMotion.load();}
   const item = state.photoItems[photoViewerIndex];
   if (!item) { $('#modal').close(); return; }
   const path = item.path || filePath(item.id);
-  const video = /\.(?:mp4|mov|m4v|webm|mkv)$/i.test(path);
+  const livePhoto=item.components?.some(c=>c.id==='motion');
+  const video = !livePhoto && /\.(?:mp4|mov|m4v|webm|mkv)$/i.test(path);
   const hiddenParam = state.photosMode === 'hidden' ? '&hidden=1' : '';
   const date = item.captureTime ? modifiedLabel(item.captureTime) : 'Date unknown';
   const source = video
@@ -750,9 +761,9 @@ function renderPhotoViewer() {
       <div class="photo-viewer-actions"><button class="secondary" data-action="photo-show-library">Show in Library</button><button class="secondary" data-action="photo-add-to-album">Add to album</button><button class="secondary" data-action="photo-edit">Edit details</button><button class="secondary" data-action="photo-toggle-archive">${item.archived ? 'Unarchive' : 'Archive'}</button><button class="secondary" data-action="photo-toggle-favorite" aria-pressed="${item.favorite ? 'true' : 'false'}">${item.favorite ? '★ Favorite' : '☆ Favorite'}</button><button class="secondary" data-action="photo-zoom-out" aria-label="Zoom out">−</button><span class="photo-viewer-zoom">${Math.round((state.photoZoom || 1) * 100)}%</span><button class="secondary" data-action="photo-zoom-in" aria-label="Zoom in">+</button><button class="secondary" data-action="photo-viewer-info" aria-expanded="${state.photoViewerInfo ? 'true' : 'false'}">Details</button><a class="secondary button-link" href="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original?download=1${state.photosMode === 'hidden' ? '&hidden=1' : ''}" download="${esc(item.title)}">Download original</a><button class="icon-button" data-action="photo-viewer-close" aria-label="Close viewer">×</button></div>
     </header>
     <button class="photo-viewer-nav previous" data-action="photo-viewer-prev" aria-label="Previous photo" ${photoViewerIndex === 0 ? 'disabled' : ''}>‹</button>
-    <div class="photo-viewer-stage">${source}</div>
+    <div class="photo-viewer-stage">${source}${livePhoto ? `<video class="photo-viewer-media" data-live-motion hidden muted playsinline preload="none" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/motion${state.photosMode==='hidden'?'?hidden=1':''}"></video>` : ''}</div>
     <button class="photo-viewer-nav next" data-action="photo-viewer-next" aria-label="Next photo" ${photoViewerIndex >= state.photoItems.length - 1 && !state.photoHasMore ? 'disabled' : ''}>›</button>
-    <footer class="photo-viewer-caption"><span>${esc(date)}</span>${caption}</footer>
+    <footer class="photo-viewer-caption">${livePhoto ? '<div class="photo-live-controls"><span>Live</span><button class="secondary" data-action="photo-live-play">Play motion</button><button class="secondary" data-action="photo-live-download">Download Live Photo</button><button class="text-button" data-action="photo-live-unlink">Unlink motion</button></div>' : ''}<span>${esc(date)}</span>${caption}</footer>
     <aside class="photo-viewer-info" ${state.photoViewerInfo ? '' : 'hidden'}><strong>Details</strong><dl><dt>Capture date</dt><dd>${esc(date)}</dd><dt>File</dt><dd>${esc(path)}</dd><dt>Size</dt><dd>${esc(item.size)}</dd>${item.captureSource ? `<dt>Date source</dt><dd>${esc(item.captureSource)}</dd>` : ''}</dl></aside>
   </div>`;
   if (!$('#modal').open) $('#modal').showModal();
@@ -1185,7 +1196,7 @@ function applyRoute() {
   const previous=state.view, switching=previous !== (allowed.has(view)?view:'home');
   if(switching){
     const anchor=previous==='photos'?[...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight):null;
-    modeMemory.remember(previous,state,window.scrollY,anchor);stopMediaPlayback();
+    modeMemory.remember(previous,state,viewScrollTop(),anchor);stopMediaPlayback();
     if(previous==='photos'){photoPageController?.abort();photoPageRequest++;state.photoLoading=false;photoSelectionRequest++;}
   }
   state.view = allowed.has(view) ? view : 'home';
@@ -1209,6 +1220,7 @@ function applyRoute() {
     if(navigation?.scope){const s=navigation.scope;state.photoCamera=s.camera||'';state.photoSearchType=s.type||'';state.photoFrom=s.from||'';state.photoTo=s.to||'';state.photoOutsideAlbums=Boolean(s.outside_albums);state.photoQuery=s.q||'';}
     state.photosShown = 60;
     state.photoItems = [];
+    state.photoPages=[];state.photoTotal=undefined;
     state.photoCursor = '';
     state.photoPreviousCursor = '';
     loadPhotoAlbums();
@@ -1219,17 +1231,17 @@ function applyRoute() {
     if(switching&&!restored)clearFileSelection();
     state.photoAnchor = photoRouteViewerID || navigation?.anchor || restored?.anchor?.id || '';
     state.photoFallbackDate=navigation?.date || restored?.anchor?.date || '';
-    if(navigation?.anchor || restored?.anchor?.id){state.photoJumpAnchor=navigation?.anchor || restored.anchor.id;state.photoJumpOffset=navigation?.offset??restored?.anchor?.top??145;}
+    if(navigation?.anchor || restored?.anchor?.id){state.photoJumpAnchor=navigation?.anchor || restored.anchor.id;state.photoJumpOffset=navigation?.offset??restored?.anchor?.top??photoViewport().top;}
     loadPhotoPage(true).then(() => {
       state.photoModeDirty=false;
-      if(restored)requestAnimationFrame(()=>{const tile=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor?.id);if(tile)window.scrollBy({top:tile.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});else if(!restored.anchor)window.scrollTo({top:restored.scroll,behavior:'auto'});schedulePhotoGridWindow();});
+      if(restored)requestAnimationFrame(()=>{const tile=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor?.id);if(tile)viewScrollBy({top:tile.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});else if(!restored.anchor)viewScrollTo({top:restored.scroll,behavior:'auto'});schedulePhotoGridWindow();});
       if (photoRouteViewerID) restorePhotoViewerRoute(photoRouteViewerID);
     }).catch(err => toast(err.message));
   }
   if (state.view === 'library' && live && state.unlocked) {
     const restored=switching?modeMemory.restore('library',state):null;
     if(switching&&!restored)clearFileSelection();
-    loadLibrary(true).then(()=>{if(restored&&state.view==='library')requestAnimationFrame(()=>window.scrollTo({top:restored.scroll,behavior:'auto'}));}).catch(err => toast(err.message));
+    loadLibrary(true).then(()=>{if(restored&&state.view==='library')requestAnimationFrame(()=>viewScrollTo({top:restored.scroll,behavior:'auto'}));}).catch(err => toast(err.message));
   }
   renderMain();
   renderDeck();
@@ -1241,7 +1253,7 @@ function navigate(view, replace = false) {
   const previous = state.view, switching = previous !== view;
   if (switching) {
     const anchor = previous === 'photos' ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight) : null;
-    modeMemory.remember(previous,state,window.scrollY,anchor);
+    modeMemory.remember(previous,state,viewScrollTop(),anchor);
   }
   if (previous === 'photos' && view !== 'photos') { photoPageController?.abort(); photoPageRequest++; state.photoLoading=false; photoSelectionRequest++; }
   if (view === 'trash' && previous !== 'trash') {
@@ -1263,17 +1275,22 @@ function navigate(view, replace = false) {
   if (view==='takeout') refreshTakeout();
   const restoreScroll=()=>{
     if(state.view!==view) return;
+    const request=photoPageRequest;
     requestAnimationFrame(()=>{
+      if(state.view!==view || view==='photos' && request!==photoPageRequest)return;
       const anchor=restored?.anchor && [...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===restored.anchor.id);
-      if(anchor)window.scrollBy({top:anchor.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});
-      else if(!restored?.anchor)window.scrollTo({top:restored?.scroll || 0,behavior:'auto'});
+      if(anchor)viewScrollBy({top:anchor.getBoundingClientRect().top-restored.anchor.top,behavior:'auto'});
+      else if(!restored?.anchor)viewScrollTo({top:restored?.scroll || 0,behavior:'auto'});
       if(view==='photos')schedulePhotoGridWindow();
     });
   };
   if(view==='library' && live && state.unlocked) loadLibrary().then(()=>{if(state.view==='library'){renderMain();restoreScroll();}}).catch(err=>toast(err.message));
   if(view==='photos') {
     loadPhotoAlbums(false); loadPhotoPreparation();
-    if(cachedPhotos)restoreScroll(); else loadPhotoPage(true).then(()=>{state.photoModeDirty=false;restoreScroll();});
+    if(cachedPhotos)restoreScroll(); else {
+      const loading=loadPhotoPage(true),request=photoPageRequest;
+      loading.then(()=>{if(request===photoPageRequest && state.view==='photos'){state.photoModeDirty=false;restoreScroll();}});
+    }
   }
   history[replace?'replaceState':'pushState']({},'',routeHash(view));
 }
@@ -1551,10 +1568,10 @@ const hasPhotoSearchFilters = () => Boolean(state.photoQuery || state.photoCamer
 function photoScopeOptions(){return {mode:['favorites','hidden','archived'].includes(state.photosMode)?state.photosMode:'all',date:state.photoDate,album:state.photoOutsideAlbums?'':state.photosAlbum,search:hasPhotoSearchFilters(),q:state.photoQuery,camera:state.photoCamera,type:state.photoSearchType,from:state.photoFrom,to:state.photoTo,outside_albums:state.photoOutsideAlbums};}
 const photoTimeline=installPhotoTimeline({state,summaryForMonth:month=>engine.photoTimelineDates({...photoScopeOptions(),month}),jump:async target=>{
  if(!live || !state.unlocked || state.view!=='photos')return;
- const visible=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.getBoundingClientRect().bottom>140);
+ const visible=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.getBoundingClientRect().bottom>photoViewport().top+1);
  const anchor=state.photoJumpAnchor || visible?.dataset.selectFile;
  const item=state.photoItems.find(item=>item.id===anchor);
- history.replaceState({...history.state,photoNavigation:{owner:state.username,anchor,date:item?.captureTime?.slice(0,10)||'unknown',offset:state.photoJumpAnchor?145:visible?.getBoundingClientRect().top,scope:photoScopeOptions()}},'',location.hash);
+ history.replaceState({...history.state,photoNavigation:{owner:state.username,anchor,date:item?.captureTime?.slice(0,10)||'unknown',offset:state.photoJumpAnchor?photoViewport().top:visible?.getBoundingClientRect().top,scope:photoScopeOptions()}},'',location.hash);
  clearFileSelection();state.photoSeek=target;state.photoAnchor='';
  state.photoJumpOffset=null;
  await loadPhotoPage(true,true,'next',true);
@@ -1566,7 +1583,7 @@ function restorePhotoJump(){
  if(index<0)return;
  // The destination may lie outside mounted rows. Use the same layout first.
  const grid=document.querySelector('.photo-grid');
- if(grid){const layout=layoutPhotos(state.photoItems,grid.clientWidth,state.photoDensity);const row=layout.rows.find(row=>row.tiles.some(tile=>tile.index===index));if(row)window.scrollTo({top:window.scrollY+grid.getBoundingClientRect().top+row.top-145,behavior:'auto'});}
+ if(grid){refreshPhotoGrid();const layout=layoutPhotos(state.photoItems,grid.clientWidth,state.photoDensity);const row=layout.rows.find(row=>row.tiles.some(tile=>tile.index===index));const geometry=photoGeometry(state,grid.clientWidth,layout.height);if(row)viewScrollTo({top:viewScrollTop()+grid.getBoundingClientRect().top-photoViewport().top+geometry.before+row.top,behavior:'auto'});}
  // Mount the destination, then correct against its actual rendered position.
  // Toolbar changes and browser scroll anchoring can shift the estimated layout.
  const request=photoPageRequest;
@@ -1574,10 +1591,25 @@ function restorePhotoJump(){
    if(request!==photoPageRequest || state.view!=='photos' || state.photoJumpAnchor!==id)return;
    refreshPhotoGrid();
    const tile=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.dataset.selectFile===id);
-   if(tile)window.scrollBy({top:tile.getBoundingClientRect().top-(state.photoJumpOffset??145),behavior:'auto'});
+   if(tile)viewScrollBy({top:tile.getBoundingClientRect().top-(state.photoJumpOffset??photoViewport().top),behavior:'auto'});
    state.photoJumpOffset=null;
    state.photoJumpAnchor='';schedulePhotoGridWindow();
  });
+}
+
+let photoBoundaryCooldown=0;
+function checkPhotoBoundaries(){
+ const pane=photoPane(),grid=document.querySelector('.photo-grid');
+ if(!pane || !grid || state.photoLoading || state.photoError || !state.photoItems.length || state.photoJumpAnchor || performance.now()<photoBoundaryCooldown)return;
+ const layout=layoutPhotos(state.photoItems,grid.clientWidth,state.photoDensity,state.photosMode==='recent'?'recent':'capture');
+ const geometry=photoGeometry(state,grid.clientWidth,layout.height);
+ const offset=photoViewport().top-grid.getBoundingClientRect().top;
+ if(state.photosMode!=='recent' && (offset<geometry.before-1800 || offset>geometry.before+layout.height+1800)){
+  state.photoSeek={rank:geometry.rankAt(offset)};photoBoundaryCooldown=performance.now()+200;
+  loadPhotoPage(true,true,'next',false);return;
+ }
+ if(state.photoPreviousCursor && offset<geometry.before+900){photoBoundaryCooldown=performance.now()+200;loadPhotoPage(false,true,'before');}
+ else if(state.photoHasMore && offset+pane.clientHeight>geometry.before+layout.height-900){photoBoundaryCooldown=performance.now()+200;loadPhotoPage(false);}
 }
 
 let photoSearchTimer = 0;
@@ -1588,10 +1620,8 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
   photoPageController?.abort();
   photoPageController = new AbortController();
   const signal = photoPageController.signal;
-  const previousViewportAnchor = !reset
-    ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top})).find(row => row.top >= 0 && row.top < window.innerHeight)
-    : null;
-  const seeking = reset && Boolean(state.photoSeek);
+  let previousViewportAnchor = null;
+  const seeking = reset && Boolean(state.photoSeek || state.photoAnchor);
   if (reset) {
     const summaryScope=JSON.stringify(photoScopeOptions());
     if(state.photoSummaryScope!==summaryScope)state.photoDateSummary=null;
@@ -1600,9 +1630,10 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
     state.photoPreviousCursor = '';
     state.photoHasMore = false;
     state.photoError = '';
+    if (!seeking) viewScrollTo({top:0,behavior:'auto'});
   }
   state.photoLoading = true;
-  if (render && !seeking) renderMain();
+  if (render && reset && !seeking) renderMain();
   try {
     const photoMode = ['recent', 'favorites', 'hidden', 'archived'].includes(state.photosMode) ? state.photosMode : 'all';
     const around = reset ? state.photoAnchor : '';
@@ -1610,32 +1641,28 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
     const dateFrom = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-01-01` : state.photoDate.length === 7 ? `${state.photoDate}-01` : state.photoDate) : '';
     const dateTo = state.photoDate ? (state.photoDate.length === 4 ? `${state.photoDate}-12-31` : state.photoDate.length === 7 ? `${state.photoDate}-${new Date(Number(state.photoDate.slice(0,4)), Number(state.photoDate.slice(5,7)), 0).getDate()}` : state.photoDate) : '';
     const seek=reset?state.photoSeek:null;
-    const page = state.photosMode==='recent'
+    let page = state.photosMode==='recent'
       ? await engine.listPhotos(requestCursor,state.photosAlbum || '',{mode:'recent',around,signal})
       : await engine.navigatePhotos({...photoScopeOptions(),cursor:reset?'':requestCursor,around,...seek,signal});
+    // The anchor's last date group can disappear after Hide/Delete. A seek to
+    // that missing group must not strand a nonempty collection on a blank page.
+    if (reset && seek?.at && page.total>0 && !page.items?.length && state.photosMode!=='recent')
+      page=await engine.navigatePhotos({...photoScopeOptions(),rank:state.photoPosition||0,signal});
     if (request !== photoPageRequest || username !== state.username || !state.unlocked || state.view !== 'photos') return;
     const incoming = (page.items || []).map(engine.toFixture);
+    const currentAnchor=[...document.querySelectorAll('.photo-grid [data-select-file]')]
+      .map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom}))
+      .find(row=>row.bottom>photoViewport().top+1 && row.top<photoViewport().top+photoViewport().height);
+    if(!reset)previousViewportAnchor=currentAnchor;
+    else if(around && currentAnchor && incoming.some(item=>item.id===currentAnchor.id)){
+      state.photoJumpAnchor=currentAnchor.id;state.photoJumpOffset=currentAnchor.top;
+    }
     if (seeking) state.photoItems = [];
     if(reset){state.photoSeek=null;state.photoStart=page.start||0;state.photoPosition=page.position||0;if(seek){state.photoJumpAnchor=page.anchor_id||'';state.photoLastJumpAnchor=page.anchor_id||'';}}
-    if(direction==='before')state.photoStart=page.start||0;
-    if (direction === 'before') {
-      state.photoItems.unshift(...incoming);
-      if (photoViewerIndex >= 0) photoViewerIndex += incoming.length;
-    } else state.photoItems.push(...incoming);
-    if (reset) state.photoAnchor = '';
-    if (state.photoItems.length > 2000) {
-      const trim = state.photoItems.length - 2000;
-      if (direction === 'before') state.photoItems.splice(2000, trim);
-      else {
-        state.photoItems.splice(0, trim);
-        state.photoStart=(state.photoStart||0)+trim;
-        photoViewerIndex = Math.max(-1, photoViewerIndex - trim);
-      }
-    }
-    if (direction !== 'before') state.photoCursor = page.next_cursor || '';
-    state.photoPreviousCursor = page.previous_cursor || (direction === 'before' ? '' : state.photoPreviousCursor);
-    state.photoHasMore = Boolean(state.photoCursor);
-    state.photoGeneration = page.generation || 0;
+    const viewerID=state.photoItems[photoViewerIndex]?.id;
+    mergePhotoPage(state,page,incoming,reset,direction);
+    if(viewerID)photoViewerIndex=state.photoItems.findIndex(item=>item.id===viewerID);
+    if(reset)state.photoAnchor='';
     state.photoError = '';
     // Commit history with the accepted page, before another gesture can cancel
     // a slower date-summary refresh. Late seeks must never add history entries.
@@ -1650,7 +1677,8 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
       state.photoCursor = '';
       state.photoPreviousCursor = '';
       state.photoAnchor = '';
-      if(state.photoFallbackDate)state.photoSeek={at:state.photoFallbackDate};
+      state.photoSeek=state.photoFallbackDate && state.photoFallbackDate!=='unknown'
+        ? {at:state.photoFallbackDate} : {rank:state.photoPosition||0};
       state.photoLoading = false;
       state.photoError = '';
       return loadPhotoPage(true, render, direction, recordNavigation);
@@ -1661,10 +1689,14 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
   }
     if (request === photoPageRequest && render && state.view === 'photos') {
     state.photoViewportRestore = previousViewportAnchor;
-    renderMain();
+    if(reset)renderMain();else {
+     const grid=document.querySelector('.photo-grid');if(grid){grid.dataset.windowKey='';refreshPhotoGrid();}
+     const earlier=document.querySelector('[data-action="photos-earlier"]');if(earlier)earlier.hidden=!state.photoPreviousCursor;
+     const more=document.querySelector('[data-photo-load-more]');if(more){more.disabled=false;more.textContent='Load more photos';more.hidden=!state.photoHasMore;}
+    }
     if (previousViewportAnchor) requestAnimationFrame(() => {
       const el = [...document.querySelectorAll('.photo-grid [data-select-file]')].find(node => node.dataset.selectFile === previousViewportAnchor.id);
-      if (el) window.scrollBy({top: el.getBoundingClientRect().top - previousViewportAnchor.top, behavior: 'auto'});
+      if (el) viewScrollBy({top: el.getBoundingClientRect().top - previousViewportAnchor.top, behavior: 'auto'});
       state.photoViewportRestore = null;
     });
   }
@@ -1722,28 +1754,27 @@ async function syncLibraryFromChange() {
     return;
   }
   librarySyncRunning = true;
-  const scroll = window.scrollY;
+  const scroll = viewScrollTop();
   try {
     if (state.view === 'photos') {
-      const oldCount = state.photoItems.length;
-      const anchor = [...document.querySelectorAll('.photo-grid [data-select-file]')]
-        .map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top}))
-        .find(item => item.top >= 0 && item.top < window.innerHeight);
+      const navigationRequest=photoPageRequest,username=state.username;
       await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation()]);
-      await loadPhotoPage(true, false);
-      const retain = Math.min(oldCount, 2000);
-      while (state.photoItems.length < retain && state.photoHasMore && !state.photoError) {
-        await loadPhotoPage(false, false);
-      }
-      renderMain();
+      // A date jump/filter/mode change owns its new page. An older event refresh
+      // must not cancel that navigation after its status requests finish.
+      if(state.view!=='photos' || state.username!==username || !state.unlocked || navigationRequest!==photoPageRequest)return;
+      const viewerID=$('#modal').classList.contains('photo-viewer')?state.photoItems[photoViewerIndex]?.id:'';
+      const anchor = [...document.querySelectorAll('.photo-grid [data-select-file]')]
+        .map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom}))
+        .find(item => item.bottom > photoViewport().top+1 && item.top < photoViewport().top+photoViewport().height);
+      state.photoAnchor=viewerID || anchor?.id || '';
+      state.photoSeek=null;
+      state.photoJumpAnchor=state.photoAnchor;
+      state.photoJumpOffset=anchor?.top ?? photoViewport().top;
+      state.photoFallbackDate=state.photoItems.find(item=>item.id===state.photoAnchor)?.captureTime?.slice(0,10)||'unknown';
+      await loadPhotoPage(true);
+      if(viewerID)photoViewerIndex=state.photoItems.findIndex(item=>item.id===viewerID);
       renderDeck();
       if ($('#modal').classList.contains('photo-viewer')) renderPhotoViewer();
-      requestAnimationFrame(() => {
-        const restored = anchor && [...document.querySelectorAll('.photo-grid [data-select-file]')]
-          .find(el => el.dataset.selectFile === anchor.id);
-        if (restored) window.scrollBy({top: restored.getBoundingClientRect().top - anchor.top, behavior: 'auto'});
-        else window.scrollTo({top: scroll, behavior: 'auto'});
-      });
       return;
     }
     await loadLibrary();
@@ -1752,7 +1783,7 @@ async function syncLibraryFromChange() {
     if (state.view === 'library' || state.view === 'photos') {
       renderMain();
       renderDeck();
-      requestAnimationFrame(() => window.scrollTo({top: scroll, behavior: 'auto'}));
+      requestAnimationFrame(() => viewScrollTo({top: scroll, behavior: 'auto'}));
     }
   } catch {}
   finally {
@@ -1799,6 +1830,11 @@ setInterval(async () => {
     if(metadataStatus && state.photoMetadata.status!=='idle'){const job=state.photoMetadata;metadataStatus.textContent=`${job.examined} / ${job.total} dates · ${job.status.replaceAll('_',' ')} · ${job.unresolved} unknown · ${job.failed} failed`;}
     const metadataButton=document.querySelector('[data-action="photo-metadata"].secondary');
     if(metadataButton){const active=['queued','running'].includes(metadata.status),paused=['paused','paused_error'].includes(metadata.status);metadataButton.dataset.metadataAction=active?'pause':paused?'resume':'start';metadataButton.textContent=active?'Pause date repair':paused?'Resume date repair':'Repair dates';}
+    const liveJob=await engine.livePhotoJob();
+    if(username!==state.username || !state.unlocked)return;
+    state.photoLiveJob=liveJob;
+    const liveStatus=document.querySelector('[data-photo-live-status]');if(liveStatus)liveStatus.textContent=liveJob.status==='idle'?'':`${liveJob.examined} / ${liveJob.total} Live Photo resources · ${liveJob.paired} paired · ${liveJob.ambiguous} ambiguous · ${liveJob.failed} failed · ${liveJob.status.replaceAll('_',' ')}`;
+    const liveButton=document.querySelector('[data-action="photo-live-repair"]');if(liveButton){const active=['queued','running'].includes(liveJob.status);liveButton.dataset.liveAction=active?'pause':liveJob.status==='paused' || liveJob.status==='paused_error'?'resume':'start';liveButton.textContent=active?'Pause Live Photo repair':liveButton.dataset.liveAction==='resume'?'Resume Live Photo repair':'Repair Live Photos';}
     const preparation=await engine.photoPreparation();
     if(username!==state.username || !state.unlocked)return;
     state.photoPreparation=preparation;
@@ -1827,9 +1863,9 @@ function startLibraryEvents() {
   libraryEventSource?.close();
   if (!live || !state.unlocked) return;
   libraryEventSource = engine.libraryEvents(change => {
-    if(['put','delete','restore','rename','photo-visibility','photo-metadata'].includes(change?.kind))clearPhotoImages();
+    if(['put','delete','restore','rename','photo-visibility','photo-metadata','photo-live'].includes(change?.kind))clearPhotoImages();
     if (state.view !== 'photos') { state.photoModeDirty=true; state.photoItems=[]; }
-    if (['photo-visibility','rename','delete','restore'].includes(change?.kind)) {
+    if (['photo-visibility','rename','delete','restore','photo-live'].includes(change?.kind)) {
       modeMemory.clearSelections();
       photoSelectionRequest++;
       clearFileSelection();
@@ -2039,7 +2075,7 @@ async function runMenu(act) {
   if (kind === 'revoke') revoke(key);
 }
 
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   const ctxBtn = e.target.closest('#ctx button');
   if (ctxBtn) { runMenu(ctxBtn.dataset.act); return; }
   const menuBtn = e.target.closest('[data-menu-file], [data-menu-folder], [data-menu-capsule]');
@@ -2188,7 +2224,43 @@ document.addEventListener('click', e => {
   if(b.dataset.action==='photo-metadata'){
     engine.setPhotoMetadata(b.dataset.metadataAction).then(job=>{state.photoMetadata=job;renderMain();toast(job.options?.dry_run?'Date inspection started.':'Date repair updated.');}).catch(err=>toast(err.message));return;
   }
+  try {
+  if(b.dataset.action==='photo-live-link'){
+    const rows=selectedFileRows();if(rows.length!==2)return;
+    const still=rows.find(x=>x.mediaType?.startsWith('image/')),motion=rows.find(x=>x.mediaType?.startsWith('video/'));
+    if(!still || !motion){toast('Select one still photo and one motion video.');return;}
+    if(!confirm(`Pair ${still.title} with ${motion.title} as one Live Photo? Both originals will be kept.`))return;
+    await engine.linkLivePhoto({still_id:still.id,motion_id:motion.id,still_revision:still.revision,motion_revision:motion.revision,hidden:state.photosMode==='hidden'});
+    clearFileSelection();await loadPhotoPage(true);toast('Live Photo paired.');return;
+  }
+  if(b.dataset.action==='photo-live-play'){
+    const media=document.querySelector('[data-live-motion]'),still=document.querySelector('[data-photo-viewer-image]');if(!media)return;
+    if(!media.hidden){media.pause();media.hidden=true;if(still)still.hidden=false;b.textContent='Play motion';return;}
+    media.hidden=false;if(still)still.hidden=true;b.textContent='Stop motion';
+    const stop=()=>{media.hidden=true;if(still)still.hidden=false;b.textContent='Play motion';};
+    media.onended=stop;media.onerror=()=>{stop();toast('Motion preview unavailable. Both originals are preserved.');};media.play().catch(()=>{stop();toast('Motion playback unavailable.');});return;
+  }
+  if(b.dataset.action==='photo-live-download'){
+    const item=state.photoItems[photoViewerIndex];if(!item)return;
+    const selection=await engine.createPhotoSelection({ids:[item.entryID||item.id],mode:state.photosMode==='hidden'?'hidden':'all'});
+    const result=await engine.photoSelectionAction({selection_id:selection.id,hidden:selection.hidden,confirm_hidden:selection.hidden,action:'archive'});await createArchiveJob([],result);return;
+  }
+  if(b.dataset.action==='photo-live-unlink'){
+    const item=state.photoItems[photoViewerIndex],motion=item?.components?.find(c=>c.id==='motion');if(!motion || !confirm('Show the still and motion as separate items? Both originals will be kept.'))return;
+    const detail= await (await fetch('/api/v1/photos/assets/'+encodeURIComponent(motion.asset_id)+(state.photosMode==='hidden'?'?hidden=1':''))).json();
+    const updated=await engine.linkLivePhoto({still_id:item.id,motion_id:motion.asset_id,still_revision:item.revision,motion_revision:detail.revision,hidden:state.photosMode==='hidden',unlink:true});Object.assign(item,engine.toFixture(updated));renderPhotoViewer();return;
+  }
+  if(b.dataset.action==='photo-live-inspect' || b.dataset.action==='photo-live-repair'){
+    const action=b.dataset.action==='photo-live-inspect'?'dry-run':b.dataset.liveAction||'start';
+    const job=await engine.livePhotoJob(action);state.photoLiveJob=job;renderMain();toast(action==='pause'?'Live Photo repair paused.':'Live Photo work queued. It continues in the background.');return;
+  }
+  if(b.dataset.action==='photo-failures'){
+    const response=await fetch('/api/v1/photos/failures');const report=await response.json();
+    modal(`<h2>Preview failures</h2><p>${report.total||0} failed assets</p><ul>${(report.items||[]).map(item=>`<li>${esc(item.path)} · ${esc(item.category.replaceAll('_',' '))}</li>`).join('')}</ul><button class="secondary" data-close>Close</button>`,true);return;
+  }
+  } catch(err) {toast(err.message || 'Photo operation failed.');return;}
   if (b.dataset.action === 'photo-preparation') {
+ clearPhotoImageFailures();
     const action = b.dataset.prepAction || 'start';
     engine.setPhotoPreparation(action).then(result => { state.photoPreparation = result; renderMain(); toast(action === 'pause' ? 'Preview preparation paused.' : 'Preview preparation started.'); }).catch(err => toast(err.message));
     return;
@@ -2618,7 +2690,7 @@ document.addEventListener('keydown', e => {
   if (/^[1-5]$/.test(e.key)) navigate(['home', 'library', 'send', 'capsules', 'places'][Number(e.key) - 1]);
 });
 
-$('#modal').addEventListener('close', () => { $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide', 'photo-viewer'); photoViewerIndex = -1; state.photoViewerInfo = false; });
+$('#modal').addEventListener('close', () => { if (photoViewerReturnScroll !== null && state.view === 'photos') { const top=photoViewerReturnScroll; photoViewerReturnScroll=null; viewScrollTo({top,behavior:'auto'}); requestAnimationFrame(()=>{viewScrollTo({top,behavior:'auto'});schedulePhotoGridWindow();}); } $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide', 'photo-viewer'); photoViewerIndex = -1; state.photoViewerInfo = false; });
 $('#modal').addEventListener('cancel', event => {
   if ($('#modal').classList.contains('photo-viewer') && photoViewerHistoryPushed) {
     event.preventDefault();

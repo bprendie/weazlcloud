@@ -140,6 +140,7 @@ func (l *Library) resumePhotoPreparation() {
 // ResumePhotoPreparation continues an explicitly enabled job after the vault
 // unlocks, building the owner index first when this is a fresh process.
 func (l *Library) ResumePhotoPreparation(_ context.Context) {
+	l.ResumeLivePhotos()
 	if !l.vault.Unlocked() {
 		return
 	}
@@ -165,6 +166,16 @@ func (l *Library) ResumePhotoPreparation(_ context.Context) {
 		err := l.ensurePhotoIndexLocked(workCtx)
 		l.mu.Unlock()
 		if err == nil && workCtx.Err() == nil {
+			if recovered, recoveryErr := l.RecoverHEICPreviews(workCtx); recoveryErr != nil {
+				return
+			} else if recovered > 0 {
+				l.photoPrepMu.Lock()
+				if !l.photoPrep.Paused {
+					l.photoPrep.Status = "queued"
+					_ = l.savePhotoPreparationLocked()
+				}
+				l.photoPrepMu.Unlock()
+			}
 			l.resumePhotoPreparation()
 		}
 	}()

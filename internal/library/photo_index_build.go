@@ -124,7 +124,7 @@ func (l *Library) updatePhotoIndex(change Change) {
 		}
 	case "photo-album":
 		changed = true
-	case "put", "copy", "restore", "mkdir", "photo-metadata", "photo-visibility":
+	case "put", "copy", "restore", "mkdir", "photo-metadata", "photo-visibility", "photo-live":
 		for _, name := range change.Paths {
 			f, ok := l.catalog.Get(name)
 			changed = l.replacePhotoLocked(name, f, ok) || changed

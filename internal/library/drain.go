@@ -21,7 +21,10 @@ func (l *Library) Drain(ctx context.Context) error {
 		l.readerMu.Lock()
 		readerRunning := l.previewReader != nil
 		l.readerMu.Unlock()
-		if jobs == 0 && !running && !metadataRunning && !readerRunning {
+		l.liveMu.Lock()
+		liveRunning := l.liveRunning
+		l.liveMu.Unlock()
+		if jobs == 0 && !running && !metadataRunning && !readerRunning && !liveRunning {
 			break
 		}
 		select {

@@ -82,6 +82,12 @@ func (s *Store) GalleryInfo(id, phrase string) (GalleryManifest, error) {
 }
 
 func (s *Store) GalleryPreview(id string, auth GalleryAuth, itemID string, dst io.Writer) (GalleryItem, error) {
+	return s.galleryDerivative(id, auth, itemID, dst, false)
+}
+func (s *Store) GalleryMotion(id string, auth GalleryAuth, itemID string, dst io.Writer) (GalleryItem, error) {
+	return s.galleryDerivative(id, auth, itemID, dst, true)
+}
+func (s *Store) galleryDerivative(id string, auth GalleryAuth, itemID string, dst io.Writer, motion bool) (GalleryItem, error) {
 	s.mu.Lock()
 	locked := true
 	defer func() {
@@ -98,6 +104,11 @@ func (s *Store) GalleryPreview(id string, auth GalleryAuth, itemID string, dst i
 		if item.ID != itemID {
 			continue
 		}
+		kind := ".preview"
+		if motion {
+			kind = ".motion"
+			item.PreviewType = item.MotionType
+		}
 		if item.PreviewType == "" {
 			return GalleryItem{}, ErrGone
 		}
@@ -105,9 +116,9 @@ func (s *Store) GalleryPreview(id string, auth GalleryAuth, itemID string, dst i
 		s.mu.Unlock()
 		locked = false
 		defer s.finishGallery(id, lease)
-		partKey := galleryKey(key, item.ID+".preview")
+		partKey := galleryKey(key, item.ID+kind)
 		defer clear(partKey)
-		return item, readGalleryStream(filepath.Join(s.root, id, "gallery", item.ID+".preview"), partKey, &galleryLimitWriter{Writer: galleryLeaseWriter{lease: lease, Writer: dst}, Remaining: 8 << 20})
+		return item, readGalleryStream(filepath.Join(s.root, id, "gallery", item.ID+kind), partKey, &galleryLimitWriter{Writer: galleryLeaseWriter{lease: lease, Writer: dst}, Remaining: 8 << 20})
 	}
 	return GalleryItem{}, ErrGone
 }

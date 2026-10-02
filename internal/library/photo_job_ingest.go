@@ -56,6 +56,9 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 	if err := l.queueMetadataIngest(files); err != nil {
 		return err
 	}
+	if err := l.queueLiveIngest(files); err != nil {
+		return err
+	}
 	if err := l.ackPhotoIngest(files); err != nil {
 		return err
 	}
@@ -92,6 +95,10 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 
 func photoJobErrorCategory(err error) string {
 	switch {
+	case errors.Is(err, previewrpc.ErrEnvironment):
+		return "worker_environment"
+	case errors.Is(err, previewrpc.ErrTimeout):
+		return "worker_timeout"
 	case errors.Is(err, previewrpc.ErrUnavailable):
 		return "worker_unavailable"
 	case errors.Is(err, previewrpc.ErrTooLarge):

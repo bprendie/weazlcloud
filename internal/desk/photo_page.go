@@ -110,6 +110,10 @@ func (h *Handler) multiPhotoAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 {
+		if parts[1] == "motion" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			h.multiLiveMotion(w, r, parts[0])
+			return
+		}
 		if parts[1] == "original" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
 			h.multiPhotoOriginal(w, r, parts[0])
 			return

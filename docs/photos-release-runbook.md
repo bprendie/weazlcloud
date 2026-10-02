@@ -28,6 +28,7 @@ volume; it has no network, no vault volume and no private path or key.
 | `.weazl-photo-jobs.enc`, `.weazl-photo-jobs.journal.enc` and preparation state | Durable per-asset jobs, attempts and leases. Pending catalog markers on Photos uploads and sidecars retry checkpoint creation after unlock/reload. |
 | `.weazl-photo-metadata.enc` / `.weazl-photo-metadata-dry-run.enc` | Encrypted capture-date repair options, source checkpoints and private per-asset outcomes. Preserve it with the catalog. Queued/running work resumes after owner unlock; paused work stays paused. Dry-run output preserves the apply checkpoint; a durable sequence selects the latest job. |
 | `.weazl-photos-index.enc`, preview/failure/thumbnail caches | Encrypted derived data. Rebuild from the canonical catalog and originals; clearing a cache must not erase albums or edits. |
+| `.weazl-live-photos.enc` / `.weazl-heic-scratch-recovery-v1.enc` | Encrypted owner Live Photo discovery checkpoint and one-time targeted HEIC recovery marker. Preserve pause and candidate state. |
 | `.weazl-photo-selections/*.enc` | Owner/revision/visibility-bound 90-minute selections. Expired selections are recreated; do not treat them as permanent albums. |
 | Owner archive directory `.enc` + `.wza` | Encrypted ZIP jobs and indexed encrypted ZIP output. Queue recovery is lazy on the first owner request. Ready output retains for 90 minutes. |
 | Capsule directories and `gallery-session.key` | Frozen grab originals/derivatives/ZIPs, encrypted selected-ZIP checkpoints, capsule-only key material and admission counters. Keep until burn/expiry/revoke; account deletion removes the owner's material. |
@@ -57,8 +58,10 @@ surfaces on both backends, including hover/touch selection, deselection, bulk
 Archive/Hidden restore and selection toolbar clearance beside the date rail. CI runs it after building the container. Exercise
 Safari and Chromium with representative JPEG/PNG, transparency, progressive
 JPEG, HEIC/AVIF, portrait/mirrored EXIF and browser-playable videos. Unsupported
-codecs show a placeholder or download fallback; there is no playback transcoder,
-wide-gamut fidelity promise or native Live Photo animation in this release.
+codecs show a placeholder or download fallback; ordinary videos have no general playback transcoder or wide-gamut fidelity promise.
+Paired Live Photos now have a bounded compatible motion preview; see the
+[October 2 remediation](photos-browsing-remediation-2026-10-02.md). Native PhotoKit
+animation and physical-device codec coverage remain device validation.
 A logical still/motion backup preserves both original components.
 
 Measure five cold and twenty warm runs on the workbook's 2-CPU/4-GiB reference

@@ -11,6 +11,8 @@ import (
 
 type PhotoExport struct {
 	ID, Name, MediaType string
+	ParentID            string
+	MotionPreview       func() ([]byte, error)
 	Revision            uint64
 	Size                int64
 	Original            func(io.Writer) error
@@ -74,7 +76,24 @@ func (l *Library) preparePhotoExportLocked(ctx context.Context, ids []string, hi
 			return fail(err)
 		}
 		holds.releases = append(holds.releases, done)
-		out = append(out, PhotoExport{ID: id, Name: path.Base(file.Path), MediaType: photoMediaType(file.Path), Revision: file.Revision, Size: file.Size,
+		out = append(out, PhotoExport{ID: id, ParentID: file.PhotoParentID, MotionPreview: func() ([]byte, error) {
+			if file.PhotoParentID == "" {
+				return nil, nil
+			}
+			current, err := l.liveMotionFile(ctx, file.PhotoParentID, hidden)
+			if err != nil || current.EntryID != file.EntryID || current.Hash != file.Hash || current.Revision != file.Revision {
+				return nil, ErrThumbnailUnavailable
+			}
+			body, err := l.LiveMotion(ctx, file.PhotoParentID, hidden)
+			if err != nil {
+				return nil, err
+			}
+			if err := l.validatePreview(ctx, file); err != nil {
+				clear(body)
+				return nil, err
+			}
+			return body, nil
+		}, Name: path.Base(file.Path), MediaType: photoMediaType(file.Path), Revision: file.Revision, Size: file.Size,
 			Original: func(dst io.Writer) error { return l.readReference(ctx, ref, dst) },
 			Preview: func() ([]byte, string, error) {
 				// The renderer reads the captured revision and re-encodes pixels;

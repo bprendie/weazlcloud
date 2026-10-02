@@ -52,6 +52,12 @@ func (s *Store) PrepareGalleryZIP(id string, auth GalleryAuth, ids []string) (Ga
 		}
 		selected[itemID] = true
 	}
+	for _, item := range manifest.Items {
+		if item.ParentID != "" && selected[item.ParentID] && !selected[item.ID] {
+			selected[item.ID] = true
+			ordered = append(ordered, item.ID)
+		}
+	}
 	sort.Strings(ordered)
 	raw, _ := json.Marshal(ordered)
 	sum := sha256.Sum256(raw)
@@ -81,7 +87,7 @@ func (s *Store) PrepareGalleryZIP(id string, auth GalleryAuth, ids []string) (Ga
 			job.Items = append(job.Items, item)
 		}
 	}
-	if len(job.Items) != len(ids) {
+	if len(job.Items) != len(selected) {
 		return GalleryZIPView{}, ErrGone
 	}
 	dir := filepath.Join(s.root, id, "gallery", "zip")
