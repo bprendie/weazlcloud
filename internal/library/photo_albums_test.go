@@ -31,6 +31,9 @@ func TestPhotoAlbumsLiveMembershipMetadataAndCache(t *testing.T) {
 	l := New(filepath.Join(root, "library"), filepath.Join(root, "catalog.enc"), v)
 	backend := &albumBackend{isolatedLegacy: isolatedLegacy{root: filepath.Join(root, "library")}}
 	l.backend = backend
+	// This fixture tests explicit album reads, not automatic sidecar jobs.
+	l.photoAutoDisabled = true
+	t.Cleanup(func() { stopPhotoIndexSaveForTest(l) })
 	ctx := context.Background()
 	put := func(name, body string) {
 		t.Helper()
