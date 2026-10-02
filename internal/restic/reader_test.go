@@ -25,8 +25,15 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 	if err = runner.Init(ctx, repo); err != nil {
 		t.Fatal(err)
 	}
+	object := filepath.Join(t.TempDir(), "nested", "photo.jpg")
+	if err = os.MkdirAll(filepath.Dir(object), 0700); err != nil {
+		t.Fatal(err)
+	}
 	body := bytes.Repeat([]byte("test authenticated chunks\n"), 400000)
-	snapshot, err := runner.Put(ctx, repo, "nested/photo.jpg", bytes.NewReader(body))
+	if err = os.WriteFile(object, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := runner.PutBatch(ctx, repo, filepath.Dir(filepath.Dir(object)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +48,7 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			limit := 1024 + i
-			got, e := r.Read(ctx, snapshot, "/nested/photo.jpg", limit)
+			got, e := r.Read(ctx, snapshot, object, limit)
 			if e != nil || got.Size != uint64(len(body)) || !bytes.Equal(got.Body, body[:limit]) {
 				t.Errorf("prefix mismatch: %v", e)
 			}
@@ -51,13 +58,13 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 	if _, err = r.Read(ctx, snapshot, "/missing", 10); err == nil {
 		t.Fatal("missing source succeeded")
 	}
-	good, err := r.Read(ctx, snapshot, "/nested/photo.jpg", 32)
+	good, err := r.Read(ctx, snapshot, object, 32)
 	if err != nil || !bytes.Equal(good.Body, body[:32]) {
 		t.Fatal("one error killed reader", err)
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	_, _ = r.Read(canceled, snapshot, "/nested/photo.jpg", 1)
+	_, _ = r.Read(canceled, snapshot, object, 1)
 	r.Close()
 	// Graceful close removes its read lock; an exclusive writer must work.
 	if err = runner.Run(ctx, repo, nil, nil, "check"); err != nil {

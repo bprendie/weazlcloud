@@ -70,8 +70,34 @@ Tests cover real Restic parallel reads and prefix parity, missing-file recovery,
 graceful shared-lock cleanup, new sources after an index opens, stale catalog
 references, locked vaults, and parallel pause/resume without false progress.
 Validation passed: `make check` (Go tests, race detector, vet, source-size and
-JavaScript gates), the Docker build, Restic container restart smoke, and the
-authenticated Photos/timeline browser smoke. The Photos smoke includes late
+JavaScript gates), the Docker build, container restart smokes on both storage backends, and the
+authenticated Photos/timeline browser smokes on both backends. The Photos smoke includes late
 sidecar repair, corrupt-neighbor isolation, repeated apply, source-byte equality,
 and pause/restart recovery. Production rollout and service throughput are
 recorded below after measurement.
+
+Production cutover keeps the effective Compose settings and data mounts unchanged,
+including the 16-CPU API allocation, eight photo slots, four background/source
+readers, and isolated eight-CPU render worker. The first stop encountered the
+existing five-second HTTP shutdown deadline. The cutover gate restored the old
+container and took no checkpoint from that attempt; the subsequent quiet stop
+is required to exit cleanly before the new consistent reflink checkpoint.
+
+The initial GitHub run found a parity-test fixture incompatibility: Restic
+v0.18.0 does not accept the newer local CLI's nested `--stdin-filename` fixture.
+The test now creates a real nested batch, matching imported production storage,
+and passes against the exact v0.18.0 binary from the Docker image. This correction
+changes only the test fixture, not the deployed reader.
+
+Production now runs `weazlcloud:release-878fec4`. The successful cutover took
+44.3 seconds, with both containers healthy. The new consistent checkpoint is
+`/exports/dockervolume/weazlcloud-rollbacks/2026-10-01-metadata-878fec4/data`
+(275,906 files). Private configuration and records are under
+`/home/bobp/weazlcloud-rollouts/2026-10-01-metadata-878fec4`.
+Full Library/photo/album fingerprints and three sample originals matched again
+before resuming the existing dry run at 00:35:23 UTC on October 2 (October 1
+local time), with 200 already examined and four workers. Thumbnail preparation
+is temporarily paused to prioritize extraction. The updated detached supervisor
+will inspect the completed dry run, apply, reconcile, and restore preparation
+unless the owner has changed its pause state in the meantime. Its reports remain
+in the original timeline rollout directory.
