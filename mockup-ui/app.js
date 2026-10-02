@@ -459,6 +459,24 @@ function toggleFileSelection(id) {
   renderDeck();
 }
 
+let photoVisibilityBusy = false;
+async function changeSelectedPhotoVisibility(action) {
+  if (photoVisibilityBusy || !live || !state.unlocked) return;
+  const ids = [...(state.selectedFiles || [])];
+  if (!state.photoSelection && !ids.length) return;
+  const hidden = state.photosMode === 'hidden', username = state.username;
+  photoVisibilityBusy = true;
+  try {
+    const selection = state.photoSelection || await engine.createPhotoSelection({ids,mode:hidden?'hidden':'all'});
+    const result = await engine.photoSelectionAction({selection_id:selection.id,hidden:selection.hidden,action});
+    if (state.username !== username || !state.unlocked) return;
+    clearFileSelection();
+    await loadPhotoPage(true); await loadPhotoAlbums(false); renderMain(); renderDeck();
+    const verb = {hide:'hidden',unhide:'restored from Hidden',set_archived:'archived',unarchive:'restored from Archive'}[action];
+    toast(`${result.updated} photo${result.updated === 1 ? '' : 's'} ${verb}.`);
+  } finally { photoVisibilityBusy = false; }
+}
+
 async function runBatchAction(action) {
   if (state.view === 'photos' && state.photoSelection) {
     const selection = state.photoSelection;
@@ -2082,9 +2100,12 @@ document.addEventListener('click', e => {
   }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.batch) { runBatchAction(b.dataset.batch); return; }
+  if (b.dataset.photoSelect) { if (e.shiftKey) chooseRange(b.dataset.photoSelect); else toggleFileSelection(b.dataset.photoSelect); return; }
+  if (b.dataset.photoVisibility) { changeSelectedPhotoVisibility(b.dataset.photoVisibility).catch(err => toast(err.message)); return; }
   if (b.dataset.selectFile) {
     if (e.shiftKey) chooseRange(b.dataset.selectFile);
     else if (e.ctrlKey || e.metaKey) toggleFileSelection(b.dataset.selectFile);
+    else if (state.view === 'photos' && (state.photoSelection || state.selectedFiles?.length)) toggleFileSelection(b.dataset.selectFile);
     else if (state.view === 'photos') openPhotoViewer(b.dataset.selectFile);
     else { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   }
@@ -2585,7 +2606,7 @@ document.addEventListener('keydown', e => {
   }
   if (modifier && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
   if (modifier) return;
-  if (e.key === 'Escape') hideMenu();
+  if (e.key === 'Escape') { hideMenu(); if (state.view === 'photos' && (state.photoSelection || state.selectedFiles?.length)) { clearFileSelection(); renderMain(); renderDeck(); } }
   if (e.key === 'Delete' && state.view === 'library') { e.preventDefault(); state.selected?.type === 'folder' ? deleteSelectedFolder() : runBatchAction('delete'); return; }
   if (e.key === 'F2' && state.view === 'library') { e.preventDefault(); renameSelected(); return; }
   if (e.key === '?') help();

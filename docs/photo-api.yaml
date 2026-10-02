@@ -1361,6 +1361,9 @@ paths:
                     deleted:
                       type: integer
                       format: int64
+                    updated:
+                      type: integer
+                      format: int64
         '400':
           $ref: '#/components/responses/Error400'
         '401':
@@ -1399,7 +1402,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SelectionAction'
-      description: archive returns 202 and an owner ZIP job; hidden archive requires confirm_hidden.
+      description: archive returns 202 and an owner ZIP job; hidden archive requires confirm_hidden. hide/unhide and set_archived/unarchive return 200 with updated primary-photo count after one revision-validated encrypted catalog save.
   /api/v1/photos/archives:
     get:
       summary: Read or download an owner Photos ZIP job
@@ -2954,6 +2957,10 @@ components:
           - add_album
           - remove_album
           - delete
+          - hide
+          - unhide
+          - set_archived
+          - unarchive
         hidden:
           type: boolean
         confirm_hidden:

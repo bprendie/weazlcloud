@@ -59,7 +59,7 @@ func (l *Library) RestorePhoto(ctx context.Context, id string, hidden bool) erro
 func photoTrashHiddenFolders(all []catalog.File) map[string]bool {
 	folders := make(map[string]bool)
 	for _, file := range all {
-		if file.Folder && file.Hidden {
+		if file.Hidden {
 			folders[file.Path] = true
 		}
 	}

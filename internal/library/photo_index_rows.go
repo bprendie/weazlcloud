@@ -19,7 +19,7 @@ func (l *Library) rebuildPhotoLookupsLocked() {
 	for i, f := range l.photoRows {
 		l.photoByID[f.EntryID] = f
 		l.photoByPath[f.Path] = i
-		if f.Folder && f.Hidden {
+		if f.Hidden {
 			l.photoHiddenFolders[f.Path] = true
 		}
 		if !f.Folder && f.PhotoParentID == "" && photoMedia(f.Path) {
@@ -34,7 +34,7 @@ func (l *Library) rebuildPhotoLookupsLocked() {
 	l.reindexPhotoMediaLocked()
 }
 
-// photoPathHiddenLocked requires photoMu and applies inherited folder state.
+// photoPathHiddenLocked requires photoMu and applies asset visibility and inherited folder state.
 func (l *Library) photoPathHiddenLocked(name string) bool {
 	for parent := name; parent != ""; {
 		if l.photoHiddenFolders[parent] {

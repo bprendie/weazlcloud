@@ -74,6 +74,13 @@ func (h *Handler) photoSelectionAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, header)
+	case "hide", "unhide", "set_archived", "unarchive":
+		count, err := res.Lib.ChangePhotoSelectionVisibility(r.Context(), body.Selection, body.Hidden, body.Action)
+		if err != nil {
+			photoSelectionError(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"updated": count})
 	case "delete":
 		count, err := res.Lib.DeletePhotoSelection(r.Context(), body.Selection, body.Hidden)
 		if err != nil {

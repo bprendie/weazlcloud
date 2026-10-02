@@ -65,9 +65,7 @@ func (c *Catalog) Put(f File) error {
 	found := false
 	for i, x := range next {
 		if x.Path == f.Path && x.Present {
-			if x.Folder {
-				f.Hidden = x.Hidden
-			}
+			f.Hidden = x.Hidden
 			if f.ImportedAt.IsZero() {
 				f.ImportedAt = x.ImportedAt
 				if f.ImportedAt.IsZero() {

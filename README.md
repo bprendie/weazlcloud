@@ -5,6 +5,13 @@ Mount the same library in Files over `davs://`. No FUSE. No Weazl account.
 
 ## Photos and music in the library
 
+Hover over a photo to reveal its selection circle (always visible on touch).
+Select one, then click more tiles or Shift-click a range. The selection bar offers
+**Archive** to remove photos from the timeline and **Hide** to keep them out of
+normal Photos search and albums too. Restore them from **Archive** or **Hidden**;
+Escape clears selection. Originals and album membership are retained. Hidden
+photos remain accessible in Library and do not have a separate password.
+
 Photos has a continuous capture-date rail: drag to a month, choose a day, or use
 the keyboard to move through the timeline. Album, Favorites, Hidden and search
 views keep their own scope. Dates come from metadata; undated files stay in

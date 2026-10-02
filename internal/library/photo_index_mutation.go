@@ -13,7 +13,7 @@ func (l *Library) putPhotoPathLocked(name string, file catalog.File, keep bool) 
 		l.photoRows = append(l.photoRows, file)
 		l.photoByPath[file.Path] = index
 		l.photoByID[file.EntryID] = file
-		if file.Folder && file.Hidden {
+		if file.Hidden {
 			l.photoHiddenFolders[file.Path] = true
 		}
 		if !file.Folder && file.PhotoParentID == "" && photoMedia(file.Path) {
@@ -27,10 +27,10 @@ func (l *Library) putPhotoPathLocked(name string, file catalog.File, keep bool) 
 	}
 	old := l.photoRows[index]
 	l.photoRows[index] = file
-	if old.Folder && old.Hidden {
+	if old.Hidden {
 		delete(l.photoHiddenFolders, old.Path)
 	}
-	if file.Folder && file.Hidden {
+	if file.Hidden {
 		l.photoHiddenFolders[file.Path] = true
 	}
 	delete(l.photoByID, old.EntryID)
@@ -74,7 +74,7 @@ func (l *Library) removePhotoPathLocked(path string) bool {
 		return false
 	}
 	old := l.photoRows[index]
-	if old.Folder && old.Hidden {
+	if old.Hidden {
 		delete(l.photoHiddenFolders, old.Path)
 	}
 	delete(l.photoByID, old.EntryID)

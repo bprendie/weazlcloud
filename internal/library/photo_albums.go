@@ -108,7 +108,7 @@ func (l *Library) PhotoAlbums(ctx context.Context, hiddenView ...bool) ([]PhotoA
 	metadata := make(map[string]catalog.File)
 	hiddenFolders := make(map[string]bool)
 	for _, file := range entries {
-		if file.Folder && file.Hidden {
+		if file.Hidden {
 			hiddenFolders[file.Path] = true
 		}
 	}

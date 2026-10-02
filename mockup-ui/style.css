@@ -353,3 +353,10 @@ button[aria-pressed=true]{color:var(--yellow)}
 @media(max-width:700px){.photo-heading{margin-right:64px}}
 .photos-toolbar,.photo-search-filters{margin-right:84px}
 @media(max-width:700px){.photos-toolbar,.photo-search-filters{margin-right:64px}}
+
+.photo-grid .photo-selector{position:absolute;z-index:3;left:8px;top:8px;width:32px;height:32px;min-width:32px;padding:0;border:2px solid #fff;border-radius:50%;background:#15121bcc;color:#fff;opacity:0;pointer-events:none;box-shadow:0 1px 5px #0008;font-size:19px;line-height:1}
+.photo-tile:hover .photo-selector,.photo-tile:focus-within .photo-selector,.photo-grid.selecting .photo-selector,.photo-selector[aria-pressed="true"]{opacity:1;pointer-events:auto}
+.photo-grid .photo-selector[aria-pressed="true"]{background:var(--purple);border-color:var(--purple)}
+.photo-grid .photo-selector:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
+.photo-heading~.selection-toolbar{position:sticky;top:0;z-index:6}
+@media(hover:none){.photo-grid .photo-selector{opacity:1;pointer-events:auto;width:44px;height:44px}}

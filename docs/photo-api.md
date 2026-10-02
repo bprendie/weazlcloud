@@ -207,9 +207,18 @@ resurrect an original.
 selection (`mode`, `date`, `search`, `filter`). It returns only an encrypted,
 owner/visibility/revision-bound token, count and 90-minute expiry. Up to 100,000
 primary IDs stay on the server. `POST /selection-actions` accepts `selection_id`,
-`hidden` and `action: archive|add_album|remove_album|delete`; album actions also
+`hidden` and `action: archive|add_album|remove_album|delete|hide|unhide|set_archived|unarchive`; album actions also
 need `album_id` and optimistic `revision`. Hidden archive export additionally
-requires `confirm_hidden`. Expired/stale selections return 409; select again.
+requires `confirm_hidden`. Here `archive` means preparing a download ZIP;
+`set_archived` and `unarchive` change Photos timeline membership. Visibility
+changes return `{ "updated": <primary photo count> }`, validate every selected
+revision, and commit once to the encrypted catalog. `hide`/`unhide` include paired
+motion components. An asset cannot override an inherited hidden folder: unhide
+that folder first. Hidden assets are excluded from normal timeline/search, album
+membership/covers, detail, thumbnail, original and new grab/export requests.
+They remain Library files; Hidden is a presentation scope, not another vault or
+password boundary. Existing sealed grabs retain their frozen originals.
+Expired/stale selections return 409; select again.
 `GET /api/v1/photos/archives?id=<job>` polls an owner Photos ZIP; add
 `download=1` to stream its ready output, with single-range support. DELETE
 cancels unfinished preparation. This versioned route rejects generic Library
