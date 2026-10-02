@@ -38,11 +38,9 @@ func TestEncryptedArchiveRecoversQueuedAndReadyJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.mu.Lock()
-	original := m.jobs[view.ID]
-	original.cancel()
-	m.mu.Unlock()
-	<-original.done
+	if err := m.Checkpoint(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	recovered := NewArchiveManager(lib)
 	var ready ArchiveJobView
 	deadline := time.Now().Add(15 * time.Second)

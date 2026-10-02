@@ -167,3 +167,24 @@ queue used two workers while the runner's independently initialized render gate
 allowed only one. The fixture now supplies matching two-worker admission gates
 and bounded memory, independent of host defaults. The production resource policy
 is unchanged. The corrected test is checked under one-worker environment defaults.
+
+A separate optimized test-binary run sampled its process tree every approximately
+5 ms across the four-asset pipeline and real Restic stage fixtures: 979 samples,
+maximum observed summed RSS **230,328 KiB** (about 225 MiB). Observed descendants
+included Restic, the persistent reader and native JPEG helper; both measurements
+passed. This is a sampled maximum for the small local fixture, not an allocation
+limit, a production peak, or a sustained large-collection/sidecar stress result.
+
+Release CI passed all jobs on `d432dd7`: [checks, browser and container/Photos
+smokes](https://github.com/bprendie/weazlcloud/actions/runs/36955732448). An additional
+local full Library race run with two total/read slots, one background slot and a
+2-GiB preview allowance passed in 109.084 seconds. Production application code
+is unchanged by the test-fixture correction.
+
+The first live cutover gate stopped before backup/replacement because the previous
+image returned `context deadline exceeded` during shutdown. Its existing container
+was immediately restarted. Inspection found that authenticated event streams were
+not canceled and the normal app shutdown did not drain owner libraries. A follow-up
+fix wires that lifecycle explicitly and preserves archive outputs; a targeted
+SSE/journal/archive test passes. Final release evidence supersedes the earlier
+`d432dd7` candidate after those additional checks finish.

@@ -22,6 +22,7 @@ port = int(os.environ.get('WEAZLCLOUD_ROLLBACK_PORT', '29472'))
 base = f'http://127.0.0.1:{port}'
 password = 'disposable-rollback-fixture'
 client = None
+current_image = None
 png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
 
 
@@ -42,7 +43,8 @@ def req(path, data=None, method=None):
 
 
 def start(image, bootstrap=False):
-    global client
+    global client, current_image
+    current_image = image
     docker('run', '-d', '--name', name, '--cpus', '2', '--memory', '4g',
            '-p', f'127.0.0.1:{port}:7272', '-v', volume + ':/data',
            '-e', 'WEAZLCLOUD_DATA=/data', '-e', 'WEAZLCLOUD_DESK_ADDR=:7272',
@@ -67,9 +69,15 @@ def start(image, bootstrap=False):
 
 
 def stop():
+    stream = client.open(base + '/api/library/events', timeout=60) if current_image == new_image else None
     docker('stop', '-t', '120', name)
     state = json.loads(docker('inspect', name))[0]['State']
     assert state['ExitCode'] == 0 and not state['OOMKilled'], state
+    if stream:
+        stream.close()
+        docker('run', '--rm', '--network', 'none', '--entrypoint', '/bin/sh',
+               '-v', volume + ':/data:ro', new_image, '-c',
+               'for f in /data/users/*/.weazl-photo-jobs.journal.enc; do test -f "$f" && test ! -s "$f" || exit 1; done')
     docker('rm', name)
 
 

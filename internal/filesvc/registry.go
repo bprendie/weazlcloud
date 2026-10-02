@@ -37,6 +37,7 @@ type Registry struct {
 	mu           sync.Mutex
 	items        map[string]*Resource
 	gates        map[string]*userGate
+	closing      bool
 }
 
 func (r *Registry) ConfigureShared(store *sharedstore.Store, writeEnabled bool) {

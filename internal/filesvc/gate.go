@@ -23,7 +23,7 @@ func newUserGate() *userGate {
 func (r *Registry) Enter(ctx context.Context, id string) (context.Context, func(), bool) {
 	r.mu.Lock()
 	g := r.gateLocked(id)
-	if g.blocked {
+	if r.closing || g.blocked {
 		r.mu.Unlock()
 		return ctx, func() {}, false
 	}

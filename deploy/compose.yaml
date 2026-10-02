@@ -32,6 +32,7 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    stop_grace_period: 90s
     healthcheck:
       test: ["CMD", "/usr/local/bin/weazlcloud", "-ready"]
       interval: 5s

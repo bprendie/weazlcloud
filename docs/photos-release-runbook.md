@@ -178,3 +178,12 @@ The October 1 release passed this drill against prior revision `3c410fd`: prepar
 both variants, pause, clean unlocked drain/export, boot the previous image and
 exercise its queue writer, then return to the new image. Both backends retained
 IDs, original hashes, derivative hashes and the manual pause across image changes.
+
+Normal host shutdown closes admission and authenticated event streams, waits for
+HTTP/maintenance work, checkpoints archive workers without deleting ready ZIPs,
+then drains each loaded owner library before locking its vault. This exports the
+photo journal while keys are still available and closes persistent reader locks.
+The bounded shutdown allowance is 60 seconds; configure container stop grace
+above that (the supplied Compose uses 90 seconds). A failed drain is an error, not a verified checkpoint. The regression
+test keeps an SSE connection open and verifies journal export plus retained ZIP
+bytes. The image drill additionally checks an empty exported journal after stop.

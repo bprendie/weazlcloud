@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/buildinfo"
@@ -41,6 +42,9 @@ type Node struct {
 	idleCancel context.CancelFunc
 	idleDone   chan struct{}
 	shared     *sharedstore.Store
+	registry   *filesvc.Registry
+	closeOnce  sync.Once
+	closeErr   error
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -188,6 +192,7 @@ func (n *Node) bind() error {
 	us.SetSecureCookies(n.cfg.SecureCookies)
 	q := quota.New(n.cfg.DataDir)
 	registry := filesvc.NewRegistry(us, q)
+	n.registry = registry
 	if n.cfg.StorageBackend == "shared-experimental" {
 		n.shared, err = sharedstore.Open(n.cfg.DataDir, sharedstore.Options{})
 		if err != nil {
@@ -234,32 +239,6 @@ func server(ln net.Listener, h http.Handler, dataDir string, activity *idle.Coor
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-}
-
-func (n *Node) shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if n.idleCancel != nil {
-		n.idleCancel()
-	}
-	if n.idleDone != nil {
-		select {
-		case <-n.idleDone:
-		case <-ctx.Done():
-		}
-	}
-	var first error
-	for _, srv := range n.svcs {
-		if err := srv.Shutdown(ctx); err != nil && first == nil {
-			first = err
-		}
-	}
-	if n.shared != nil {
-		if err := n.shared.Close(); err != nil && first == nil {
-			first = err
-		}
-	}
-	return first
 }
 
 func storageMode(cfg config.Config) string {
