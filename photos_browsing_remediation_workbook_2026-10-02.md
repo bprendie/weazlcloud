@@ -1,9 +1,10 @@
 # Photos browsing and preview remediation workbook
 
 Date: **October 2, 2026**  
-Status: **Implemented; release validation in progress**  
+Status: **Deployed and smoke-tested; device/fault-matrix follow-ups documented**  
 Baseline: `3c8b9e4e8099ec664a68597e7b478ce9da32efd1`  
-Production application: `15c45144b660eb5d673851d1ca0ae51396407116`
+Previous production application: `15c45144b660eb5d673851d1ca0ae51396407116`  
+Released code: `754465ea546fe68b0a472e116507a493acb795dc`
 
 ## Outcome
 
@@ -443,38 +444,38 @@ visible anchor jump. Small/API tests cover equal capture times and missing dates
   Range seeks, viewer navigation/close, ordinary two-second videos and photo/album
   grabs. Test owner isolation and concurrent hide/delete/revoke during playback;
   no unauthorized component appears in API details, cache, export or guest view.
-- [ ] Run focused tests, `make check`, build, and relevant browser/container/
+- [x] Run focused tests, `make check`, build, and relevant browser/container/
   Photos smokes. Update old tests that intentionally scroll `window` to drive
   the real Photos scrollport; do not weaken the behavioral/performance assertions.
-- [ ] Measure idle/active-background browsing on 2 CPUs / 4 GiB. Initial targets:
+- [x] Measure idle/active-background browsing on 2 CPUs / 4 GiB. Initial targets:
   cached reverse scrolling needs no original reads, mounted media ≤300, retained
   metadata ≤2,000, prepend/eviction anchor drift ≤2 CSS px after settling, and
   warm scroll script p95 within the existing 16.7 ms budget. Record cold misses
   separately; latency targets do not imply guaranteed LAN throughput.
-- [ ] Update README, Photos API/error notes, deployment example, validation report
+- [x] Update README, Photos API/error notes, deployment example, validation report
   and this workbook. Record the exact image, fixture sizes and supported recovery.
-- [ ] When execution/rollout is authorized: preserve the custom live Compose
+- [x] When execution/rollout is authorized: preserve the custom live Compose
   settings, explicitly carry the worker TMPDIR override into that configuration,
   inspect active jobs, follow the existing backup/upgrade runbook, then verify
   real HEIC samples and owner-directed recovery. A repo example change alone will
   not update production's customized Compose JSON.
-- [ ] After recovery, record before/after failure categories, recovered variants,
+- [x] After recovery, record before/after failure categories, recovered variants,
   remaining unsupported/corrupt cases and untouched originals/successful caches.
   Full preparation may continue in the background after the release smoke passes.
 
 ## Completion checklist
 
-- [ ] Date jump followed by wheel-up crosses into newer photos automatically.
-- [ ] Wheel-down and direction reversal work across fetched and evicted pages.
-- [ ] Rail, pane, history and fullscreen return agree on the visible position.
-- [ ] Valid HEICs render in the deployed worker configuration.
-- [ ] Environment failures are actionable and recoverable, not mislabeled corruption.
-- [ ] Previously failed eligible previews can recover without losing good caches.
-- [ ] Verified Live Photos show one still tile with motion available on demand.
-- [ ] Existing import pairing repairs preserve originals and ordinary short videos.
-- [ ] Pair playback, exports and grab links respect Hidden and owner boundaries.
-- [ ] Tests exercise both directions and actual HEIC container rendering.
-- [ ] Originals, privacy boundaries, settings and existing media remain intact.
+- [x] Date jump followed by wheel-up crosses into newer photos automatically.
+- [x] Wheel-down and direction reversal work across fetched and evicted pages.
+- [x] Rail, pane, history and fullscreen return agree on the visible position.
+- [x] Valid HEICs render in the deployed worker configuration.
+- [x] Environment failures are actionable and recoverable, not mislabeled corruption.
+- [x] Previously failed eligible previews can recover without losing good caches.
+- [x] Verified Live Photos show one still tile with motion available on demand.
+- [x] Existing import pairing repairs preserve originals and ordinary short videos.
+- [x] Pair playback, exports and grab links respect Hidden and owner boundaries.
+- [x] Tests exercise both directions and actual HEIC container rendering.
+- [x] Originals, privacy boundaries, settings and existing media remain intact.
 
 Recommended execution order: **P0 fixtures → P1 → P2 → P2L → P3 → P4 → P5**.
 P1/P2 are independently releasable once their specific container/recovery gates

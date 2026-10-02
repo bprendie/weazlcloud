@@ -123,3 +123,50 @@ error framing and recovery. The production record is appended after rollout.
 Use the [recovery runbook](photos-release-runbook.md) and preserve live overrides,
 vaults, catalogs, original storage, CPU limits and imported albums. Older writers
 can drop new pair metadata: prefer a forward fix or a complete consistent restore.
+
+
+### Production rollout
+
+Release `photos-remediation-754465ea546f`, source
+`754465ea546fe68b0a472e116507a493acb795dc`, is live on October 2, 2026.
+Both services use `weazlcloud:release-754465ea546f` and passed health checks; the
+isolated worker's real HEIC probe passed. `make check`, focused race tests and
+both complete browser/storage smokes passed before activation.
+
+The application drained and exited cleanly before stopping the worker. A full,
+consistent XFS reflink backup was taken at
+`/exports/dockervolume/weazlcloud-backups/photos-remediation-754465ea546f/data`.
+Node/account settings, catalog, albums, vault envelope and node key checksums
+matched the stopped backup and the restarted node before unlock; repository
+file counts also matched. Live bind mounts, ports, resource ceilings, accounts,
+passwords and hostname stayed intact. Release configuration and check records
+are under `/home/bobp/weazlcloud-releases/photos-remediation-754465ea546f/`.
+The production custom Compose configuration changed only both image references
+and the worker's three scratch environment overrides.
+
+Live Chromium checks used the existing 37,111-item timeline through an encrypted
+SSH tunnel. A middle-date jump reached position 18,553; wheel-up reached 18,397
+and reversal reached 18,634 across neighboring pages. The retained window was
+400 items with 35 mounted tiles, no document scroll, no original-file requests,
+no page errors and **0 CSS px** drift after three complete UI refreshes.
+No production fixture upload or metadata edit was used for that browsing check.
+
+Both previously rejected HEIC samples returned real JPEGs at 320 and 1280 px.
+Preparation resumed with 8 render workers / 4 readers. At the recorded snapshot,
+ready increased from 32,276 to 32,981, failed decreased from 4,785 to 2,652,
+and 1,428 assets still awaited a result. Current failed categories were 1,962
+invalid/unsupported and 690 previous terminal failures; only seven current HEIC
+failures remained. These are in-progress counts, not a promise every remaining
+file is decodable. Successful original storage was not reimported or removed.
+
+Initial post-unlock cache inventory temporarily exceeded the status request's
+60-second client timeout. Once rendering was admitted, preparation and failure
+reports returned in 129 and 110 ms; live browsing passed during rendering.
+Cold inventory latency is separate from the corrected scroll-layout bugs and
+remains a responsiveness follow-up.
+
+The owner-authorized identifier-based Live Photo repair was queued for 35,901
+eligible unpaired image/video resources. It continues server-side with durable
+checkpoints and only applies unique compatible same-directory identifiers.
+The browser may close; unmatched media and original resources remain intact.
+Physical-device/Safari coverage described above remains a separate follow-up.
