@@ -69,6 +69,8 @@ func (l *Library) runMetadataWorker(ctx context.Context) {
 		l.metadataWorkerError("catalog_unavailable", ctx)
 		return
 	}
+	defer resolver.closeReader()
+	resolver.openReader(ctx)
 	for ctx.Err() == nil {
 		l.metadataMu.Lock()
 		if l.metadataJob == nil || l.metadataJob.Status == "paused" {
@@ -108,16 +110,7 @@ func (l *Library) runMetadataWorker(ctx context.Context) {
 			l.metadataMu.Unlock()
 			return
 		}
-		resolved := make([]metadataResolved, 0, len(pending))
-		for _, entry := range pending {
-			if ctx.Err() != nil {
-				break
-			}
-			workCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			result := l.resolveMetadataEntry(workCtx, resolver, entry, options)
-			cancel()
-			resolved = append(resolved, result)
-		}
+		resolved := l.resolveMetadataBatch(ctx, resolver, pending, options)
 		if ctx.Err() != nil {
 			break
 		}

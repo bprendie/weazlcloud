@@ -47,6 +47,7 @@ type PhotoMetadataJob struct {
 	InitialKnown      int                     `json:"initial_known"`
 	InitialUnknown    int                     `json:"initial_unknown"`
 	SupportedEmbedded []string                `json:"supported_embedded"`
+	Workers           int                     `json:"workers"`
 	Error             string                  `json:"error,omitempty"`
 	UpdatedAt         time.Time               `json:"updated_at"`
 	Entries           []PhotoMetadataEntry    `json:"-"`
@@ -125,6 +126,7 @@ func (l *Library) PhotoMetadataStatus() (PhotoMetadataJob, error) {
 		state.Entries = nil
 	}
 	state.SupportedEmbedded = []string{"jpeg-exif"}
+	state.Workers = metadataWorkers()
 	restart := state.Status == "queued" && !l.metadataRunning
 	l.metadataMu.Unlock()
 	if restart {

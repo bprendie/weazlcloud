@@ -398,3 +398,12 @@ ceil(changed / 100). One batch containing two changes advances the catalog once.
 Metadata-only synthetic scale measurements do not close the real-library browser
 or cold unlock gate. Node RSS snapshots do not close a sustained mixed-load peak
 gate. Actual iOS Safari verification remains pending.
+
+### Extraction performance follow-up
+
+The first production dry-run batch exposed repeated Restic index startup as a
+major bottleneck. The [acceleration record](docs/photos-metadata-performance-2026-10-01.md)
+targets one-hour extraction of the existing 37,082 assets. The implementation
+uses one authenticated reader session and bounded parallel resolutions, retaining
+the original encrypted checkpoint and single catalog coordinator. Sample source
+throughput is measured separately from complete repair and dated-UI acceptance.

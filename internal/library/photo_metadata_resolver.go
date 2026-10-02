@@ -6,9 +6,11 @@ import (
 	"errors"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/photos"
+	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 type metadataSidecars struct {
@@ -17,10 +19,13 @@ type metadataSidecars struct {
 	errors   map[string]error
 }
 type metadataResolver struct {
-	lib         *Library
-	files       map[string]catalog.File
-	directories map[string][]string
-	cache       map[string]*metadataSidecars
+	lib           *Library
+	files         map[string]catalog.File
+	directories   map[string][]string
+	cache         map[string]*metadataSidecars
+	cacheMu       sync.Mutex
+	reader        *restic.Reader
+	releaseReader func()
 }
 
 func (l *Library) newMetadataResolver(ctx context.Context) (*metadataResolver, error) {
@@ -65,6 +70,14 @@ func (r *metadataResolver) read(ctx context.Context, file catalog.File, limit in
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+	if r.reader != nil && (file.Reference == nil || file.Reference.Backend == catalog.ResticBackend) {
+		body, err := r.readPersistent(ctx, file, limit)
+		if err == nil || ctx.Err() != nil {
+			return body, err
+		}
+		// An upload may have added a pack after this session loaded its index.
+		// The ordinary reader sees it without restarting the entire repair.
+	}
 	release, err := previewMemory.acquireBackground(ctx, sourceAllowance(file)+2*limit)
 	if err != nil {
 		return nil, err
@@ -86,6 +99,11 @@ func (r *metadataResolver) sidecar(ctx context.Context, name string) (photos.Cap
 	}
 	if len(exact) == 1 {
 		return r.readSidecar(ctx, exact[0], base)
+	}
+	r.cacheMu.Lock()
+	defer r.cacheMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return photos.Capture{}, err
 	}
 	cached := r.cache[dir]
 	if cached == nil {

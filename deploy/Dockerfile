@@ -10,6 +10,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/weazl-photo-worker
 
 FROM restic/restic:0.18.0 AS restic
 
+FROM golang:1.25-bookworm AS metadata-reader-build
+WORKDIR /src
+COPY native/restic-reader/go.mod native/restic-reader/go.sum ./
+RUN go mod download
+COPY native/restic-reader/*.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /weazl-restic-reader .
+
 FROM alpine:3.21 AS preview-build
 RUN apk add --no-cache build-base libjpeg-turbo-dev
 COPY native/preview/main.c /src/main.c
@@ -24,6 +31,7 @@ COPY --from=build /out/weazlcloud /usr/local/bin/weazlcloud
 COPY --from=build /out/takeout-layout /usr/local/bin/takeout-layout
 COPY --from=build /out/weazl-photo-worker /usr/local/bin/weazl-photo-worker
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
+COPY --from=metadata-reader-build /weazl-restic-reader /usr/local/bin/weazl-restic-reader
 COPY --from=preview-build /weazl-preview-turbo /usr/local/bin/weazl-preview-turbo
 USER 7272:7272
 ENV HOME=/data

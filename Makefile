@@ -3,17 +3,24 @@
 VERSION ?= dev
 PHOTOS_PYTHON ?= python3
 LDFLAGS := -s -w -X github.com/bprendie/weazlcloud/internal/buildinfo.Version=$(VERSION)
+export PATH := $(CURDIR)/.build:$(PATH)
+
+.PHONY: metadata-reader
+metadata-reader:
+	mkdir -p .build
+	cd native/restic-reader && CGO_ENABLED=0 go build -trimpath -o ../../.build/weazl-restic-reader .
+	cd native/restic-reader && go vet ./... && go test -race ./...
 
 mockup:
 	python3 -m http.server 3001 --bind 127.0.0.1 --directory mockup-ui
 
-test: desk-assets
+test: desk-assets metadata-reader
 	go test ./...
 
 vet: desk-assets
 	go vet ./...
 
-race: desk-assets
+race: desk-assets metadata-reader
 	go test -race ./...
 
 lines: desk-assets

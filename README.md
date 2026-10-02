@@ -15,6 +15,11 @@ current capture sources; import dates are never substituted. See the
 [timeline verification record](docs/photos-timeline-verification-2026-10-01.md)
 and [Photos API](docs/photo-api.md) for capabilities and safe repair.
 
+Date repair shares one authenticated Restic index across parallel metadata
+readers, with bounded memory and a fallback for small hosts. See the
+[extraction performance record](docs/photos-metadata-performance-2026-10-01.md)
+for the production benchmark and operating limits.
+
 **Photos → Albums** recognizes named albums imported from Google Takeout.
 Photos imports live under `/Photos`; Drive imports go directly to the library
 root. Album titles and descriptions come from the album metadata, with folder names
