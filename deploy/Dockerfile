@@ -33,6 +33,7 @@ COPY --from=build /out/weazl-photo-worker /usr/local/bin/weazl-photo-worker
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
 COPY --from=metadata-reader-build /weazl-restic-reader /usr/local/bin/weazl-restic-reader
 COPY --from=preview-build /weazl-preview-turbo /usr/local/bin/weazl-preview-turbo
+COPY docs/licenses/thumbhash-ISC.txt /usr/share/licenses/weazlcloud/thumbhash-ISC.txt
 USER 7272:7272
 ENV HOME=/data
 ENV XDG_CACHE_HOME=/data/cache

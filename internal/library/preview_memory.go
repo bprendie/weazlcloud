@@ -18,6 +18,18 @@ func newPreviewMemoryBudget(limit int64) *previewMemoryBudget {
 	return &previewMemoryBudget{limit: limit, changed: make(chan struct{})}
 }
 
+// Resident caches/readers must not wait while retaining a partial render budget.
+func (b *previewMemoryBudget) tryAcquire(size int64) (func(), bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if size <= 0 || size > b.limit-b.used || b.foregroundWaiters > 0 {
+		return nil, false
+	}
+	b.used += size
+	var once sync.Once
+	return func() { once.Do(func() { b.mu.Lock(); b.used -= size; b.notifyLocked(); b.mu.Unlock() }) }, true
+}
+
 func (b *previewMemoryBudget) acquire(ctx context.Context, size int64) (func(), error) {
 	return b.acquireWithPriority(ctx, size, false)
 }
@@ -30,6 +42,7 @@ func (b *previewMemoryBudget) acquireWithPriority(ctx context.Context, size int6
 	if size <= 0 || size > b.limit {
 		return nil, ErrPreviewTooLarge
 	}
+	previewRAM.reclaim(b, size)
 	registered := false
 	for {
 		b.mu.Lock()

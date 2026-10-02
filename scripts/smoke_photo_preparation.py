@@ -25,6 +25,7 @@ def smoke_photo_preparation(context, page, post, png):
     post('/api/photos/preparation', {'action': 'resume'})
     state = wait_status('partial')
     assert (state['total'], state['ready'], state['failed']) == (5, 4, 1), state
+    page.locator('.photo-tools > summary').click()
     retry = page.locator('[data-prep-action="retry"]')
     expect(retry).to_be_visible(timeout=10000)
     retry.click()

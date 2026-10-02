@@ -9,6 +9,7 @@
 #define MAX_INPUT (64UL << 20)
 #define MAX_PIXELS 32000000UL
 #define MAX_OUTPUT (8UL << 20)
+static size_t bundle_output = 0;
 
 static void fail(void) { fputs("JPEG preview unavailable\n", stderr); exit(1); }
 static void jpeg_fail(j_common_ptr c) { (void)c; fail(); }
@@ -72,49 +73,13 @@ static void resize_row(unsigned char *row, const unsigned char *src,
     }
 }
 
-int main(int argc, char **argv) {
-    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        puts("weazl-preview-turbo-v1");
-        return 0;
-    }
-    char *end = NULL;
-    long size = argc == 2 ? strtol(argv[1], &end, 10) : 0;
-    if (!end || *end || size < 96 || size > 1280) fail();
-    limits();
-    size_t length;
-    unsigned char *data = read_input(&length);
-    struct jpeg_decompress_struct dec;
-    struct jpeg_error_mgr de;
-    dec.err = jpeg_std_error(&de);
-    de.error_exit = jpeg_fail;
-    de.emit_message = jpeg_message;
-    jpeg_create_decompress(&dec);
-    jpeg_mem_src(&dec, data, length);
-    if (jpeg_read_header(&dec, TRUE) != JPEG_HEADER_OK) fail();
-    unsigned w = dec.image_width, h = dec.image_height;
-    if (!w || !h || w > 20000 || h > 20000 || (uint64_t)w*h > MAX_PIXELS) fail();
-    unsigned dw = (unsigned)size, dh = (unsigned)size;
-    if (w > h) dh = (unsigned)((uint64_t)size*h/w);
-    else dw = (unsigned)((uint64_t)size*w/h);
+static void encode_preview(const unsigned char *pixels, unsigned w, unsigned h,
+                           unsigned original_w, unsigned original_h, unsigned size, int framed) {
+    unsigned dw = size, dh = size;
+    if (original_w > original_h) dh = (unsigned)((uint64_t)size*original_h/original_w);
+    else dw = (unsigned)((uint64_t)size*original_w/original_h);
     if (!dw) dw = 1;
     if (!dh) dh = 1;
-    unsigned longest = w > h ? w : h;
-    dec.scale_num = 1;
-    dec.scale_denom = longest >= size*8 ? 8 : longest >= size*4 ? 4 : longest >= size*2 ? 2 : 1;
-    dec.out_color_space = JCS_RGB;
-    dec.mem->max_memory_to_use = 128UL << 20;
-    jpeg_start_decompress(&dec);
-    w = dec.output_width; h = dec.output_height;
-    if (dec.output_components != 3 || !w || !h || (uint64_t)w*h > MAX_PIXELS) fail();
-    unsigned char *pixels = malloc((size_t)w*h*3);
-    if (!pixels) fail();
-    while (dec.output_scanline < h) {
-        JSAMPROW row = pixels + (size_t)dec.output_scanline*w*3;
-        if (jpeg_read_scanlines(&dec, &row, 1) != 1) fail();
-    }
-    jpeg_finish_decompress(&dec);
-    jpeg_destroy_decompress(&dec);
-    free(data);
     struct jpeg_compress_struct enc;
     struct jpeg_error_mgr ee;
     enc.err = jpeg_std_error(&ee);
@@ -138,8 +103,79 @@ int main(int argc, char **argv) {
     }
     jpeg_finish_compress(&enc);
     if (!output_len || output_len > MAX_OUTPUT) fail();
+    if (framed) {
+        bundle_output += output_len + 7;
+        if (bundle_output > (16UL << 20)) fail();
+        unsigned char header[7] = {(unsigned char)(size >> 8), (unsigned char)size, 1,
+            (unsigned char)(output_len >> 24), (unsigned char)(output_len >> 16),
+            (unsigned char)(output_len >> 8), (unsigned char)output_len};
+        if (fwrite(header, 1, sizeof header, stdout) != sizeof header) fail();
+    }
     if (fwrite(output, 1, output_len, stdout) != output_len || fflush(stdout)) fail();
     jpeg_destroy_compress(&enc);
-    free(output); free(row); free(pixels);
+    free(output); free(row);
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        puts("weazl-preview-turbo-v1");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--capabilities") == 0) {
+        puts("bundle-v1"); return 0;
+    }
+    int framed = argc == 3 && strcmp(argv[1], "--bundle") == 0;
+    const char *spec = framed ? argv[2] : argc == 2 ? argv[1] : "";
+    unsigned sizes[8], count = 0;
+    long size = 0;
+    while (*spec) {
+        char *end = NULL;
+        long value = strtol(spec, &end, 10);
+        if (end == spec || value < 96 || value > 1280 || count == 8 || (*end && (!framed || *end != ','))) fail();
+        for (unsigned i = 0; i < count; i++) if (sizes[i] == value) fail();
+        sizes[count++] = (unsigned)value;
+        if (value > size) size = value;
+        if (*end == ',' && !end[1]) fail();
+        spec = *end ? end+1 : end;
+    }
+    if (!count) fail();
+    limits();
+    size_t length;
+    unsigned char *data = read_input(&length);
+    struct jpeg_decompress_struct dec;
+    struct jpeg_error_mgr de;
+    dec.err = jpeg_std_error(&de);
+    de.error_exit = jpeg_fail;
+    de.emit_message = jpeg_message;
+    jpeg_create_decompress(&dec);
+    jpeg_mem_src(&dec, data, length);
+    if (jpeg_read_header(&dec, TRUE) != JPEG_HEADER_OK) fail();
+    unsigned w = dec.image_width, h = dec.image_height;
+    if (!w || !h || w > 20000 || h > 20000 || (uint64_t)w*h > MAX_PIXELS) fail();
+    unsigned original_w = w, original_h = h;
+    unsigned longest = w > h ? w : h;
+    dec.scale_num = 1;
+    dec.scale_denom = longest >= size*8 ? 8 : longest >= size*4 ? 4 : longest >= size*2 ? 2 : 1;
+    dec.out_color_space = JCS_RGB;
+    dec.mem->max_memory_to_use = 128UL << 20;
+    jpeg_start_decompress(&dec);
+    w = dec.output_width; h = dec.output_height;
+    if (dec.output_components != 3 || !w || !h || (uint64_t)w*h > MAX_PIXELS) fail();
+    unsigned char *pixels = malloc((size_t)w*h*3);
+    if (!pixels) fail();
+    while (dec.output_scanline < h) {
+        JSAMPROW row = pixels + (size_t)dec.output_scanline*w*3;
+        if (jpeg_read_scanlines(&dec, &row, 1) != 1) fail();
+    }
+    jpeg_finish_decompress(&dec);
+    jpeg_destroy_decompress(&dec);
+    free(data);
+    for (unsigned i = 0; i < count; i++)
+        encode_preview(pixels, w, h, original_w, original_h, sizes[i], framed);
+    if (framed) {
+        unsigned char end_frame[7] = {0};
+        if (fwrite(end_frame, 1, sizeof end_frame, stdout) != sizeof end_frame || fflush(stdout)) fail();
+    }
+    free(pixels);
     return 0;
 }

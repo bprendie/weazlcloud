@@ -8,8 +8,8 @@ Mount the same library in Files over `davs://`. No FUSE. No Weazl account.
 Photos has a continuous capture-date rail: drag to a month, choose a day, or use
 the keyboard to move through the timeline. Album, Favorites, Hidden and search
 views keep their own scope. Dates come from metadata; undated files stay in
-**Unknown date**. **Inspect dates** previews recoverable changes, and **Repair
-dates** runs on the server with pause/resume and retry controls. It preserves
+**Unknown date**. Open the **☰ Photos menu** for date inspection/repair,
+duplicate review and preview preparation. **Repair dates** runs on the server with pause/resume and retry controls. It preserves
 originals and owner corrections. JPEG EXIF and valid Takeout sidecars are the
 current capture sources; import dates are never substituted. See the
 [timeline verification record](docs/photos-timeline-verification-2026-10-01.md)
@@ -58,23 +58,31 @@ into memory or extracted to a temporary plaintext file. Metadata is limited to
 M4A file with metadata after the audio may take longer on its first preview.
 
 **Photos** uses a private, encrypted index and loads the first 100 photos without
-listing the whole library or reading original image bytes. Use **Prepare previews**
-in Photos to build grid-size previews in the background; preparation is opt-in,
+listing the whole library or reading original image bytes. Use **Photos → ☰ → Prepare previews**
+to build grid and viewer previews together in the background; preparation is opt-in,
 resumes after restart, and pauses for a locked vault, bulk storage work or low disk
-space. JPEG, PNG and GIF get encrypted 320-pixel grid previews and 1280-pixel
-viewing previews on demand. The private worker renders WebP and TIFF previews
+space. Explicit preparation reads each supported source once and creates an
+encrypted 320px grid image, 1280px viewer image and private ThumbHash placeholder.
+On-demand requests render only the missing requested sizes. A completed or manually
+paused job is not restarted merely to fill the new viewer variants. The private worker renders WebP and TIFF previews
 when supported by the installed FFmpeg build, plus a bounded first-frame poster
 for supported video files. HEIC/HEIF and AVIF use libheif through anonymous
 memory files because Alpine FFmpeg lacks their demuxer; unavailable codecs use
 the preview fallback. Preparation shows active render count and average source-read
 progress. Video playback still uses the original browser-compatible stream; no
-playback transcode or Live Photo pairing is generated yet. The originals are unchanged. Preview caches are disposable and bounded
-by default to 4 GiB and 100,000 files per owner and 16 GiB per node. Set
+playback transcode is generated. The originals are unchanged. The automatic disk
+cache target is the smaller of 64 GiB and one tenth of current cache bytes plus
+free space above the silent system reserve. Owners share this allowance; there is
+no implicit 4-GiB owner cap. The default is 200,000 encrypted cache records per
+owner, including small manifest segments. Set
 `WEAZLCLOUD_PREVIEW_OWNER_BYTES`, `WEAZLCLOUD_PREVIEW_OWNER_FILES` and
-`WEAZLCLOUD_PREVIEW_NODE_BYTES` to change those limits (byte values are integers).
+`WEAZLCLOUD_PREVIEW_NODE_BYTES` to impose explicit caps (byte values are positive integers).
 These limits apply to generated previews, not the library quota.
 
-The Photos timeline groups items by capture day, offers a Recently added view
+The Photos timeline uses an inset date rail clear of the browser scrollbar. Dragging
+from year labels works with mouse or touch; date labels update locally and one
+seek is issued on release. Current cards remain visible while that seek loads.
+The timeline groups items by capture day, offers a Recently added view
 and month jump, and opens images and videos in a full-screen viewer. The viewer
 supports keyboard/swipe navigation, adjacent-image prefetch, capture metadata
 and original download while preserving the timeline position. Date anchors,
@@ -89,7 +97,7 @@ builds without the helper use the Go renderer. Set
 helper reject startup. A corrupt native JPEG fails that preview rather than
 silently caching a partial image.
 
-The single-image helper uses pipes only, with no plaintext image files. Existing
+The shared-decode JPEG helper uses pipes only, with no plaintext image files. Existing
 64-MiB input / 32-million-pixel limits remain; native workers additionally have a
 512-MiB address-space ceiling, 30-second CPU limit and 35-second wall timeout.
 Cancellation kills and reaps the helper. The Go process remains CGO-free. The
@@ -99,13 +107,30 @@ remain subject to normal eviction. Originals are never rewritten. See the
 and limitations. Local native tests need a C compiler, libjpeg-turbo development
 headers and `cjpeg`/`djpeg`: run `bash scripts/test-native-preview.sh`.
 
+The [October 1 thumbnail workbook](photos_thumbnail_cache_workbook_2026-10-01.md)
+adds a reusable authenticated Restic reader, continuously supplied workers and an
+encrypted incremental job journal. Grid and viewer requests share source reads;
+one canceled request does not cancel surviving consumers. Existing `media-v4`
+previews remain usable. Set `WEAZLCLOUD_PREVIEW_READER=off` for the bounded CLI
+reader or `WEAZLCLOUD_PREVIEW_BUNDLE=off` for the legacy single-output renderer.
+See [measurements and limits](docs/photos-thumbnail-performance-2026-10-01.md).
+
+Compressed server RAM cache bytes count against preview memory, with a ceiling of
+`min(2 GiB, effective RAM/64, preview budget/4)`. Rendering reclaims them before
+waiting for memory. Browser reuse is session-only: at most 32 MiB/256 entries,
+shared by grid and viewer, with URLs released after mounted images let go.
+Lock/account/visibility changes clear the applicable cache. Network responses stay
+private/no-store; neither cache persists decrypted originals or changes vault access.
+
 Preview workers use the minimum visible CPU, affinity, execution, and nested
 cgroup v1/v2 limits. Their memory admission budget is one eighth of visible
 host/container memory, capped at 8 GiB; incomplete discovery selects a conservative
-one-worker policy with at most 256 MiB. Sources are bounded and header-probed
-before reserving compressed bytes, decoded pixels, scratch, cache copies, and
-an allowance for the backend reader. Restic preview children also receive a
-128 MiB `GOMEMLIMIT` heap target. These are conservative admission estimates,
+one-worker policy with at most 256 MiB. Sources are bounded, with conservative dimension admission or a small-host header
+probe before reserving compressed bytes, decoded pixels, scratch, cache copies, and
+an allowance for the backend reader. Fallback Restic preview children receive a
+128 MiB `GOMEMLIMIT` heap target. Persistent indexes have a separate charged
+allowance and leave capacity for a full source/decode pipeline; small hosts use
+the CLI fallback when a resident index would crowd out rendering. These are conservative admission estimates,
 not a hard whole-container RSS limit.
 
 Operators can set `WEAZLCLOUD_PREVIEW_BACKGROUND_WORKERS`,
@@ -116,9 +141,8 @@ settings do not change the service's disk quota. Raster work is coalesced and
 limited to 256 outstanding distinct jobs across owners; a full queue returns a
 retryable error. One cancelled tile request does not cancel another waiter.
 Preview working-memory reservations are shared by the process, and waiting visible
-previews get the next available reservation ahead of background preparation. This
-does not yet provide fair scheduling between owners or dynamically promote an
-already-running coalesced background job.
+previews get the next available reservation ahead of background preparation. Queued owner work shares bounded FIFO admission; a foreground request can promote
+a coalesced job waiting for a background slot. Active native work is not preempted.
 
 Set `WEAZLCLOUD_PHOTO_SCHEDULE=quiet|balanced|fast` in the deployment environment
 to control background preparation. `balanced` is the default; `fast` can use up to
@@ -153,8 +177,8 @@ change/checkpoint sync and album memberships use bounded pages. See the [API che
 [local verification record](docs/photos-local-verification-2026-09-30.md) for
 implemented behavior and remaining release gates. The [OpenAPI contract](docs/photo-api.yaml)
 is ready for a native client; the iOS app itself and runtime SQLCipher integration
-remain future work. Socket-enabled browser/container gates are still required
-before release; production has not been changed by this pass.
+remain future work. Both-backend browser/container checks and thumbnail/cache
+measurements are recorded in the [October 1 performance report](docs/photos-thumbnail-performance-2026-10-01.md).
 
 The supplied Docker Compose file runs a private `weazlcloud-photo-worker` sidecar
 with no network listener. The API sends it authorized media bytes through a
@@ -174,8 +198,9 @@ being prepared; inability to persist a checkpoint pauses with a visible error.
 Cache skips, write failures and eviction produce partial readiness. Lock, rekey,
 revocation and shutdown invalidate preview work; imports pause background dispatch
 through their entire lifetime. A cold raster render with known dimensions uses
-one admitted source read; older files without dimensions use a bounded header
-probe followed by a separate admitted full read.
+one admitted source read. Bundles conservatively reserve memory for older files
+without dimensions; small hosts use a bounded header probe followed by a separate
+admitted full read only when the conservative reservation cannot fit.
 
 Adaptive pressure feedback, owner queue fairness, node-wide accounting for retained
 catalog/index RAM, and measured large-host scaling remain follow-up work. Shared-store writes

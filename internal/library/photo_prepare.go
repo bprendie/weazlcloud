@@ -16,6 +16,7 @@ type photoPreparation struct {
 	Status       string `json:"status"`
 	Total        int    `json:"total"`
 	Ready        int    `json:"ready"`
+	BundleReady  int    `json:"bundle_ready"`
 	Failed       int    `json:"failed"`
 	Position     int    `json:"position"`
 	Generation   uint64 `json:"generation"`

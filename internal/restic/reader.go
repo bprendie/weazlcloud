@@ -39,14 +39,20 @@ type Reader struct {
 	done      chan struct{}
 	ready     chan struct{}
 	slots     chan struct{}
+	binary    bool
+	streams   map[uint64]*readerStream
 }
 
 func StartReader(ctx context.Context, binary string, repo Repo, workers int, memory int64) (*Reader, error) {
+	return startReader(ctx, binary, repo, workers, memory, 2)
+}
+
+func startReader(ctx context.Context, binary string, repo Repo, workers int, memory int64, protocol int) (*Reader, error) {
 	if workers < 1 || workers > 16 || len(repo.Password) == 0 || memory < 128<<20 {
 		return nil, ErrReader
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	r := &Reader{pending: map[uint64]chan ReaderResult{}, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}), slots: make(chan struct{}, workers)}
+	r := &Reader{pending: map[uint64]chan ReaderResult{}, streams: map[uint64]*readerStream{}, binary: protocol == 2, cancel: cancel, done: make(chan struct{}), ready: make(chan struct{}), slots: make(chan struct{}, workers)}
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		cancel()
@@ -54,7 +60,7 @@ func StartReader(ctx context.Context, binary string, repo Repo, workers int, mem
 	}
 	defer pr.Close()
 	defer pw.Close()
-	cmd := exec.CommandContext(ctx, binary, "-repo", repo.Location, "-workers", fmt.Sprint(workers))
+	cmd := exec.CommandContext(ctx, binary, "-repo", repo.Location, "-workers", fmt.Sprint(workers), "-protocol", fmt.Sprint(protocol))
 	cmd.ExtraFiles = []*os.File{pr}
 	cmd.Env = append(cleanEnv(), fmt.Sprintf("GOMEMLIMIT=%d", memory))
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
@@ -104,6 +110,11 @@ func StartReader(ctx context.Context, binary string, repo Repo, workers int, mem
 func (r *Reader) receive(cmd *exec.Cmd, out io.Reader) {
 	defer close(r.done)
 	defer cmd.Wait()
+	if r.binary {
+		r.receiveStream(out)
+		r.cancel()
+		return
+	}
 	scan := bufio.NewScanner(out)
 	scan.Buffer(make([]byte, 4096), 6<<20)
 	ready := false
@@ -134,6 +145,12 @@ func (r *Reader) receive(cmd *exec.Cmd, out io.Reader) {
 }
 
 func (r *Reader) Read(ctx context.Context, snapshot, object string, limit int) (ReaderResult, error) {
+	if r.binary {
+		if limit > 4<<20 {
+			return ReaderResult{}, ErrReader
+		}
+		return r.ReadImage(ctx, snapshot, object, limit)
+	}
 	if limit < 0 || limit > 4<<20 || len(snapshot) != 64 || len(object) > 4096 {
 		return ReaderResult{}, ErrReader
 	}

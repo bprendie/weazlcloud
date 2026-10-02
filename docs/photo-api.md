@@ -62,6 +62,24 @@ and no-store. A vault lock cancels in-flight owner reads. Hidden assets require 
 knowing their IDs does not bypass the normal-view filter. Existing owner Library
 access remains available because hiding is Photos presentation within one vault.
 
+Photo items may include `preview_identity` (an owner-keyed derivative identity,
+not an original hash) and base64 `thumbhash`. These fields follow the same owner
+and Hidden filtering as the asset. Hashes come from bounded encrypted manifest
+segments and can be absent for older or unprepared media. A date/caption change
+preserves compatible derivative identity; content/rotation changes replace it.
+Clients must scope any in-memory reuse to the authenticated session and visibility,
+and clear it on lock/account/access changes. Responses remain private/no-store.
+
+`GET /api/photos/preparation` reports `ready`
+for retained grid previews and `bundle_ready` for retained grid+viewer pairs.
+`POST` accepts `start`, `resume`, `pause`, or `retry` and requires the desk mutation
+header. Explicit preparation fills missing 320px/1280px outputs; unsupported files
+fail individually. Status becomes partial if required outputs cannot be retained.
+Progress reports completed bundles while running and reconciles retained variants
+at completion. Browser closure does not cancel this server job. Existing completed
+and manually paused jobs stay closed/paused on upgrade; explicit resume opts into
+filling missing bundle variants. Photos maintenance controls live in the ☰ menu.
+
 `POST /api/v1/photos/assets/{id}` edits `favorite`, `archived`, `caption`,
 `captured_at`, `offset_known` and `rotation` (0/90/180/270). Blank capture time
 means unknown. A correction changes ordering and buckets, not the original

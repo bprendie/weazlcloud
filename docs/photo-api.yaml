@@ -12,6 +12,40 @@ security:
 - deviceBearer: []
 - accountCookie: []
 paths:
+  /api/photos/preparation:
+    get:
+      summary: Read owner preview preparation status
+      responses:
+        '200':
+          description: Retained grid and bundle counters; runtime resource settings and active progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoPreparation'
+        '401':
+          $ref: '#/components/responses/Error401'
+    post:
+      summary: Start, resume, pause or retry owner preview preparation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start, resume, pause, retry]
+      responses:
+        '200':
+          description: Updated durable preparation state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoPreparation'
+        '401':
+          $ref: '#/components/responses/Error401'
   /api/v1/photos/metadata-jobs:
     get:
       summary: Owner metadata repair status or paged private report
@@ -2542,9 +2576,49 @@ components:
       - id
       - asset_id
       - media_type
+    PhotoPreparation:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        status:
+          type: string
+        total:
+          type: integer
+          minimum: 0
+        ready:
+          type: integer
+          minimum: 0
+          description: Retained grid previews, reconciled at completion.
+        bundle_ready:
+          type: integer
+          minimum: 0
+          description: Retained 320px grid plus 1280px viewer pairs.
+        failed:
+          type: integer
+          minimum: 0
+        paused:
+          type: boolean
+        working:
+          type: integer
+          minimum: 0
+        work_progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+      required: [enabled, status, total, ready, bundle_ready, failed]
     PhotoItem:
       type: object
       properties:
+        preview_identity:
+          type: string
+          maxLength: 64
+          description: Owner-keyed content and transform identity; scope client reuse to session and visibility.
+        thumbhash:
+          type: string
+          format: byte
+          maxLength: 172
+          description: Optional private ThumbHash from an encrypted derivative manifest.
         id:
           type: string
           maxLength: 128

@@ -37,3 +37,27 @@ for size in ['0', '95', '1281', '-1', '320oops']:
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     list(pool.map(run, [baseline]*16))
 print('native progressive/grayscale/corruption/limits/parallel checks passed')
+
+# Two outputs share one native decode and carry explicit bounded frames.
+import struct
+for fixture in [baseline,jpeg('-progressive'),jpeg('-grayscale')]:
+    result=subprocess.run([helper,'--bundle','320,1280'],input=fixture,capture_output=True,check=True,timeout=40)
+    assert b'Sanitizer' not in result.stderr and b'runtime error:' not in result.stderr
+    data=result.stdout;seen=[]
+    while data:
+        assert len(data)>=7
+        size,kind,length=struct.unpack('>HBI',data[:7]);data=data[7:]
+        assert length<=8*1024*1024 and length<=len(data)
+        body,data=data[:length],data[length:]
+        if kind==0:
+            assert not size and not length and not data
+            break
+        assert kind==1
+        decoded=subprocess.run(['djpeg'],input=body,capture_output=True,check=True).stdout
+        assert decoded.startswith(f'P6\n{size} '.encode()),decoded[:40]
+        seen.append(size)
+    assert seen==[320,1280],seen
+for sizes in ['320,320','95,320','320,1281','320oops,1280']:
+    result=subprocess.run([helper,'--bundle',sizes],input=baseline,capture_output=True,timeout=40)
+    assert result.returncode!=0
+print('native shared-decode bundle framing/limits passed')

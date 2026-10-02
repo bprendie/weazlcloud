@@ -4,65 +4,25 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"os"
-	"os/exec"
-	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 func (r *metadataResolver) openReader(ctx context.Context) {
-	// Shared-object storage already serves authenticated ranges without spawning
-	// Restic. Wrapped test/custom backends keep their existing read semantics.
-	if _, ok := r.lib.backend.(*resticBackend); !ok {
-		return
-	}
 	if os.Getenv("WEAZLCLOUD_METADATA_READER") == "off" {
 		return
 	}
-	binary, err := exec.LookPath("weazl-restic-reader")
-	if err != nil {
-		return
-	}
-	budget := min(int64(2<<30), previewPolicy.MemoryBytes/2)
-	// Tiny installations retain the bounded CLI fallback. The session shares
-	// process-wide admission with previews; its heap target is not a hard RSS cap.
-	if budget < 256<<20 {
-		return
-	}
-	// Reserve child heap and all simultaneous protocol buffers together. Readers
-	// must not each reserve the last available byte and then wait for read memory.
-	release, err := previewMemory.acquireBackground(ctx, budget+int64(metadataWorkers())*(32<<20))
-	if err != nil {
-		return
-	}
-	password, drive, err := r.lib.vault.Secrets()
-	clear(drive)
-	if err != nil {
-		release()
-		return
-	}
-	started := time.Now()
-	reader, err := restic.StartReader(ctx, binary, restic.Repo{Location: r.lib.repo, Password: password}, metadataWorkers(), budget)
-	clear(password)
-	if err != nil {
-		release()
-		if ctx.Err() == nil {
-			log.Printf("photo metadata: persistent reader unavailable; using bounded fallback")
-		}
-		return
-	}
-	r.reader, r.releaseReader = reader, release
-	log.Printf("photo metadata: persistent reader ready workers=%d index_open_ms=%d memory_allowance=%d", metadataWorkers(), time.Since(started).Milliseconds(), budget)
+	r.reader, r.releaseReader = r.lib.borrowPreviewReader(ctx)
 }
 
 func (r *metadataResolver) closeReader() {
-	if r.reader != nil {
-		r.reader.Close()
+	if r.releaseReader != nil {
 		r.releaseReader()
+		r.releaseReader = nil
 	}
+	r.reader = nil
 }
 
 func (r *metadataResolver) readPersistent(ctx context.Context, file catalog.File, limit int64) ([]byte, error) {

@@ -31,6 +31,11 @@ func TestMetadataPersistentReaderMatchesCatalogAndSeesLaterUploads(t *testing.T)
 	if r.reader == nil {
 		t.Skip("resource budget uses CLI fallback")
 	}
+	shared, done := l.borrowPreviewReader(ctx)
+	if shared != r.reader {
+		t.Fatal("thumbnail and metadata reader sessions diverged")
+	}
+	done()
 	file, err := l.Metadata(ctx, name)
 	if err != nil {
 		t.Fatal(err)

@@ -126,6 +126,11 @@ func (l *Library) restoreLocked(ctx context.Context, name string) error {
 }
 
 func (l *Library) CleanupTrash(ctx context.Context, before time.Time) (int64, error) {
+	resumeReader, err := l.pausePreviewReader(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer resumeReader()
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err := l.ensure(ctx); err != nil {

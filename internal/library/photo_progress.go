@@ -2,8 +2,6 @@ package library
 
 import (
 	"context"
-
-	"github.com/bprendie/weazlcloud/internal/photos"
 )
 
 type photoProgressContextKey struct{}
@@ -24,13 +22,7 @@ func (l *Library) setPhotoJobProgress(jobID, worker string, progress int) {
 	if l.loadPhotoJobsLocked() != nil {
 		return
 	}
-	for i := range l.photoJobs.Jobs {
-		job := &l.photoJobs.Jobs[i]
-		if job.ID == jobID && job.Status == photos.JobLeased && job.LeaseOwner == worker && progress > job.Progress && progress < 100 {
-			job.Progress = progress
-			return
-		}
-	}
+	l.photoJobs.SetProgress(jobID, worker, progress)
 }
 
 func (l *Library) photoJobProgress() (int, int) {
@@ -39,17 +31,7 @@ func (l *Library) photoJobProgress() (int, int) {
 	if l.loadPhotoJobsLocked() != nil {
 		return 0, 0
 	}
-	working, total := 0, 0
-	for _, job := range l.photoJobs.Jobs {
-		if job.Status == photos.JobLeased && job.Progress < 100 {
-			working++
-			total += job.Progress
-		}
-	}
-	if working == 0 {
-		return 0, 0
-	}
-	return working, total / working
+	return l.photoJobs.Progress()
 }
 
 func photoReadProgress(read, total int) int {

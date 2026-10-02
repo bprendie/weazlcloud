@@ -1,3 +1,5 @@
+import {photoPlaceholder} from './photo-placeholder.js';
+import {clearPhotoImages, releaseDetachedPhotoImages, photoImageScope, mountPhotoImage, prefetchPhotoImage} from './photo-images.js';
 import {layoutPhotos} from './photo-layout.js';
 import {installPhotoTimeline} from './photo-timeline.js';
 import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escapeHTML as esc} from './data.js';
@@ -5,6 +7,8 @@ import {renderMain, renderDeck, renderUploadTray, refreshPhotoGrid, modifiedLabe
 import * as engine from './engine.js';
 import {ModeMemory} from './mode-memory.js';
 const modeMemory = new ModeMemory();
+const photoSessionChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('weazl-photo-session'):null;
+photoSessionChannel?.addEventListener('message',()=>clearPhotoImages());
 
 const $ = s => document.querySelector(s);
 let noticeTimer, frame, live = false, uploadPrefix = '';
@@ -125,10 +129,15 @@ function pumpGridThumbnails() {
       pumpGridThumbnails();
     };
     gridPreviewRequests.set(el, {controller, cancel: () => { el.src = ''; done(); }});
-    el.src = photoID ? `/api/v1/photos/assets/${encodeURIComponent(photoID)}/thumbnail?size=320${state.photosMode === 'hidden' ? '&hidden=1' : ''}` : `/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
+    if(photoID){
+      const item=state.photoItems.find(item=>item.id===photoID) || {id:photoID};
+      const tile=el.closest('.photo-tile');
+      if(tile && item.thumbHash){tile.style.backgroundImage=photoPlaceholder(item.thumbHash);tile.style.backgroundSize='cover';}
+      mountPhotoImage(el,state,item,320,controller.signal).catch(err=>{if(err.name!=='AbortError' && el.isConnected)el.replaceWith(Object.assign(document.createElement('div'),{className:'grid-kind',textContent:'Preview unavailable'}));}).finally(done);
+    } else el.src=`/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
-      if (el.isConnected) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
+      if (el.isConnected && !controller.signal.aborted) el.replaceWith(Object.assign(document.createElement('div'), {className: 'grid-kind', textContent: 'Preview unavailable'}));
       done();
     }, {once: true});
   }
@@ -240,6 +249,8 @@ function pumpGridCapabilities() {
 }
 
 function cancelDetachedGridRequests() {
+  releaseDetachedPhotoImages();
+  photoImageScope(state);
   for (const [el, request] of gridPreviewRequests) {
     if (!el.isConnected) {
       request.controller?.abort();
@@ -712,7 +723,7 @@ function renderPhotoViewer() {
   const date = item.captureTime ? modifiedLabel(item.captureTime) : 'Date unknown';
   const source = video
     ? `<video class="photo-viewer-media" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original${state.photosMode === 'hidden' ? '?hidden=1' : ''}" controls autoplay playsinline preload="metadata"></video>`
-    : `<img class="photo-viewer-media" style="--photo-zoom:${state.photoZoom || 1}" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/thumbnail?size=1280${hiddenParam}" alt="${esc(item.title)}">`;
+    : `<img class="photo-viewer-media" style="--photo-zoom:${state.photoZoom || 1}" data-photo-viewer-image alt="${esc(item.title)}">`;
   const caption = item.caption ? `<p>${esc(item.caption)}</p>` : '';
   $('#modal').classList.add('photo-viewer');
   $('#modal').classList.remove('wide');
@@ -736,7 +747,9 @@ function renderPhotoViewer() {
     touchStart = null;
     if (Math.abs(delta) > 70) movePhotoViewer(delta < 0 ? 1 : -1);
   });
-  prefetchPhotoViewerNeighbors();
+  releaseDetachedPhotoImages();
+  const image=$('[data-photo-viewer-image]');
+  if(image)mountPhotoImage(image,state,item,1280).then(prefetchPhotoViewerNeighbors).catch(()=>{if(image.isConnected)image.alt='Preview unavailable';});
 }
 
 function editPhotoDetails() {
@@ -796,11 +809,9 @@ async function sharePhotoAlbum(path) {
 }
 
 function prefetchPhotoViewerNeighbors() {
-  for (const item of [state.photoItems[photoViewerIndex - 1], state.photoItems[photoViewerIndex + 1]]) {
-    if (item && !/\.(?:mp4|mov|m4v|webm|mkv)$/i.test(item.path || '')) {
-      const image = new Image();
-      image.src = `/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/thumbnail?size=1280${state.photosMode === 'hidden' ? '&hidden=1' : ''}`;
-    }
+  if(gridThumbActive || gridThumbQueue.length)return;
+  for(const item of [state.photoItems[photoViewerIndex-1],state.photoItems[photoViewerIndex+1]]) {
+    if(item && !/\.(?:mp4|mov|m4v|webm|mkv)$/i.test(item.path || ''))prefetchPhotoImage(state,item,1280).catch(()=>{});
   }
 }
 
@@ -1414,7 +1425,8 @@ function ingest() {
 }
 
 async function lockVault() {
-  modeMemory.clear();
+  clearPhotoImages();photoSessionChannel?.postMessage('clear');
+  modeMemory.clear(); clearPhotoImages();
   stopWork();
   libraryLoadController?.abort();
   stopMediaPlayback();
@@ -1522,13 +1534,12 @@ function photoScopeOptions(){return {mode:['favorites','hidden','archived'].incl
 const photoTimeline=installPhotoTimeline({state,summaryForMonth:month=>engine.photoTimelineDates({...photoScopeOptions(),month}),jump:async target=>{
  if(!live || !state.unlocked || state.view!=='photos')return;
  const visible=[...document.querySelectorAll('.photo-grid [data-select-file]')].find(el=>el.getBoundingClientRect().bottom>140);
- const item=state.photoItems.find(item=>item.id===visible?.dataset.selectFile);
- history.replaceState({...history.state,photoNavigation:{owner:state.username,anchor:visible?.dataset.selectFile,date:item?.captureTime?.slice(0,10)||'unknown',offset:visible?.getBoundingClientRect().top,scope:photoScopeOptions()}},'',location.hash);
+ const anchor=state.photoJumpAnchor || visible?.dataset.selectFile;
+ const item=state.photoItems.find(item=>item.id===anchor);
+ history.replaceState({...history.state,photoNavigation:{owner:state.username,anchor,date:item?.captureTime?.slice(0,10)||'unknown',offset:state.photoJumpAnchor?145:visible?.getBoundingClientRect().top,scope:photoScopeOptions()}},'',location.hash);
  clearFileSelection();state.photoSeek=target;state.photoAnchor='';
  state.photoJumpOffset=null;
- const request=photoPageRequest+1;
- await loadPhotoPage(true);
- if(request===photoPageRequest && state.view==='photos' && !state.photoError){const item=state.photoItems.find(item=>item.id===state.photoLastJumpAnchor);history.pushState({photoNavigation:{owner:state.username,anchor:state.photoLastJumpAnchor,date:item?.captureTime?.slice(0,10)||'unknown',scope:photoScopeOptions()}},'',routeHash('photos'));restorePhotoJump();}
+ await loadPhotoPage(true,true,'next',true);
 }});
 function restorePhotoJump(){
  const id=state.photoJumpAnchor;
@@ -1552,7 +1563,7 @@ function restorePhotoJump(){
 }
 
 let photoSearchTimer = 0;
-async function loadPhotoPage(reset = false, render = true, direction = 'next') {
+async function loadPhotoPage(reset = false, render = true, direction = 'next', recordNavigation = false) {
   if (!live || !state.unlocked || state.view !== 'photos' || state.photosMode === 'albums' && !state.photosAlbum) return;
   if (state.photoLoading && !reset) return;
   const request = ++photoPageRequest, username = state.username;
@@ -1562,17 +1573,18 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
   const previousViewportAnchor = !reset
     ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el => ({id: el.dataset.selectFile, top: el.getBoundingClientRect().top})).find(row => row.top >= 0 && row.top < window.innerHeight)
     : null;
+  const seeking = reset && Boolean(state.photoSeek);
   if (reset) {
     const summaryScope=JSON.stringify(photoScopeOptions());
     if(state.photoSummaryScope!==summaryScope)state.photoDateSummary=null;
-    state.photoItems = [];
+    if (!seeking) state.photoItems = [];
     state.photoCursor = '';
     state.photoPreviousCursor = '';
     state.photoHasMore = false;
     state.photoError = '';
   }
   state.photoLoading = true;
-  if (render) renderMain();
+  if (render && !seeking) renderMain();
   try {
     const photoMode = ['recent', 'favorites', 'hidden', 'archived'].includes(state.photosMode) ? state.photosMode : 'all';
     const around = reset ? state.photoAnchor : '';
@@ -1585,6 +1597,7 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
       : await engine.navigatePhotos({...photoScopeOptions(),cursor:reset?'':requestCursor,around,...seek,signal});
     if (request !== photoPageRequest || username !== state.username || !state.unlocked || state.view !== 'photos') return;
     const incoming = (page.items || []).map(engine.toFixture);
+    if (seeking) state.photoItems = [];
     if(reset){state.photoSeek=null;state.photoStart=page.start||0;state.photoPosition=page.position||0;if(seek){state.photoJumpAnchor=page.anchor_id||'';state.photoLastJumpAnchor=page.anchor_id||'';}}
     if(direction==='before')state.photoStart=page.start||0;
     if (direction === 'before') {
@@ -1606,6 +1619,12 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
     state.photoHasMore = Boolean(state.photoCursor);
     state.photoGeneration = page.generation || 0;
     state.photoError = '';
+    // Commit history with the accepted page, before another gesture can cancel
+    // a slower date-summary refresh. Late seeks must never add history entries.
+    if (reset && recordNavigation) {
+      const item=state.photoItems.find(item=>item.id===page.anchor_id);
+      history.pushState({photoNavigation:{owner:state.username,anchor:page.anchor_id,date:item?.captureTime?.slice(0,10)||'unknown',scope:photoScopeOptions()}},'',routeHash('photos'));
+    }
   } catch (err) {
     if (request !== photoPageRequest || username !== state.username || err.name === 'AbortError') return;
     if (err.message?.includes('photo library changed')) {
@@ -1616,7 +1635,7 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next') {
       if(state.photoFallbackDate)state.photoSeek={at:state.photoFallbackDate};
       state.photoLoading = false;
       state.photoError = '';
-      return loadPhotoPage(true, render);
+      return loadPhotoPage(true, render, direction, recordNavigation);
     }
     state.photoError = err.message;
   } finally {
@@ -1790,6 +1809,7 @@ function startLibraryEvents() {
   libraryEventSource?.close();
   if (!live || !state.unlocked) return;
   libraryEventSource = engine.libraryEvents(change => {
+    if(['put','delete','restore','rename','photo-visibility','photo-metadata'].includes(change?.kind))clearPhotoImages();
     if (state.view !== 'photos') { state.photoModeDirty=true; state.photoItems=[]; }
     if (['photo-visibility','rename','delete','restore'].includes(change?.kind)) {
       modeMemory.clearSelections();
@@ -1823,7 +1843,7 @@ async function loadTrash() {
 }
 
 function openDesk() {
-  modeMemory.clear();
+  modeMemory.clear(); clearPhotoImages();
   clearFileSelection();
   state.unlocked = true;
   state.photoItems = [];
@@ -2324,6 +2344,7 @@ function setForgeMode(on) {
 
 function setVaultOnly(on) {
   if (on) {
+    clearPhotoImages();
     state.photoItems = [];
     state.photoCursor = '';
     state.photoAlbums = [];

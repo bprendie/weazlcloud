@@ -108,14 +108,17 @@ func (l *Library) reconcilePreparedCacheLocked() {
 	if l.photoPrepRunning || l.photoPrepared == nil || l.photoCacheEpoch == epoch {
 		return
 	}
-	ready := 0
+	ready, bundles := 0, 0
 	for key, count := range l.photoPrepared {
 		if l.validCachedPreview(key) {
 			ready += count
+			if viewer := l.photoPreparedBundles[key]; viewer != "" && l.validCachedPreview(viewer) {
+				bundles += count
+			}
 		}
 	}
-	l.photoPrep.Ready = ready
-	if l.photoPrep.Status == "complete" && ready < l.photoPrep.Total {
+	l.photoPrep.Ready, l.photoPrep.BundleReady = ready, bundles
+	if l.photoPrep.Status == "complete" && (ready < l.photoPrep.Total || l.photoPreparedBundles != nil && bundles < l.photoPrep.Total) {
 		l.photoPrep.Status = "partial"
 	}
 	l.photoCacheEpoch = epoch

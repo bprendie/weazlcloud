@@ -165,13 +165,14 @@ try:
                 print('PASS: M3 Photos date summary, recent mode, full-screen viewer, previous/next, keyboard navigation and metadata drawer')
                 browser.close()
                 raise SystemExit(0)
+            page.locator('.photo-tools > summary').click()
             page.locator('[data-action="photo-preparation"]').click()
             for _ in range(120):
                 preparation = context.request.get('/api/photos/preparation', headers=headers).json()
                 if preparation.get('status') == 'complete': break
                 time.sleep(.25)
             else: raise AssertionError(f'photo preparation did not finish: {preparation}')
-            assert preparation.get('ready') == 4 and preparation.get('failed') == 0, preparation
+            assert preparation.get('ready') == 4 and preparation.get('bundle_ready') == 4 and preparation.get('failed') == 0, preparation
             page.locator('[data-photos-mode="albums"]').first.click()
             expect(page.locator('.photo-album-card')).to_have_count(2)
             page.locator('[data-photo-album="Photos/Trip"]').click()

@@ -41,7 +41,7 @@ export function timelineMarkup(state, esc) {
 }
 
 export function installPhotoTimeline({state,summaryForMonth,jump}) {
-  let drag = null, frame = 0, keyboardRequest = 0;
+  let drag = null, frame = 0, keyboardRequest = 0, pointerClickUntil = 0;
   const usable = () => state.view === 'photos' && state.unlocked && state.photosMode !== 'recent';
   const update = (track,fraction,visibleDate) => {
     const target = timelineTarget(state.photoDateSummary,fraction);
@@ -55,38 +55,45 @@ export function installPhotoTimeline({state,summaryForMonth,jump}) {
     return target;
   };
   const cancel = () => { const previous=drag;drag=null;if(previous){try{previous.track.releasePointerCapture(previous.id);}catch{}previous.track.closest('.photo-time-rail')?.classList.remove('dragging');} cancelAnimationFrame(frame); frame=0; };
-  const finish = async target => { keyboardRequest++; await jump(target); };
+  const finish = async target => {
+    const request=++keyboardRequest, rail=document.querySelector('.photo-time-rail');
+    rail?.setAttribute('aria-busy','true');
+    try { await jump(target); } finally { if(request===keyboardRequest)document.querySelector('.photo-time-rail')?.removeAttribute('aria-busy'); }
+  };
   document.addEventListener('pointerdown',e => {
     const track=e.target.closest('[data-time-track]');
     const tick=e.target.closest('[data-time-rank]');
-    if (!track || e.target.closest('button') && e.pointerType!=='touch' || !usable() || e.button !== 0) return;
+    if (!track || !usable() || e.button !== 0) return;
     e.preventDefault(); cancel(); track.focus({preventScroll:true});
     track.setPointerCapture(e.pointerId); track.closest('.photo-time-rail').classList.add('dragging');
     const rect=track.getBoundingClientRect(); const fraction=(e.clientY-rect.top)/rect.height;
-    drag={track,id:e.pointerId,y:e.clientY,startY:e.clientY,tapRank:tick?Number(tick.dataset.timeRank):null,target:update(track,fraction)};
+    drag={track,rect,id:e.pointerId,y:e.clientY,startY:e.clientY,tapRank:tick?Number(tick.dataset.timeRank):null,target:update(track,fraction)};
   });
   document.addEventListener('pointermove',e => {
     if (!drag || e.pointerId!==drag.id) return;
     drag.y=e.clientY;
-    if (!frame) frame=requestAnimationFrame(()=>{ frame=0; if (!drag) return; const rect=drag.track.getBoundingClientRect(); drag.target=update(drag.track,(drag.y-rect.top)/rect.height); });
+    if (!frame) frame=requestAnimationFrame(()=>{ frame=0; if (!drag) return; const rect=drag.rect; drag.target=update(drag.track,(drag.y-rect.top)/rect.height); });
   });
   document.addEventListener('pointerup',e => {
     if (!drag || e.pointerId!==drag.id) return;
-    const rect=drag.track.getBoundingClientRect(),target=update(drag.track,(e.clientY-rect.top)/rect.height);
+    const rect=drag.rect,target=update(drag.track,(e.clientY-rect.top)/rect.height);
     const rank=drag.tapRank!==null && Math.abs(e.clientY-drag.startY)<6?drag.tapRank:target.rank;
-    cancel(); if (usable()) finish({rank});
+    pointerClickUntil=performance.now()+700; cancel(); if (usable()) finish({rank});
   });
   document.addEventListener('pointercancel',cancel);
   document.addEventListener('lostpointercapture',()=>{if(drag)cancel();});
   window.addEventListener('resize',cancel);
   document.addEventListener('click',e => {
+    document.querySelectorAll('.photo-tools[open]').forEach(menu=>{if(!menu.contains(e.target))menu.open=false;});
     if (!usable()) return;
+    if(e.detail && performance.now()<pointerClickUntil && e.target.closest('[data-time-track]'))return;
     const button=e.target.closest('[data-time-rank],[data-time-unknown],[data-time-calendar]'); if(!button)return;
     if (button.hasAttribute('data-time-calendar')) { const picker=button.parentElement.querySelector('.photo-time-picker'); picker.hidden=!picker.hidden; if(!picker.hidden)picker.querySelector('input').focus(); return; }
     finish(button.hasAttribute('data-time-unknown') ? {at:'unknown'} : {rank:Number(button.dataset.timeRank)});
   });
   document.addEventListener('change',e => { if(e.target.hasAttribute('data-time-date') && e.target.value && usable())finish({at:e.target.value}); });
   document.addEventListener('keydown',async e => {
+    if(e.key==='Escape'){const menu=document.querySelector('.photo-tools[open]');if(menu){menu.open=false;menu.querySelector('summary').focus();e.preventDefault();return;}}
     const track=e.target.closest('[data-time-track]'); if(!track || !usable())return;
     if(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key))return;
     e.preventDefault(); const token=++keyboardRequest;
@@ -121,7 +128,7 @@ export function installPhotoTimeline({state,summaryForMonth,jump}) {
       rail.hidden=trayTop!==undefined && trayTop-parseFloat(getComputedStyle(rail).top)<160;
       if(rail.hidden){cancel();return;}
       if(drag && (!drag.track.isConnected || !usable()))cancel();
-      if(drag)return;
+      if(drag || state.photoLoading && state.photoSeek)return;
       let lastTick=-Infinity;const height=track.clientHeight;
       track.querySelectorAll('[data-time-percent]').forEach(tick=>{const top=Number(tick.dataset.timePercent);tick.style.top=`${top}%`;const pixel=height*top/100;tick.hidden=pixel-lastTick<32;if(!tick.hidden)lastTick=pixel;});
       const tiles=[...document.querySelectorAll('.photo-grid [data-select-file]')];

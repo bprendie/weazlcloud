@@ -44,11 +44,8 @@ func (l *Library) queuePhotoIngestFiles(files []catalog.File) error {
 		}
 		job := photos.NewMediaJob(l.ownerID, file.EntryID, file.Revision, photoJobOperation, thumbnailRenderer, 1)
 		l.photoJobs.Upsert(job)
-		for _, current := range l.photoJobs.Jobs {
-			if current.ID == job.ID && current.Status == photos.JobPending {
-				queued = true
-				break
-			}
+		if current, ok := l.photoJobs.Get(job.ID); ok && current.Status == photos.JobPending {
+			queued = true
 		}
 	}
 	if err := l.savePhotoJobsLocked(); err != nil {

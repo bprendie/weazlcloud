@@ -17,6 +17,9 @@ import (
 )
 
 type Library struct {
+	readerMu                   sync.Mutex
+	previewReader              *previewReaderSession
+	readerPaused               int
 	metadataMu                 sync.Mutex
 	metadataJob                *PhotoMetadataJob
 	metadataRunning            bool
@@ -34,6 +37,7 @@ type Library struct {
 	batchDone                  chan struct{}
 	thumbMu                    sync.Mutex
 	thumbJobs                  map[string]*thumbnailJob
+	bundleJobs                 map[string]*assetPreviewJob
 	changeMu                   sync.RWMutex
 	changeSink                 ChangeSink
 	activityMu                 sync.RWMutex
@@ -87,7 +91,11 @@ type Library struct {
 	photoJobsMu                sync.Mutex
 	photoJobs                  photos.JobQueue
 	photoJobsLoaded            bool
+	photoJobsSequence          uint64
+	photoJobsJournalBytes      int64
+	photoJobsSnapshot          bool
 	photoPrepared              map[string]int
+	photoPreparedBundles       map[string]string
 	photoCacheEpoch            uint64
 	photoImports               int
 	pendingPhotoIngest         map[string]catalog.File

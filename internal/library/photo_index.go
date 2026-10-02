@@ -20,6 +20,8 @@ var (
 )
 
 type PhotoItem struct {
+	PreviewIdentity      string                   `json:"preview_identity,omitempty"`
+	ThumbHash            []byte                   `json:"thumbhash,omitempty"`
 	ParentAssetID        string                   `json:"parent_asset_id,omitempty"`
 	Components           []catalog.PhotoComponent `json:"components,omitempty"`
 	DeviceID             string                   `json:"device_id,omitempty"`

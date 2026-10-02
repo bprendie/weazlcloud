@@ -167,7 +167,7 @@ func TestPhotoThumbnailReusesEncryptedPreviewAfterRename(t *testing.T) {
 		t.Fatalf("rename missed encrypted preview cache: reads %d -> %d, err %v", reads, backend.reads, err)
 	}
 	entries, err := os.ReadDir(l.thumbnailDir())
-	if err != nil || len(entries) != 1 || strings.Contains(entries[0].Name(), page.Items[0].Path) {
+	if err != nil || len(entries) != 2 || strings.Contains(entries[0].Name(), page.Items[0].Path) {
 		t.Fatalf("preview cache path leaked source path: entries=%v err=%v", entries, err)
 	}
 }

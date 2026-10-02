@@ -55,6 +55,11 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+	full, err := r.ReadImage(ctx, snapshot, object, len(body))
+	if err != nil || !bytes.Equal(full.Body, body) {
+		t.Fatal("full binary stream mismatch", err)
+	}
+	clear(full.Body)
 	if _, err = r.Read(ctx, snapshot, "/missing", 10); err == nil {
 		t.Fatal("missing source succeeded")
 	}
@@ -86,6 +91,15 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 		t.Fatal("restart missed new source", err)
 	}
 	r2.Close()
+	legacy, err := startReader(ctx, binary, repo, 1, 256<<20, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = legacy.Read(ctx, newSnap, "new.json", len(newBody))
+	if err != nil || !bytes.Equal(got.Body, newBody) {
+		t.Fatal("legacy metadata protocol failed", err)
+	}
+	legacy.Close()
 	files, _ := os.ReadDir(filepath.Join(repo.Location, "locks"))
 	if len(files) != 0 {
 		t.Fatal("locks remain")

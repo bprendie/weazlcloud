@@ -15,7 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var thumbnailWriteMu sync.Mutex
+var thumbnailWriteMu sync.RWMutex
+var thumbnailKeyLocks [64]sync.Mutex
 var ErrPreviewCacheSkipped = errors.New("preview could not be retained in cache")
 
 type cacheFile struct {
@@ -29,32 +30,49 @@ func (l *Library) thumbnailDir() string {
 }
 
 func (l *Library) readThumbnailCache(key string) ([]byte, string, bool) {
+	env, ok := l.readThumbnailEnvelope(key)
+	return env.Body, env.ContentType, ok
+}
+func (l *Library) readThumbnailEnvelope(key string) (thumbnailEnvelope, bool) {
+	if env, ok := previewRAM.get(l, key); ok {
+		touchThumbnail(l.thumbnailDir(), key, env.Size)
+		return env, true
+	}
 	path := filepath.Join(l.thumbnailDir(), key+".enc")
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, "", false
+		return thumbnailEnvelope{}, false
 	}
 	defer file.Close()
 	raw, err := io.ReadAll(io.LimitReader(file, thumbnailMaxOutput+1))
 	if err != nil || len(raw) > thumbnailMaxOutput {
-		return nil, "", false
+		return thumbnailEnvelope{}, false
 	}
 	plain, err := l.vault.Unwrap(raw)
 	if err != nil {
-		return nil, "", false
+		return thumbnailEnvelope{}, false
 	}
 	defer clear(plain)
 	var env thumbnailEnvelope
 	err = json.Unmarshal(plain, &env)
 	if err != nil || len(env.Body) == 0 || env.ContentType == "" {
-		return nil, "", false
+		return thumbnailEnvelope{}, false
 	}
-	return env.Body, env.ContentType, true
+	touchThumbnail(l.thumbnailDir(), key, env.Size)
+	previewRAM.put(l, key, env)
+	return env, true
 }
 
 func (l *Library) writeThumbnailCache(key string, env thumbnailEnvelope) error {
-	thumbnailWriteMu.Lock()
-	defer thumbnailWriteMu.Unlock()
+	thumbnailWriteMu.RLock()
+	defer thumbnailWriteMu.RUnlock()
+	var stripe uint64
+	for _, b := range []byte(key) {
+		stripe = stripe*31 + uint64(b)
+	}
+	keyLock := &thumbnailKeyLocks[stripe%64]
+	keyLock.Lock()
+	defer keyLock.Unlock()
 	plain, err := json.Marshal(env)
 	if err != nil {
 		return err
@@ -68,9 +86,12 @@ func (l *Library) writeThumbnailCache(key string, env thumbnailEnvelope) error {
 	if err != nil {
 		return err
 	}
-	if !thumbnailCacheHasHeadroom(filepath.Dir(l.repo), int64(len(wrapped))) {
-		return ErrPreviewCacheSkipped
+	finish, err := reserveThumbnail(l.thumbnailDir(), key, int64(len(wrapped)), env.Size)
+	if err != nil {
+		return err
 	}
+	success := false
+	defer func() { finish(success) }()
 	dir := l.thumbnailDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -89,20 +110,22 @@ func (l *Library) writeThumbnailCache(key string, env thumbnailEnvelope) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpName, filepath.Join(dir, key+".enc")); err != nil {
 		return err
 	}
-	info, err := os.Stat(filepath.Join(dir, key+".enc"))
-	if err == nil {
-		l.accountThumbnail(dir, key+".enc", info.Size())
+	if err := syncPreviewDirectory(dir); err != nil {
+		return err
 	}
-	if _, err := os.Stat(filepath.Join(dir, key+".enc")); err != nil {
-		return ErrPreviewCacheSkipped
-	}
-	return err
+	success = true
+	previewRAM.put(l, key, env)
+	return nil
 }
 
 func thumbnailCacheHasHeadroom(dir string, requested int64) bool {
@@ -134,14 +157,14 @@ func evictThumbnailCache(dir string) error {
 		files = append(files, cacheFile{name: entry.Name(), size: info.Size(), when: info.ModTime()})
 		total += info.Size()
 	}
-	if total <= thumbnailMaxBytes && len(files) <= thumbnailMaxFiles {
+	if (thumbnailMaxBytes == 0 || total <= thumbnailMaxBytes) && len(files) <= thumbnailMaxFiles {
 		return nil
 	}
 	// Evict oldest generated previews first. Reads do not touch mtimes, avoiding
 	// a metadata write on every grid tile cache hit.
 	sortCacheFiles(files)
 	for _, f := range files {
-		if total <= thumbnailMaxBytes && len(files) <= thumbnailMaxFiles {
+		if (thumbnailMaxBytes == 0 || total <= thumbnailMaxBytes) && len(files) <= thumbnailMaxFiles {
 			break
 		}
 		if err := os.Remove(filepath.Join(dir, f.name)); err == nil {
@@ -156,4 +179,13 @@ func evictThumbnailCache(dir string) error {
 
 func sortCacheFiles(files []cacheFile) {
 	sort.Slice(files, func(i, j int) bool { return files[i].when.Before(files[j].when) })
+}
+
+func syncPreviewDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

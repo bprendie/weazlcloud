@@ -330,20 +330,26 @@ button[aria-pressed=true]{color:var(--yellow)}
 .photo-search-filters{margin:12px 0;color:var(--muted);font-size:12px}.photo-search-filters summary{cursor:pointer}.photo-search-filters>div{display:flex;gap:14px;flex-wrap:wrap;padding:12px 0}.photo-search-filters label{display:flex;gap:8px;align-items:center}.photo-search-filters input,.photo-search-filters select{min-width:0;max-width:200px;color:var(--text);background:#141518;border:1px solid #49464f;padding:8px}.duplicate-group{margin:18px 0}.duplicate-group .file-row{grid-template-columns:minmax(0,1fr) auto}.duplicate-group .file-name{overflow-wrap:anywhere}
 
 /* Capture-date navigation: quiet at rest, larger only during interaction. */
-.photo-time-rail{position:fixed;right:12px;top:150px;bottom:170px;width:52px;z-index:7;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
+.photo-time-rail{position:fixed;right:max(32px,env(safe-area-inset-right));top:150px;bottom:170px;width:60px;z-index:7;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}
 .photo-time-rail button,.photo-time-track,.photo-time-picker{pointer-events:auto}
 .photo-time-rail[hidden]{display:none}
-.photo-time-track{position:relative;width:44px;flex:1;min-height:80px;touch-action:none;cursor:ns-resize;border-right:2px solid #7138ab55;outline-offset:5px}
+.photo-time-track{position:relative;width:60px;flex:1;min-height:80px;touch-action:none;user-select:none;cursor:ns-resize;background:linear-gradient(#7138ab55,#7138ab55) right 9px top/2px 100% no-repeat;outline-offset:5px}
 .photo-time-track:focus-visible{outline:2px solid var(--purple,#b66aff)}
-.photo-time-thumb{position:absolute;right:-5px;width:8px;height:20px;transform:translateY(-50%);border-radius:5px;background:#b66aff;pointer-events:none}
-.photo-time-year{position:absolute;right:7px;transform:translateY(-50%);font-size:11px;color:#b9a6c9;background:#09080dee;border:0;padding:6px 4px;cursor:pointer}
-.photo-time-badge{position:absolute;right:52px;transform:translateY(-50%);background:#100819;border:1px solid #b66aff;color:#e7caff;padding:8px 12px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none}
+.photo-time-thumb{position:absolute;right:5px;width:10px;height:24px;transform:translateY(-50%);border-radius:5px;background:#b66aff;pointer-events:none}
+.photo-time-year{position:absolute;right:17px;transform:translateY(-50%);font-size:11px;color:#b9a6c9;background:#09080dee;border:0;padding:6px 4px;cursor:pointer}
+.photo-time-badge{position:absolute;right:64px;transform:translateY(-50%);background:#100819;border:1px solid #b66aff;color:#e7caff;padding:8px 12px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none}
 .photo-time-rail.dragging .photo-time-badge,.photo-time-track:focus-visible .photo-time-badge{opacity:1}
-.photo-time-calendar,.photo-time-unknown{width:36px;height:32px;color:#c394ff;border:1px solid #7138ab55;border-radius:6px;background:#100819;cursor:pointer}
+.photo-time-calendar,.photo-time-unknown{width:44px;height:44px;color:#c394ff;border:1px solid #7138ab55;border-radius:6px;background:#100819;cursor:pointer}
 .photo-time-picker{position:absolute;right:46px;top:0;background:#100819;border:1px solid #7138ab;padding:8px;border-radius:8px;white-space:nowrap}
 .photo-time-picker[hidden]{display:none}
-.photo-grid{margin-right:54px}
-@media(max-width:700px){.photo-time-rail{right:5px;top:155px;bottom:160px;width:44px}.photo-time-year{font-size:10px}.photo-grid{margin-right:42px}.photo-time-badge{right:44px}}
+.photo-grid{margin-right:84px}
+@media(max-width:700px){.photo-time-rail{right:max(20px,env(safe-area-inset-right));top:155px;bottom:160px;width:52px}.photo-time-track{width:52px}.photo-time-year{font-size:10px}.photo-grid{margin-right:64px}.photo-time-badge{right:56px}}
 @media(prefers-reduced-motion:reduce){.photo-time-rail *{scroll-behavior:auto}}
 /* A final row can become the viewport anchor even in a tiny collection. */
 .photo-grid{padding-bottom:max(0px,calc(100vh - 260px))}
+
+/* Infrequent maintenance stays out of the browsing toolbar. */
+.photo-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-right:84px}.photo-heading .page-head{min-width:0}.photo-tools{position:relative;flex-shrink:0;margin-top:12px;z-index:8}.photo-tools>summary{display:flex;align-items:center;justify-content:center;width:44px;height:44px;list-style:none;cursor:pointer;border:1px solid #49464f;border-radius:6px;background:#141518;color:var(--text);font-size:22px}.photo-tools>summary::-webkit-details-marker{display:none}.photo-tools>summary:focus-visible{outline:2px solid var(--purple);outline-offset:3px}.photo-tools-panel{position:absolute;right:0;top:52px;width:min(320px,calc(100vw - 64px));display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:16px;border:1px solid #49464f;border-radius:8px;background:#141518;box-shadow:0 12px 32px #0009;max-height:65vh;overflow:auto}.photo-tools-panel button{text-align:left;white-space:normal}.photo-tools-panel small{color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}.photo-tools:not([open]) .photo-tools-panel{display:none}
+@media(max-width:700px){.photo-heading{margin-right:64px}}
+.photos-toolbar,.photo-search-filters{margin-right:84px}
+@media(max-width:700px){.photos-toolbar,.photo-search-filters{margin-right:64px}}

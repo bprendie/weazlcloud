@@ -2,14 +2,8 @@ package library
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"github.com/bprendie/weazlcloud/internal/cryptox"
 	"github.com/bprendie/weazlcloud/internal/photos"
-	"github.com/bprendie/weazlcloud/internal/vault"
-	"io"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -20,83 +14,6 @@ const (
 	photoJobOperation    = "thumbnail:320"
 	photoJobLeaseTime    = 2 * time.Minute
 )
-
-type photoJobStoreFile struct {
-	Version int             `json:"version"`
-	Queue   photos.JobQueue `json:"queue"`
-}
-
-func (l *Library) photoJobStorePath() string {
-	return filepath.Join(filepath.Dir(l.repo), ".weazl-photo-jobs.enc")
-}
-
-func (l *Library) clearPhotoJobMemory() {
-	l.photoJobsMu.Lock()
-	for i := range l.photoJobs.Jobs {
-		l.photoJobs.Jobs[i] = photos.MediaJob{}
-	}
-	l.photoJobs.Jobs = nil
-	l.photoJobsLoaded = false
-	l.photoJobsMu.Unlock()
-}
-
-func (l *Library) loadPhotoJobsLocked() error {
-	if l.photoJobsLoaded {
-		return nil
-	}
-	file, err := os.Open(l.photoJobStorePath())
-	if errors.Is(err, os.ErrNotExist) {
-		l.photoJobsLoaded = true
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	raw, err := io.ReadAll(io.LimitReader(file, photoJobStoreLimit+1))
-	if err != nil || len(raw) > photoJobStoreLimit {
-		return errors.New("photo job store is unreadable or exceeds its size limit")
-	}
-	plain, err := l.vault.Unwrap(raw)
-	if err != nil {
-		return err
-	}
-	defer cryptox.Zero(plain)
-	var disk photoJobStoreFile
-	if err := json.Unmarshal(plain, &disk); err != nil || disk.Version != photoJobStoreVersion || len(disk.Queue.Jobs) > photoJobCountLimit {
-		return errors.New("photo job store is invalid")
-	}
-	for _, job := range disk.Queue.Jobs {
-		if !validPhotoJob(job) {
-			return errors.New("photo job store contains an invalid job")
-		}
-	}
-	l.photoJobs = disk.Queue
-	l.photoJobsLoaded = true
-	return nil
-}
-
-func (l *Library) savePhotoJobsLocked() error {
-	if !l.vault.Unlocked() {
-		return vault.ErrLocked
-	}
-	if len(l.photoJobs.Jobs) > photoJobCountLimit {
-		return errors.New("photo job queue reached its configured capacity")
-	}
-	plain, err := json.Marshal(photoJobStoreFile{Version: photoJobStoreVersion, Queue: l.photoJobs})
-	if err != nil {
-		return err
-	}
-	defer cryptox.Zero(plain)
-	wrapped, err := l.vault.Wrap(plain)
-	if err != nil {
-		return err
-	}
-	if len(wrapped) > photoJobStoreLimit {
-		return errors.New("photo job queue exceeds its encrypted store size limit")
-	}
-	return cryptox.AtomicWrite(l.photoJobStorePath(), wrapped, 0o600)
-}
 
 func validPhotoJob(job photos.MediaJob) bool {
 	return len(job.ID) == 32 && len(job.OwnerID) <= 128 && len(job.AssetID) <= 128 && job.Revision > 0 && job.Operation == photoJobOperation && len(job.Renderer) > 0 && len(job.Renderer) <= 128 && job.Attempts >= 0 && job.Attempts <= photos.MaxJobAttempts && job.Progress >= 0 && job.Progress <= 100 && (job.Status == photos.JobPending || job.Status == photos.JobLeased || job.Status == photos.JobSucceeded || job.Status == photos.JobFailed || job.Status == photos.JobCanceled)
@@ -114,20 +31,19 @@ func (l *Library) syncPhotoJobs(files []photoJobFile, retry bool) (int, error) {
 		current[job.ID] = struct{}{}
 		l.photoJobs.Upsert(job)
 		_, _, cacheValid := l.readThumbnailCache(file.cacheKey)
-		for i := range l.photoJobs.Jobs {
-			stored := &l.photoJobs.Jobs[i]
-			if stored.ID != job.ID {
-				continue
-			}
-			if cacheValid {
-				stored.Status, stored.Progress = photos.JobSucceeded, 100
-				stored.LeaseOwner, stored.LeaseUntil = "", time.Time{}
-				stored.ErrorCategory = ""
-			} else if stored.Status == photos.JobSucceeded {
-				stored.Status, stored.Progress = photos.JobPending, 0
-				stored.NextAttemptAt = time.Time{}
-			}
+		if cacheValid && file.viewerKey != "" {
+			_, _, cacheValid = l.readThumbnailCache(file.viewerKey)
 		}
+		stored, _ := l.photoJobs.Get(job.ID)
+		if cacheValid {
+			stored.Status, stored.Progress = photos.JobSucceeded, 100
+			stored.LeaseOwner, stored.LeaseUntil = "", time.Time{}
+			stored.ErrorCategory = ""
+		} else if stored.Status == photos.JobSucceeded {
+			stored.Status, stored.Progress = photos.JobPending, 0
+			stored.NextAttemptAt = time.Time{}
+		}
+		l.photoJobs.Replace(stored)
 	}
 	kept := l.photoJobs.Jobs[:0]
 	for _, job := range l.photoJobs.Jobs {
@@ -140,6 +56,8 @@ func (l *Library) syncPhotoJobs(files []photoJobFile, retry bool) (int, error) {
 		}
 	}
 	l.photoJobs.Jobs = kept
+	l.photoJobs.Reindex()
+	l.photoJobsSnapshot = true
 	if err := l.savePhotoJobsLocked(); err != nil {
 		return 0, err
 	}
@@ -147,9 +65,10 @@ func (l *Library) syncPhotoJobs(files []photoJobFile, retry bool) (int, error) {
 }
 
 type photoJobFile struct {
-	id       string
-	revision uint64
-	cacheKey string
+	id        string
+	revision  uint64
+	cacheKey  string
+	viewerKey string
 }
 
 type photoJobResult struct {
@@ -162,11 +81,6 @@ func (l *Library) leasePhotoJobs(worker string, limit int) ([]photos.MediaJob, e
 	defer l.photoJobsMu.Unlock()
 	if err := l.loadPhotoJobsLocked(); err != nil {
 		return nil, err
-	}
-	if l.photoJobs.RequeueLeasesExcept(worker) > 0 {
-		if err := l.savePhotoJobsLocked(); err != nil {
-			return nil, err
-		}
 	}
 	jobs := l.photoJobs.Lease(worker, time.Now().UTC(), photoJobLeaseTime, limit)
 	if len(jobs) > 0 {

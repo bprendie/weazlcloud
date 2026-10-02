@@ -12,6 +12,7 @@ func (l *Library) photoItemVisible(file catalog.File, hidden bool) PhotoItem {
 // The normal Photos response must not enumerate the newly hidden component.
 func (l *Library) photoItemVisibleLocked(file catalog.File, hidden bool) PhotoItem {
 	item := photoItemFromFile(file)
+	item.PreviewIdentity, item.ThumbHash = l.photoPreviewHint(file)
 	if parent, ok := l.photoByID[file.PhotoParentID]; ok && parent.Present && l.photoPathHiddenLocked(parent.Path) == hidden {
 		item.ParentAssetID = parent.EntryID
 	}

@@ -3,7 +3,7 @@ package photos
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"sort"
+	"strconv"
 	"time"
 )
 
@@ -34,27 +34,25 @@ type MediaJob struct {
 }
 
 type JobQueue struct {
-	Jobs []MediaJob `json:"jobs"`
+	Jobs  []MediaJob `json:"jobs"`
+	index *jobIndex
 }
 
 func NewMediaJob(ownerID, assetID string, revision uint64, operation, renderer string, priority int) MediaJob {
-	key := ownerID + "\x00" + assetID + "\x00" + uintString(revision) + "\x00" + operation + "\x00" + renderer
+	key := ownerID + "\x00" + assetID + "\x00" + strconv.FormatUint(revision, 10) + "\x00" + operation + "\x00" + renderer
 	sum := sha256.Sum256([]byte(key))
 	return MediaJob{ID: hex.EncodeToString(sum[:16]), OwnerID: ownerID, AssetID: assetID, Revision: revision, Operation: operation, Renderer: renderer, Priority: priority, Status: JobPending}
 }
 
 func (q *JobQueue) Upsert(job MediaJob) bool {
-	for i := range q.Jobs {
-		old := &q.Jobs[i]
-		if old.ID != job.ID {
-			continue
-		}
+	if old, ok := q.Get(job.ID); ok {
 		if job.Priority < old.Priority {
 			old.Priority = job.Priority
+			q.Replace(old)
 		}
 		return false
 	}
-	q.Jobs = append(q.Jobs, job)
+	q.Replace(job)
 	return true
 }
 
@@ -62,147 +60,92 @@ func (q *JobQueue) Lease(owner string, now time.Time, duration time.Duration, li
 	if limit < 1 || owner == "" {
 		return nil
 	}
-	ready := make([]int, 0)
-	for i := range q.Jobs {
-		job := &q.Jobs[i]
-		if job.Status == JobLeased && !job.LeaseUntil.After(now) {
-			job.Status, job.LeaseOwner, job.LeaseUntil = JobPending, "", time.Time{}
-		}
-		if job.Status == JobPending && !job.NextAttemptAt.After(now) && job.Attempts < MaxJobAttempts {
-			ready = append(ready, i)
-		}
-	}
-	sort.Slice(ready, func(i, j int) bool {
-		a, b := q.Jobs[ready[i]], q.Jobs[ready[j]]
-		if a.Priority != b.Priority {
-			return a.Priority < b.Priority
-		}
-		if !a.NextAttemptAt.Equal(b.NextAttemptAt) {
-			return a.NextAttemptAt.Before(b.NextAttemptAt)
-		}
-		return a.ID < b.ID
-	})
-	if len(ready) > limit {
-		ready = ready[:limit]
-	}
-	leased := make([]MediaJob, 0, len(ready))
-	for _, index := range ready {
-		job := &q.Jobs[index]
-		job.Status, job.LeaseOwner = JobLeased, owner
-		job.LeaseUntil = now.Add(duration)
-		job.Progress = 0
-		leased = append(leased, *job)
+	q.ensureIndex()
+	q.makeDue(now)
+	leased := make([]MediaJob, 0, min(limit, len(q.index.ready.items)))
+	for len(leased) < limit && len(q.index.ready.items) > 0 {
+		job := q.index.ready.items[0].job
+		job.Status, job.LeaseOwner, job.LeaseUntil, job.Progress = JobLeased, owner, now.Add(duration), 0
+		q.Replace(job)
+		leased = append(leased, job)
 	}
 	return leased
 }
 
-func (q *JobQueue) Renew(jobID, owner string, until time.Time) bool {
-	job := q.find(jobID, owner)
-	if job == nil {
+func (q *JobQueue) Renew(id, owner string, until time.Time) bool {
+	job, ok := q.owned(id, owner)
+	if !ok {
 		return false
 	}
 	job.LeaseUntil = until
+	q.Replace(job)
 	return true
 }
-
-func (q *JobQueue) Complete(jobID, owner string) bool {
-	job := q.find(jobID, owner)
-	if job == nil {
+func (q *JobQueue) Complete(id, owner string) bool {
+	job, ok := q.owned(id, owner)
+	if !ok {
 		return false
 	}
-	job.Status, job.Progress = JobSucceeded, 100
-	job.LeaseOwner, job.LeaseUntil = "", time.Time{}
-	job.ErrorCategory = ""
+	job.Status, job.Progress, job.LeaseOwner, job.LeaseUntil, job.ErrorCategory = JobSucceeded, 100, "", time.Time{}, ""
+	q.Replace(job)
 	return true
 }
-
-func (q *JobQueue) Release(jobID, owner string) bool {
-	job := q.find(jobID, owner)
-	if job == nil {
+func (q *JobQueue) Release(id, owner string) bool {
+	job, ok := q.owned(id, owner)
+	if !ok {
 		return false
 	}
 	job.Status, job.LeaseOwner, job.LeaseUntil, job.Progress = JobPending, "", time.Time{}, 0
+	q.Replace(job)
 	return true
 }
-
-func (q *JobQueue) Fail(jobID, owner, category string, retryable bool, now time.Time) bool {
-	job := q.find(jobID, owner)
-	if job == nil {
+func (q *JobQueue) Fail(id, owner, category string, retryable bool, now time.Time) bool {
+	job, ok := q.owned(id, owner)
+	if !ok {
 		return false
 	}
 	job.Attempts++
 	job.Progress, job.ErrorCategory = 0, category
 	job.LeaseOwner, job.LeaseUntil = "", time.Time{}
 	if retryable && job.Attempts < MaxJobAttempts {
-		delay := time.Second * time.Duration(1<<min(job.Attempts-1, 8))
-		job.Status, job.NextAttemptAt = JobPending, now.Add(delay)
+		job.Status, job.NextAttemptAt = JobPending, now.Add(time.Second*time.Duration(1<<min(job.Attempts-1, 8)))
 	} else {
 		job.Status = JobFailed
 	}
+	q.Replace(job)
 	return true
 }
-
-func (q *JobQueue) CancelOwner(ownerID string) int {
-	changed := 0
-	for i := range q.Jobs {
-		job := &q.Jobs[i]
-		if job.OwnerID == ownerID && (job.Status == JobPending || job.Status == JobLeased) {
-			job.Status, job.LeaseOwner, job.LeaseUntil = JobCanceled, "", time.Time{}
-			changed++
-		}
-	}
-	return changed
-}
-
-func (q *JobQueue) RequeueLeasesExcept(owner string) int {
-	changed := 0
-	for i := range q.Jobs {
-		job := &q.Jobs[i]
-		if job.Status == JobLeased && job.LeaseOwner != owner {
-			job.Status, job.LeaseOwner, job.LeaseUntil, job.Progress = JobPending, "", time.Time{}, 0
-			changed++
-		}
-	}
-	return changed
-}
-
-func (q *JobQueue) Counts() (pending, leased, succeeded, failed int) {
+func (q *JobQueue) CancelOwner(owner string) int {
+	count := 0
 	for _, job := range q.Jobs {
-		switch job.Status {
-		case JobPending:
-			pending++
-		case JobLeased:
-			leased++
-		case JobSucceeded:
-			succeeded++
-		case JobFailed:
-			failed++
+		if job.OwnerID == owner && (job.Status == JobPending || job.Status == JobLeased) {
+			job.Status, job.LeaseOwner, job.LeaseUntil = JobCanceled, "", time.Time{}
+			q.Replace(job)
+			count++
 		}
 	}
-	return
+	return count
 }
-
+func (q *JobQueue) RequeueLeasesExcept(owner string) int {
+	q.ensureIndex()
+	jobs := make([]MediaJob, 0, len(q.index.leased.items))
+	for _, entry := range q.index.leased.items {
+		if entry.job.LeaseOwner != owner {
+			jobs = append(jobs, entry.job)
+		}
+	}
+	for _, job := range jobs {
+		q.Release(job.ID, job.LeaseOwner)
+	}
+	return len(jobs)
+}
+func (q *JobQueue) Counts() (pending, leased, succeeded, failed int) {
+	q.ensureIndex()
+	c := q.index.counts
+	return c[JobPending], c[JobLeased], c[JobSucceeded], c[JobFailed]
+}
 func (q *JobQueue) HasJobs() bool { return len(q.Jobs) > 0 }
-
-func (q *JobQueue) find(id, owner string) *MediaJob {
-	for i := range q.Jobs {
-		if q.Jobs[i].ID == id && q.Jobs[i].Status == JobLeased && q.Jobs[i].LeaseOwner == owner {
-			return &q.Jobs[i]
-		}
-	}
-	return nil
-}
-
-func uintString(value uint64) string {
-	if value == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for value > 0 {
-		i--
-		buf[i] = byte('0' + value%10)
-		value /= 10
-	}
-	return string(buf[i:])
+func (q *JobQueue) owned(id, owner string) (MediaJob, bool) {
+	job, ok := q.Get(id)
+	return job, ok && job.Status == JobLeased && job.LeaseOwner == owner
 }

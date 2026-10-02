@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log"
+	"os"
 	"strconv"
 	"sync"
 
@@ -20,8 +21,8 @@ const (
 )
 
 var (
-	thumbnailMaxBytes = previewLimit("WEAZLCLOUD_PREVIEW_OWNER_BYTES", 4<<30)
-	thumbnailMaxFiles = int(previewLimit("WEAZLCLOUD_PREVIEW_OWNER_FILES", 100_000))
+	thumbnailMaxBytes = previewLimit("WEAZLCLOUD_PREVIEW_OWNER_BYTES", 0)
+	thumbnailMaxFiles = int(previewLimit("WEAZLCLOUD_PREVIEW_OWNER_FILES", 200_000))
 	previewPolicy     = defaultPreviewPolicy()
 	thumbnailSlots    = make(chan struct{}, previewPolicy.RenderWorkers)
 	thumbnailBackfill = make(chan struct{}, previewPolicy.BackgroundWorkers)
@@ -38,6 +39,8 @@ var (
 type thumbnailEnvelope struct {
 	ContentType string `json:"content_type"`
 	Body        []byte `json:"body"`
+	ThumbHash   []byte `json:"thumbhash,omitempty"`
+	Size        int    `json:"size,omitempty"`
 }
 
 type thumbnailJob struct {
@@ -156,16 +159,22 @@ func (l *Library) thumbnailFor(ctx context.Context, f catalog.File, size int, ba
 	if err != nil {
 		return nil, "", err
 	}
-	if body, contentType, ok := l.readThumbnailCache(key); ok {
+	if body, contentType, ok := l.readThumbnailCache(key); ok && !background {
 		if err := l.validatePreview(ctx, f); err != nil {
 			return nil, "", err
 		}
 		return body, contentType, nil
 	}
 
-	body, mime, err := l.coalescedPreview(ctx, key, func(work context.Context) ([]byte, string, error) {
-		return l.generateThumbnail(work, f, size, key, background)
-	})
+	var body []byte
+	var mime string
+	if os.Getenv("WEAZLCLOUD_PREVIEW_BUNDLE") == "off" {
+		body, mime, err = l.coalescedPreview(ctx, key, func(work context.Context) ([]byte, string, error) {
+			return l.generateThumbnail(work, f, size, key, background)
+		})
+	} else {
+		body, mime, err = l.bundlePreview(ctx, f, size, background)
+	}
 	if accessErr := l.validatePreview(ctx, f); accessErr != nil {
 		return nil, "", accessErr
 	}
@@ -199,12 +208,10 @@ func (l *Library) generateThumbnail(ctx context.Context, f catalog.File, size in
 		job.body, job.contentType, err = rotatePreview(ctx, job.body, job.contentType, f.UserRotation)
 	}
 	if err == nil {
-		l.mu.Lock()
-		err = l.validatePreviewLocked(ctx, f)
+		err = l.validatePreview(ctx, f)
 		if err == nil {
 			err = l.writeThumbnailCache(key, thumbnailEnvelope{ContentType: job.contentType, Body: job.body})
 		}
-		l.mu.Unlock()
 	}
 	if !background && errors.Is(err, ErrPreviewCacheSkipped) {
 		err = nil

@@ -34,6 +34,10 @@ js-check:
 	node --check mockup-ui/views.js
 	node --check mockup-ui/photo-layout.js
 	node --check mockup-ui/photo-timeline.js
+	node --check mockup-ui/photo-cache.js
+	node --check mockup-ui/photo-images.js
+	node --check mockup-ui/photo-placeholder.js
+	node scripts/photo-cache.test.mjs
 	node --check mockup-ui/mode-memory.js
 	node scripts/photo-layout.test.mjs
 	node scripts/mode-memory.test.mjs

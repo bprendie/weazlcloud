@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
@@ -65,7 +64,8 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 		for _, file := range files {
 			fileByID[file.EntryID] = file
 			cacheKey, _ := thumbnailKey(l.vault, file, 320)
-			jobFiles = append(jobFiles, photoJobFile{id: file.EntryID, revision: file.Revision, cacheKey: cacheKey})
+			viewerKey, _ := thumbnailKey(l.vault, file, 1280)
+			jobFiles = append(jobFiles, photoJobFile{id: file.EntryID, revision: file.Revision, cacheKey: cacheKey, viewerKey: viewerKey})
 		}
 		if autoOnly {
 			assetIDs, err := l.photoJobAssetIDs(true)
@@ -79,7 +79,8 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 				if _, ok := assetIDs[file.EntryID]; ok {
 					filtered = append(filtered, file)
 					cacheKey, _ := thumbnailKey(l.vault, file, 320)
-					filteredJobs = append(filteredJobs, photoJobFile{id: file.EntryID, revision: file.Revision, cacheKey: cacheKey})
+					viewerKey, _ := thumbnailKey(l.vault, file, 1280)
+					filteredJobs = append(filteredJobs, photoJobFile{id: file.EntryID, revision: file.Revision, cacheKey: cacheKey, viewerKey: viewerKey})
 				}
 			}
 			files, jobFiles, fileByID = filtered, filteredJobs, make(map[string]catalog.File, len(filtered))
@@ -94,97 +95,14 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 			l.setPhotoPreparationError(err)
 			return
 		}
-		worker := fmt.Sprintf("%d-%d", time.Now().UnixNano(), generation)
-		for ctx.Err() == nil {
-			if ctx.Err() != nil {
-				break
-			}
-			if l.photoStorageBusy() {
-				l.finishPhotoPreparation("paused_storage")
-				l.waitForPhotoStorage()
-				return
-			}
-			if generation != l.photoGeneration() {
-				break
-			}
-			jobs, err := l.leasePhotoJobs(worker, max(1, previewPolicy.BackgroundWorkers))
-			if err != nil {
-				l.setPhotoPreparationError(err)
-				return
-			}
-			if len(jobs) == 0 {
-				pending, leased, _, _, countErr := l.photoJobCounts()
-				if countErr != nil {
-					l.setPhotoPreparationError(countErr)
-					return
-				}
-				if pending > 0 || leased > 0 {
-					timer := time.NewTimer(500 * time.Millisecond)
-					select {
-					case <-ctx.Done():
-						timer.Stop()
-					case <-timer.C:
-					}
-					continue
-				}
-				break
-			}
-			results := make(chan photoPreparationResult, len(jobs))
-			for _, job := range jobs {
-				file, ok := fileByID[job.AssetID]
-				if !ok || file.Revision != job.Revision {
-					results <- photoPreparationResult{job: job, err: ErrThumbnailUnavailable}
-					continue
-				}
-				go func(job photos.MediaJob, file catalog.File) {
-					l.setPhotoJobProgress(job.ID, worker, 5)
-					jobCtx := withPhotoProgress(ctx, func(progress int) {
-						l.setPhotoJobProgress(job.ID, worker, progress)
-					})
-					results <- photoPreparationResult{job: job, err: l.preparePhoto(jobCtx, file, retry)}
-				}(job, file)
-			}
-			settled := make([]photoJobResult, 0, len(jobs))
-			progress := 0
-			var checkpointErr error
-			for range jobs {
-				result := <-results
-				settled = append(settled, photoJobResult{job: result.job, err: result.err})
-				if errors.Is(result.err, errPhotoFailureRecord) {
-					checkpointErr = result.err
-				}
-				progress++
-			}
-			if err := l.settlePhotoJobs(settled, worker); err != nil {
-				l.setPhotoPreparationError(err)
-				return
-			}
-			l.photoPrepMu.Lock()
-			if l.photoPrep.Paused {
-				l.photoPrepMu.Unlock()
-				break
-			}
-			if checkpointErr != nil {
-				l.photoPrep.Status = "paused_error"
-				l.photoPrep.Error = checkpointErr.Error()
-				l.photoPrepMu.Unlock()
-				return
-			}
-			l.photoPrep.Position += progress
-			pending, _, ready, failed, _ := l.photoJobCounts()
-			l.photoPrep.Ready, l.photoPrep.Failed = ready, failed
-			l.touchPhotoPreparationLocked()
-			saveErr := l.savePhotoPreparationLocked()
-			l.photoPrepMu.Unlock()
-			if saveErr != nil {
-				return
-			}
-			if ctx.Err() != nil {
-				break
-			}
-			if pending == 0 && failed > 0 {
-				break
-			}
+		if err := l.runPreparationQueue(ctx, generation, fileByID, retry); err != nil && ctx.Err() == nil {
+			l.setPhotoPreparationError(err)
+			return
+		}
+		if l.photoStorageBusy() && ctx.Err() == nil {
+			l.finishPhotoPreparation("paused_storage")
+			l.waitForPhotoStorage()
+			return
 		}
 		if ctx.Err() != nil {
 			break
@@ -193,8 +111,9 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 			continue
 		}
 		// Reconcile against the cache: eviction during a pass is not readiness.
-		ready := 0
+		ready, bundles := 0, 0
 		prepared := make(map[string]int)
+		preparedBundles := make(map[string]string)
 		cacheEpoch := thumbnailCacheEpoch.Load()
 		for _, f := range files {
 			key, err := thumbnailKey(l.vault, f, 320)
@@ -202,12 +121,17 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 				prepared[key]++
 				if l.validCachedPreview(key) {
 					ready++
+					viewer, _ := thumbnailKey(l.vault, f, 1280)
+					preparedBundles[key] = viewer
+					if l.validCachedPreview(viewer) {
+						bundles++
+					}
 				}
 			}
 		}
 		l.photoPrepMu.Lock()
-		l.photoPrep.Ready = ready
-		l.photoPrepared, l.photoCacheEpoch = prepared, cacheEpoch
+		l.photoPrep.Ready, l.photoPrep.BundleReady = ready, bundles
+		l.photoPrepared, l.photoPreparedBundles, l.photoCacheEpoch = prepared, preparedBundles, cacheEpoch
 		l.photoPrep.Retry = false
 		l.photoPrepMu.Unlock()
 		_, _, succeeded, failed, _ := l.photoJobCounts()
@@ -216,7 +140,7 @@ func (l *Library) runPhotoPreparationParallel(parent context.Context) {
 		l.photoPrep.Failed = failed
 		l.photoPrepMu.Unlock()
 		status := "complete"
-		if ready < len(files) || failed > 0 {
+		if ready < len(files) || bundles < len(files) || failed > 0 {
 			status = "partial"
 		}
 		l.finishPhotoPreparation(status)

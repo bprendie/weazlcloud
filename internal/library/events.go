@@ -23,6 +23,10 @@ func (l *Library) SetChangeSink(sink ChangeSink) {
 }
 
 func (l *Library) publishChange(change Change) {
+	l.markObsoletePreviews(change)
+	if change.Kind == "put" || change.Kind == "delete" || change.Kind == "restore" || change.Kind == "photo-visibility" {
+		previewRAM.clearOwnerSession(l, nil)
+	}
 	// Folder copies/restores affect every descendant, including preview jobs.
 	if change.Kind == "copy" || change.Kind == "restore" {
 		paths := append([]string(nil), change.Paths...)

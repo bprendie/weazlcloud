@@ -66,6 +66,8 @@ def smoke_modal_photos(context, page, post, browser, base, backend):
     page.locator('[data-photos-mode="all"]').click()
     expect(page.locator('.photo-grid .library-card')).to_have_count(5)
     smoke_photo_performance(context, page, base, backend, jump_ms)
+    from smoke_photo_cache import smoke_photo_cache
+    smoke_photo_cache(context,page,base,backend)
     from smoke_photo_timeline import smoke_photo_timeline
     smoke_photo_timeline(context,page,post,base)
     print('PASS: date jump, wildcard caption search, favorite, server day selection, album edit, gallery mint/QR and Hidden browser transitions')

@@ -128,6 +128,10 @@ func newHandler() http.Handler {
 }
 
 func render(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v2/thumbnails" {
+		renderBundle(w, r)
+		return
+	}
 	if r.Method != http.MethodPost || r.URL.Path != "/v1/thumbnail" {
 		http.NotFound(w, r)
 		return

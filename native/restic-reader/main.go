@@ -27,6 +27,7 @@ type request struct {
 	Snapshot string `json:"snapshot"`
 	Object   string `json:"object"`
 	Limit    int    `json:"limit"`
+	Cancel   uint64 `json:"cancel,omitempty"`
 }
 type response struct {
 	ID    uint64 `json:"id"`
@@ -39,21 +40,22 @@ type response struct {
 func main() {
 	repoPath := flag.String("repo", "", "local repository")
 	workers := flag.Int("workers", 1, "bounded read concurrency")
+	protocol := flag.Int("protocol", 1, "response protocol version")
 	flag.Parse()
-	if *workers < 1 || *workers > 16 || *repoPath == "" {
+	if *workers < 1 || *workers > 16 || *repoPath == "" || (*protocol != 1 && *protocol != 2) {
 		os.Exit(2)
 	}
 	runtime.GOMAXPROCS(*workers)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	if err := run(ctx, *repoPath, *workers); err != nil {
+	if err := run(ctx, *repoPath, *workers, *protocol); err != nil {
 		// Do not expose repository paths, request contents, or credentials.
 		fmt.Fprintln(os.Stderr, "metadata reader stopped:", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, location string, workers int) error {
+func run(ctx context.Context, location string, workers, protocol int) error {
 	passwordFD := os.NewFile(3, "repository-password")
 	if passwordFD == nil {
 		return errors.New("password pipe missing")
@@ -88,6 +90,9 @@ func run(ctx context.Context, location string, workers int) error {
 	ctx = lockedCtx
 	if err = repo.LoadIndex(ctx, nil); err != nil {
 		return errors.New("repository index unavailable")
+	}
+	if protocol == 2 {
+		return serveBinary(ctx, repo, workers, os.Stdin, os.Stdout)
 	}
 	enc := json.NewEncoder(os.Stdout)
 	if err = enc.Encode(response{Ready: true}); err != nil {

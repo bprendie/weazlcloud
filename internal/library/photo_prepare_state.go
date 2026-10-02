@@ -37,11 +37,16 @@ func (l *Library) loadPhotoPreparationLocked() {
 	if json.Unmarshal(plain, &state) != nil || state.Total < 0 || state.Position < 0 || state.Ready < 0 || state.Failed < 0 || state.Position > 2_000_000 || state.Total > 2_000_000 {
 		return
 	}
+	if state.Position > state.Total {
+		state.Status = "queued"
+	}
 	l.photoPrep = state
 	// Old positional checkpoints are unsafe after rebuilding/sorting an index.
-	l.photoPrep.Position, l.photoPrep.Ready, l.photoPrep.Failed = 0, 0, 0
+	if state.Status != "complete" && state.Status != "partial" {
+		l.photoPrep.Position, l.photoPrep.Ready, l.photoPrep.Failed = 0, 0, 0
+	}
 	l.photoPrep.Paused = state.Paused || state.Status == "paused"
-	if state.Enabled && !l.photoPrep.Paused {
+	if state.Enabled && !l.photoPrep.Paused && state.Status != "complete" && state.Status != "partial" && state.Status != "paused_error" {
 		l.photoPrep.Status = "queued"
 	}
 }

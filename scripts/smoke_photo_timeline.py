@@ -18,6 +18,18 @@ def smoke_photo_timeline(context, page, post, base):
     rail = page.locator('[data-time-track]')
     expect(rail).to_be_visible()
     expect(page.locator('[data-time-rank]').filter(has_text='2018')).to_be_visible()
+    expect(page.locator('[data-action="photo-metadata"]').first).to_be_hidden()
+    page.locator('.photo-tools > summary').click()
+    expect(page.locator('[data-metadata-action="dry-run"]')).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page.locator('[data-metadata-action="dry-run"]')).to_be_hidden()
+    bounds = rail.bounding_box()
+    assert page.evaluate('document.documentElement.clientWidth') - bounds['x'] - bounds['width'] >= 30
+    # The reserved rail column also protects toolbar controls from interception.
+    for selector in ('.photos-toolbar', '.photo-search-filters'):
+        box = page.locator(selector).bounding_box()
+        if box:
+            assert box['x'] + box['width'] <= bounds['x'], (selector, box, bounds)
     seeks = []
     page.on('request', lambda r: seeks.append(r.url) if '/api/v1/photos/seek' in r.url else None)
     page.locator('[data-time-rank]').filter(has_text='2018').click()
@@ -42,7 +54,8 @@ def smoke_photo_timeline(context, page, post, base):
     wait_idle(page)
     seeks.clear()
     bounds = rail.bounding_box()
-    page.mouse.move(bounds['x'] + bounds['width'] - 3, bounds['y'] + 8)
+    tick = page.locator('[data-time-rank]').filter(has_text='2018').bounding_box()
+    page.mouse.move(tick['x'] + tick['width']/2, tick['y'] + tick['height']/2)
     page.mouse.down()
     page.mouse.move(bounds['x'] + bounds['width'] - 3, bounds['y'] + bounds['height'] - 4, steps=20)
     assert len(seeks) == 0, 'drag fetched intermediate windows'
@@ -72,6 +85,7 @@ def smoke_photo_timeline(context, page, post, base):
     report = context.request.get('/api/v1/photos/metadata-jobs?report=1').json()
     assert len(report['entries']) == 5
     smoke_cancelled_seek(page, rail)
+    smoke_delayed_summary_history(page, rail)
     measure_rail(context, page)
     page.set_viewport_size({'width': 390, 'height': 844})
     page.reload()
@@ -92,6 +106,35 @@ def smoke_photo_timeline(context, page, post, base):
 
 def wait_idle(page):
     page.wait_for_function("async () => {const {state}=await import('/data.js');return !state.photoLoading && !state.photoJumpAnchor;}")
+
+
+def smoke_delayed_summary_history(page, rail):
+    wait_idle(page)
+    held = []
+    def hold_once(route):
+        if not held:
+            held.append((route, route.fetch()))
+        else:
+            route.continue_()
+    page.route('**/api/v1/photos/dates?**', hold_once)
+    try:
+        rail.focus()
+        rail.press('Home')
+        expect(rail).to_have_attribute('aria-valuetext', 'June 2024')
+        page.wait_for_timeout(100)
+        assert held, 'summary was not delayed'
+        # A second accepted page must not erase the first jump's history entry.
+        rail.press('End')
+        expect(rail).to_have_attribute('aria-valuetext', 'January 2011')
+        wait_idle(page)
+        for route, response in held:
+            route.fulfill(response=response)
+        page.go_back()
+        expect(rail).to_have_attribute('aria-valuetext', 'June 2024')
+        wait_idle(page)
+    finally:
+        page.unroute('**/api/v1/photos/dates?**', hold_once)
+    print('PASS: accepted jumps retain Back history while a date summary is delayed')
 
 
 def measure_rail(context, page):

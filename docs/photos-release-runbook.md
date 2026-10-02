@@ -22,7 +22,7 @@ volume; it has no network, no vault volume and no private path or key.
 | Restic repositories or shared manifests/objects/key envelopes | Preserve the configured backend and all its required keys. A Photos UI update never migrates or deletes these. |
 | `.weazl-photo-ingest/*.enc` | Durable logical upload receipts. Keep with the vault; completed receipts prevent duplicate uploads after lost replies. |
 | Node `uploads/` | Existing byte-engine manifests/chunks and unfinished staging. Preserve active sessions or explicitly cancel them. Unfinished sessions retain for 24 hours. |
-| `.weazl-photo-jobs.enc` and preparation state | Durable per-asset jobs, attempts and leases. Pending catalog markers on Photos uploads and sidecars retry checkpoint creation after unlock/reload. |
+| `.weazl-photo-jobs.enc`, `.weazl-photo-jobs.journal.enc` and preparation state | Durable per-asset jobs, attempts and leases. Pending catalog markers on Photos uploads and sidecars retry checkpoint creation after unlock/reload. |
 | `.weazl-photo-metadata.enc` / `.weazl-photo-metadata-dry-run.enc` | Encrypted capture-date repair options, source checkpoints and private per-asset outcomes. Preserve it with the catalog. Queued/running work resumes after owner unlock; paused work stays paused. Dry-run output preserves the apply checkpoint; a durable sequence selects the latest job. |
 | `.weazl-photos-index.enc`, preview/failure/thumbnail caches | Encrypted derived data. Rebuild from the canonical catalog and originals; clearing a cache must not erase albums or edits. |
 | `.weazl-photo-selections/*.enc` | Owner/revision/visibility-bound 90-minute selections. Expired selections are recreated; do not treat them as permanent albums. |
@@ -137,3 +137,30 @@ Date-only changes reuse existing pixel caches. See the
 Account deletion remains final removal of that owner's files, upload data,
 albums, device credentials and frozen grants. Hiding a folder is only Photos
 presentation within the owner's vault and is neither deletion nor grant revocation.
+
+## Thumbnail cache / queue upgrade (October 1, 2026)
+
+The version-1 encrypted job snapshot remains readable by the previous image.
+New operations append authenticated, sequenced encrypted records to
+`.weazl-photo-jobs.journal.enc`; compaction atomically publishes a snapshot before
+clearing that journal. A torn final frame is truncated; complete corrupt records
+pause processing. Keep both files in the same consistent recovery point.
+
+Before an image rollback, **unlock and cleanly drain the new image** so it exports
+all journal state into the compatible snapshot. Verify the stop/drain succeeded.
+Never remove the only journal or downgrade after a forced stop without first
+replaying/exporting it with the current image. A locked shutdown cannot decrypt
+and export pending journal changes. Existing original/catalog compatibility rules
+above still apply. The `WEAZLCLOUD_PREVIEW_BUNDLE=off` and
+`WEAZLCLOUD_PREVIEW_READER=off` switches provide forward fallbacks without an image
+rollback or private-data restore.
+
+Cache filenames and legacy JSON envelopes stay compatible. New envelopes add
+optional size/ThumbHash data; `<content-key>.meta.enc` files are small encrypted
+manifest segments and count toward cache bounds. Cache corruption is a miss,
+not evidence of a stored original failure. Do not wipe these directories to test
+an upgrade. Explicit limits are preserved; unset byte caps use adaptive space
+sharing and a 200,000-record owner bound. A 2-CPU/4-GiB deployment retains one
+worker and a 512-MiB preview allowance, using CLI reads when a resident index
+would not leave room for a full decode. Keep separate API/worker cgroup budgets;
+concurrency knobs alone are not a hard combined CPU or RSS limit.

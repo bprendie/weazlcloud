@@ -3,6 +3,8 @@ package library
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"image"
 	"io"
@@ -128,6 +130,34 @@ func (l *Library) thumbnailSource(ctx context.Context, expected catalog.File, li
 		defer func() { <-thumbnailReaders }()
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	}
+	if reader, releaseReader := l.borrowPreviewReader(ctx); reader != nil {
+		result, readErr := reader.ReadImage(ctx, ref.Snapshot, ref.Object, int(limit))
+		releaseReader()
+		if readErr == nil {
+			valid := result.Size == uint64(expected.Size) && int64(len(result.Body)) == min(limit, expected.Size)
+			if valid && !prefix {
+				hash := sha256.Sum256(result.Body)
+				valid = hex.EncodeToString(hash[:]) == expected.Hash
+			}
+			if !valid {
+				clear(result.Body)
+				return nil, ErrThumbnailUnavailable
+			}
+			if err := l.validatePreview(ctx, expected); err != nil {
+				clear(result.Body)
+				return nil, err
+			}
+			if !prefix {
+				reportPhotoProgress(ctx, 85)
+			}
+			return result.Body, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		// Newly uploaded packs and an unavailable helper retain the admitted CLI
+		// path. A failed immutable read never publishes partial stream bytes.
 	}
 	readCtx, cancel := context.WithCancel(ctx)
 	readCtx = restic.WithMemoryLimit(readCtx, sourceAllowance(expected))
