@@ -171,6 +171,12 @@ def smoke_photo_selection(context, page, base):
     # Clicking the tile while selection is active toggles rather than opening.
     page.locator('.photo-grid [data-select-file]').nth(1).click()
     expect(page.locator('.selection-toolbar')).to_contain_text('2 selected')
+    second_id=page.locator('[data-photo-select]').nth(1).get_attribute('data-photo-select')
+    page.locator('.photo-grid [data-select-file]').nth(1).click()
+    expect(page.locator('.selection-toolbar')).to_contain_text('1 selected')
+    expect(page.locator('[data-photo-select="'+second_id+'"]')).to_have_attribute('aria-pressed','false')
+    page.locator('.photo-grid [data-select-file]').nth(1).click()
+    expect(page.locator('.selection-toolbar')).to_contain_text('2 selected')
     page.locator('[data-photo-visibility="hide"]').click()
     expect(page.locator('.photo-grid .photo-tile')).to_have_count(3)
     expect(page.locator('.selection-toolbar')).to_have_count(0)

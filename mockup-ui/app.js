@@ -453,7 +453,7 @@ function toggleFileSelection(id) {
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
   state.selectedFiles = [...selected];
-  state.selected = selected.size ? {type: 'file', id} : null;
+  state.selected = selected.size ? {type: 'file', id: selected.has(id) ? id : selected.values().next().value} : null;
   state.selectionAnchor = id;
   renderMain();
   renderDeck();

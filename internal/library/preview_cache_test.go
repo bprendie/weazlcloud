@@ -3,6 +3,7 @@ package library
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -25,9 +26,14 @@ func TestCacheConcurrentCapacityAndRecency(t *testing.T) {
 	oldNode := thumbnailNodeMaxBytes
 	thumbnailNodeMaxBytes = 12
 	defer func() { thumbnailNodeMaxBytes = oldNode; forgetThumbnailNode(root) }()
-	write := func(key string) {
+	write := func(key string, allowPressure bool) {
 		finish, err := reserveThumbnail(root, key, 4, 320)
 		if err != nil {
+			// In-flight writes are pinned. Four concurrent four-byte writes cannot
+			// all reserve a twelve-byte cache; refusing excess admission is correct.
+			if allowPressure && errors.Is(err, ErrPreviewCacheSkipped) {
+				return
+			}
 			t.Error(err)
 			return
 		}
@@ -37,11 +43,11 @@ func TestCacheConcurrentCapacityAndRecency(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	write("a")
-	write("b")
-	write("c")
+	write("a", false)
+	write("b", false)
+	write("c", false)
 	touchThumbnail(root, "a", 320)
-	write("d")
+	write("d", false)
 	if _, err := os.Stat(filepath.Join(root, "b.enc")); !os.IsNotExist(err) {
 		t.Fatal("cold entry survived", err)
 	}
@@ -51,7 +57,7 @@ func TestCacheConcurrentCapacityAndRecency(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, key := range []string{"e", "f", "g", "h"} {
 		wg.Add(1)
-		go func() { defer wg.Done(); write(key) }()
+		go func() { defer wg.Done(); write(key, true) }()
 	}
 	wg.Wait()
 	c := thumbnailNode(dir)
@@ -107,5 +113,40 @@ func TestEncryptedPreviewManifestAndCorruption(t *testing.T) {
 	grid, _ := thumbnailKey(l.vault, f, 320)
 	if !l.validCachedPreview(grid) {
 		t.Fatal("manifest damage discarded valid grid")
+	}
+}
+
+func TestCachePinnedCapacityRejectsExcessWrite(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".weazl-previews")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	oldNode := thumbnailNodeMaxBytes
+	thumbnailNodeMaxBytes = 12
+	defer func() { thumbnailNodeMaxBytes = oldNode; forgetThumbnailNode(root) }()
+	releases := []func(bool){}
+	defer func() {
+		for _, finish := range releases {
+			finish(false)
+		}
+	}()
+	for _, key := range []string{"a", "b", "c"} {
+		finish, err := reserveThumbnail(root, key, 4, 320)
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, finish)
+	}
+	if finish, err := reserveThumbnail(root, "excess", 4, 320); !errors.Is(err, ErrPreviewCacheSkipped) {
+		if finish != nil {
+			finish(false)
+		}
+		t.Fatalf("pinned capacity admitted excess: %v", err)
+	}
+	c := thumbnailNode(filepath.Dir(root))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pending != 12 || c.total != 0 {
+		t.Fatalf("in-flight capacity pending=%d retained=%d", c.pending, c.total)
 	}
 }
