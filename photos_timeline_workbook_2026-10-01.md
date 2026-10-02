@@ -325,10 +325,11 @@ sequence; completion and real dated browser gates remain open.
   wiping a vault or blindly restoring an old writer over newer metadata.
 - [x] Deploy the tested image, verify readiness/public HTTPS and confirm that
   account/settings/originals/albums still reconcile. Retain the original backend.
-- [ ] Run an owner-private dry run against the live selected roots and retain its
+- [x] Run an owner-private dry run against the live selected roots and retain its
   report. Inspect source coverage and ambiguity before the apply job.
-- [ ] Start the durable batched repair. Let it run without browser presence;
-  unrelated thumbnails continue within the shared CPU/I/O budget. Keep corrupt
+- [x] Start the durable batched repair. Let it run without browser presence;
+  thumbnails are temporarily paused for extraction/apply priority and resume
+  after clean supervised reconciliation unless the owner changes that pause. Keep corrupt
   sources and failures for explicit later retry. Do not remove originals, sidecars,
   duplicate entries, old repositories or rollback material as part of this job.
 - [ ] After completion, report before/after known dates, updated/unchanged/
@@ -375,7 +376,7 @@ without notifications or a feed imposed on the user.
 | T3 | Local gate passed | Scoped month/day ranks, nearest-day and rank seeks, bounded before/after pages, filtered and cross-owner cursors. Warm metadata-only p95: 0.336 ms at 37,082 rows; 0.132 ms at 100,000. |
 | T4 | Local gate passed | Desktop and Chromium-touch pointer release, keyboard/date picker/Unknown, viewer/history/mode restoration, canceled seeks and tray clearance pass on both backends. Safari remains separate. |
 | T5 | Automated acceptance passed; manual measurements open | Full normal/race/check, container restart/migration, browser, Photos and recovery pass. Rail cards p95: 72.01/73.45 ms; HTTP pair: 4.18/4.08 ms (Restic/shared). GitHub CI run 36925632808 passed checks, container and browser. Actual Safari, cold index and real-library sustained resource gates remain open. |
-| T6 | Live deployment passed; repair in progress | Fresh 275,048-file checkpoint; original mounts/backend/limits retained. 96,971 Library entries, 37,082 media and 16 albums reconcile; sample originals unchanged. HTTPS and desktop/mobile Chromium pass. First live dry-run checkpoint: 100 examined, 98 recoverable dates, two failures retained. Supervised dry-run/apply and final source/date reconciliation remain running/open. |
+| T6 | Live deployment and extraction passed; apply in progress | Persistent-reader release 878fec4; fresh 275,906-file checkpoint; mounts/backend/limits retained. 96,971 Library entries, 37,082 media and 16 albums reconcile; sample originals unchanged. Remaining 36,882 inspection entries finished in 2m42s; report inspected and apply started. Live dated rail and desktop/mobile Chromium pass. Final apply counts, source reconciliation and full dated navigation gates remain open. |
 
 After each phase, record changed behavior, tests, measurements and limitations.
 Leave failed gates open. A photo missing metadata is not a reason to stop the

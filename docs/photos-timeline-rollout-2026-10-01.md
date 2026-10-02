@@ -113,3 +113,13 @@ The controller's final event is `repair_completed_and_reconciled` on a clean
 comparison; `reconciliation_needs_review` or `supervisor_stopped_for_review`
 requires investigation. No originals, sidecars, duplicate entries, repositories,
 ZIPs or rollback material are deleted by deployment or date repair.
+
+## Extraction acceleration follow-up
+
+The later release `878fec4` replaces per-file Restic index loading with a bounded
+persistent reader. It completed the remaining 36,882 inspection entries in
+2 minutes 42 seconds, and the supervisor has begun apply. See the
+[performance and follow-up rollout record](photos-metadata-performance-2026-10-01.md)
+for the new checkpoint, preservation comparisons, live measurements, CI status,
+and temporary preview pause. The same owner job/report and final reconciliation
+remain authoritative; no originals or sidecars were deleted.

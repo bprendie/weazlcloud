@@ -101,3 +101,48 @@ is temporarily paused to prioritize extraction. The updated detached supervisor
 will inspect the completed dry run, apply, reconcile, and restore preparation
 unless the owner has changed its pause state in the meantime. Its reports remain
 in the original timeline rollout directory.
+
+### First live service measurement
+
+At 00:36:16.966 UTC, the resumed dry run had examined 13,700/37,082 assets:
+12,522 recoverable dates, 519 unresolved, and 659 recorded failures. It started
+from 200 examined at 00:35:23.488: **13,500 additional assets in 53.478 seconds**,
+about **252 assets/second including job checkpoints**, using four readers. This
+clears the one-hour extraction target's required throughput by about 24 times.
+A process sample showed the reader at 178,640 KiB RSS and the API at 1,046,280 KiB;
+these are point samples, not measured peaks. The service's index opened in 2.754
+seconds. Catalog dates remain unchanged until apply begins. Completion counts
+and apply duration will supersede this partial-rate projection.
+
+### Extraction completed; apply underway
+
+The dry run completed at **00:38:05.361 UTC**, 161.873 seconds after resume:
+**36,882 remaining assets in 2 minutes 42 seconds** (about 228/second, including
+checkpoint overhead). The full 37,082-entry report contains 34,302 recoverable
+dates, 2,118 unresolved, and 662 failures. Sources are 32,563 Takeout timestamps
+and 1,739 JPEG EXIF dates; failures are 642 ambiguous sidecar matches and 20
+invalid/unreadable entries, including failures retained from the old serial run.
+These counts describe recoverable candidates, not applied dates.
+
+The supervisor inspected all report pages and started apply at **00:38:27.944
+UTC**. At 00:39:23.259, apply had processed 1,800 assets: 1,747 updated, 44
+unresolved, and nine recorded failures. The early complete-apply projection is
+about 19 minutes from apply start; allow roughly 20–25 minutes including tail
+variation and final reconciliation. It is an estimate, not a completion claim.
+Original bytes, captions, albums, and owner corrections remain protected by the
+existing revision-checked catalog commit. Thumbnails are content-keyed, so date
+changes do not require regenerating already cached image bytes.
+
+After cutover, authenticated live Chromium desktop/mobile smoke passed for the
+Photos grid, decoded viewer/info, albums, Library return, and visible timeline
+rail, with 18 mobile cards and no page errors or horizontal overflow. Public
+Desk/Grab readiness passed over certificate-verified HTTPS. Both containers are
+healthy and the detached supervisor remains active outside the SSH session.
+
+A separate live dated-rail check passed while apply continued: 7,072 known dates
+were present at opening and visible year markers included 2026 through 1990.
+The corrected GitHub [run 36946797704](https://github.com/bprendie/weazlcloud/actions/runs/36946797704)
+passed its complete checks job; browser/container jobs were still running at
+this checkpoint. Their equivalent local smokes passed on both storage backends.
+Apply and final reconciliation remain supervised background work; this record
+does not claim completion before the supervisor reports it.
