@@ -203,6 +203,9 @@ def smoke_photo_selection(context, page, base):
     expect(selector).to_have_css('opacity','1')
     page.keyboard.press('Space')
     expect(page.locator('.selection-toolbar')).to_contain_text('1 selected')
+    bar=page.locator('.selection-toolbar').bounding_box()
+    rail=page.locator('[data-time-track]').bounding_box()
+    assert bar['x']+bar['width'] <= rail['x'], 'selection actions overlap the date rail'
     page.keyboard.press('Escape')
     page.set_viewport_size({'width':1440,'height':1000})
     print('PASS: hover/keyboard selection, bulk Hide/Unhide and Archive/Unarchive, selection-mode clicks and Escape')

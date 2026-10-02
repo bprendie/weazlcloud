@@ -358,5 +358,6 @@ button[aria-pressed=true]{color:var(--yellow)}
 .photo-tile:hover .photo-selector,.photo-tile:focus-within .photo-selector,.photo-grid.selecting .photo-selector,.photo-selector[aria-pressed="true"]{opacity:1;pointer-events:auto}
 .photo-grid .photo-selector[aria-pressed="true"]{background:var(--purple);border-color:var(--purple)}
 .photo-grid .photo-selector:focus-visible{outline:3px solid var(--cyan);outline-offset:3px}
-.photo-heading~.selection-toolbar{position:sticky;top:0;z-index:6}
+.photo-heading~.selection-toolbar{position:sticky;top:0;z-index:6;margin-right:84px}
+@media(max-width:700px){.photo-heading~.selection-toolbar{margin-right:64px}}
 @media(hover:none){.photo-grid .photo-selector{opacity:1;pointer-events:auto;width:44px;height:44px}}
