@@ -142,6 +142,8 @@ Passed gates:
   album/metadata edits, manual pause, viewer, upload and gallery downloads.
 - Focused concurrent tests for early grid output, one-source bundles, surviving
   waiters, two owners, slow-neighbor refill, capacity reservations and RAM reclaim.
+- Actual image rollback drill on both backends: new image → prior `3c410fd` → new
+  image, exercising the old queue writer and preserving pause/IDs/originals/previews.
 - Encrypted journal tests for legacy migration, incremental replay, torn tail,
   corrupt interior, failed writes, active leases and compatible rollback export.
 
@@ -159,3 +161,9 @@ The 10.3 retained bundles/second needed for 37,082 assets in one hour remains an
 open production performance target. Tiny synthetic local results exceeding that
 rate do not close it. Obtain a sustained, authorized sample of remaining missing
 bundles before making an ETA or raising production's preserved CPU limits.
+
+CI initially exposed a fixture mismatch in the two-worker slow-neighbor test: the
+queue used two workers while the runner's independently initialized render gate
+allowed only one. The fixture now supplies matching two-worker admission gates
+and bounded memory, independent of host defaults. The production resource policy
+is unchanged. The corrected test is checked under one-worker environment defaults.

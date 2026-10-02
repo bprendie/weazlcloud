@@ -373,7 +373,7 @@ justify repeating the full test suite.
 - [ ] Measure a bounded authorized sample before any full preparation run. Tune
   within existing CPU/fan and memory limits using observed throughput/RSS. Any
   production ETA uses remaining missing bundles and sustained measured rate.
-- [ ] Verify image rollback with the queue compatibility export and legacy cache
+- [x] Verify image rollback with the queue compatibility export and legacy cache
   path. Do not restore an entire old data volume over uploads/edits made since the
   checkpoint. Follow the recovery runbook if a data restore is actually needed.
 

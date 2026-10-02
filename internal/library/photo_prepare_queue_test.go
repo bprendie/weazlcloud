@@ -37,9 +37,17 @@ func TestPhotoQueueRefillsWhileOneSourceIsSlow(t *testing.T) {
 	l := newPhotoIndexTestLibrary(t)
 	b := &slowFirstPreviewBackend{isolatedLegacy: &isolatedLegacy{root: filepath.Join(filepath.Dir(l.repo), "library")}, started: make(chan struct{}), release: make(chan struct{})}
 	l.backend = b
+	// This is a two-worker scheduling test, independent of the runner's default
+	// one-worker backfill policy. Keep every admission gate consistent with it.
 	old := previewPolicy.BackgroundWorkers
+	oldSlots, oldBackfill, oldReaders, oldMemory := thumbnailSlots, thumbnailBackfill, thumbnailReaders, previewMemory
 	previewPolicy.BackgroundWorkers = 2
-	defer func() { previewPolicy.BackgroundWorkers = old }()
+	thumbnailSlots, thumbnailBackfill, thumbnailReaders = make(chan struct{}, 2), make(chan struct{}, 2), make(chan struct{}, 2)
+	previewMemory = newPreviewMemoryBudget(1 << 30)
+	defer func() {
+		previewPolicy.BackgroundWorkers = old
+		thumbnailSlots, thumbnailBackfill, thumbnailReaders, previewMemory = oldSlots, oldBackfill, oldReaders, oldMemory
+	}()
 	var imageBytes bytes.Buffer
 	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 32, 24))); err != nil {
 		t.Fatal(err)

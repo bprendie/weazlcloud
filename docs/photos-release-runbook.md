@@ -164,3 +164,17 @@ sharing and a 200,000-record owner bound. A 2-CPU/4-GiB deployment retains one
 worker and a 512-MiB preview allowance, using CLI reads when a resident index
 would not leave room for a full decode. Keep separate API/worker cgroup budgets;
 concurrency knobs alone are not a hard combined CPU or RSS limit.
+
+An isolated image rollback drill is available after building the previous and new
+images. It always creates a disposable volume and loopback port; it never accepts
+a production volume. Run it for both storage backends:
+
+```sh
+WEAZLCLOUD_ROLLBACK_IMAGE=weazlcloud:previous python3 scripts/smoke-photo-rollback.py
+WEAZLCLOUD_ROLLBACK_IMAGE=weazlcloud:previous WEAZLCLOUD_SMOKE_STORAGE_BACKEND=shared-experimental python3 scripts/smoke-photo-rollback.py
+```
+
+The October 1 release passed this drill against prior revision `3c410fd`: prepare
+both variants, pause, clean unlocked drain/export, boot the previous image and
+exercise its queue writer, then return to the new image. Both backends retained
+IDs, original hashes, derivative hashes and the manual pause across image changes.
