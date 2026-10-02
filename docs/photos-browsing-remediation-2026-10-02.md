@@ -138,7 +138,9 @@ consistent XFS reflink backup was taken at
 `/exports/dockervolume/weazlcloud-backups/photos-remediation-754465ea546f/data`.
 Node/account settings, catalog, albums, vault envelope and node key checksums
 matched the stopped backup and the restarted node before unlock; repository
-file counts also matched. Live bind mounts, ports, resource ceilings, accounts,
+inventory also matched: 140,039 immutable repository files had identical relative
+paths and sizes in the live `users/*/library` trees and the backup (ephemeral
+Restic locks excluded). Live bind mounts, ports, resource ceilings, accounts,
 passwords and hostname stayed intact. Release configuration and check records
 are under `/home/bobp/weazlcloud-releases/photos-remediation-754465ea546f/`.
 The production custom Compose configuration changed only both image references

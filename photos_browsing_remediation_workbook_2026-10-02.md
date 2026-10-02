@@ -1,9 +1,9 @@
 # Photos browsing and preview remediation workbook
 
-Date: **October 2, 2026**  
-Status: **Deployed and smoke-tested; device/fault-matrix follow-ups documented**  
-Baseline: `3c8b9e4e8099ec664a68597e7b478ce9da32efd1`  
-Previous production application: `15c45144b660eb5d673851d1ca0ae51396407116`  
+Date: **October 2, 2026**
+Status: **Deployed and smoke-tested; device/fault-matrix follow-ups documented**
+Baseline: `3c8b9e4e8099ec664a68597e7b478ce9da32efd1`
+Previous production application: `15c45144b660eb5d673851d1ca0ae51396407116`
 Released code: `754465ea546fe68b0a472e116507a493acb795dc`
 
 ## Outcome
