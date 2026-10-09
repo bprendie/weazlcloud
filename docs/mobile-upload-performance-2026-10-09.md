@@ -108,9 +108,41 @@ All parts landed in 0.12–0.17 seconds on the local host; this does not measure
 Wi-Fi or iCloud export. Preview completion fell from 23.181 to 16.132 seconds
 with Restic and from 12.634 to 5.608 seconds with shared storage.
 
+A second run against the final candidate, with other checks running locally,
+measured 12.949 → 5.691 seconds for Restic (2.28×) and 12.184 → 1.650 seconds
+for shared storage (7.38×). The variation is why these fixture results should
+not be extrapolated to a seeded production repository or phone network.
+
 Both backends passed the old-to-new upgrade fixture: queued work resumed after
 unlock without client finalization, partial uploads retained exact part receipts,
 and original/motion hashes, album membership, Hidden visibility and stored IDs
-survived another restart. The full mobile smokes also covered a 250-MiB component.
+survived another restart. The full mobile smokes also covered a 250-MiB component. The final release image
+passed those smokes on both storage backends with two CPUs and four GiB. Sampled
+server RSS peaked at about 146–147 MiB during that large-file fixture; this is a
+sample, not a memory limit or a bound for larger repositories.
 
-Production activation is recorded after final release validation.
+`make check` passed Go unit/race tests, vet, native-helper tests, source-size checks
+and JavaScript checks. The release image passed isolated renderer probes and
+Desk/WebDAV/Grab/restart/migration container smokes.
+
+### Production activation
+
+Activated `weazlcloud:release-97cb1d939d7f` on October 9, 2026 at 18:25 UTC.
+The old API and renderer exited zero without OOM; the fresh XFS reflink checkpoint
+contains 68,583 files and matched canonical hashes, file sizes and ownership.
+Checkpoint: `/exports/dockervolume/weazlcloud-backups/mobile-ingest-20261009/data`.
+
+The cutover and verification completed in 22.9 seconds. Both services are healthy;
+LAN Desk/Grab/WebDAV readiness, the renderer probe, public HTTPS readiness, exact
+served UI assets and the unauthenticated browser login check passed. Mounts,
+ownership, environment and resource limits were compared before/after and
+preserved. No seed reset or staging purge was performed.
+
+Production reports eight global finalizers and four per owner. Preview policy
+remains eight render workers, four background workers and four source readers.
+Owner sign-in/unlock is required after restart before private queued work can
+resume. The public check did not submit owner credentials; it does not establish
+that the phone has reconnected or that its seed has finished.
+
+The implementation is committed and pushed. GitHub CI was still running at the
+last release check; local checks and the release-image smokes above passed.
