@@ -15,7 +15,7 @@ args=(--cpus 2 --memory 4g --network none --read-only --cap-drop ALL --security-
 if docker run --rm "${args[@]}" -e TMPDIR=/data/tmp "$image" > "$root/invalid.log" 2>&1; then
  echo 'FAIL: invalid worker scratch was accepted';exit 1
 fi
-if ! rg -q 'renderer configuration is invalid' "$root/invalid.log";then cat "$root/invalid.log";exit 1;fi
+if ! grep -Fq 'renderer configuration is invalid' "$root/invalid.log";then cat "$root/invalid.log";exit 1;fi
 docker run -d --name "$name" "${args[@]}" -e TMPDIR=/tmp "$image" >/dev/null
 for attempt in {1..50};do
  if docker exec "$name" /usr/local/bin/weazl-photo-worker -ready;then break;fi
