@@ -82,9 +82,10 @@ missing parts page 200. Finalization uses a persistent, fair worker pool.
 With P equal to visible CPU capacity (including GOMAXPROCS and cgroup limits)
 and M equal to `max(1,min(8,visible_RAM/2_GiB))`, defaults are
 `mobile_finalize_workers = max(1,min(M,P/2))` and
-`mobile_finalize_workers_per_owner = max(1,min(4,M,P/4))`.
+`mobile_finalize_workers_per_owner = max(1,min(8,M,P/4))` below 16 CPUs;
+at 16 or more CPUs the per-owner default is `min(8,M)`.
 Integer division rounds down. Two-CPU hosts use one worker; large hosts can use
-eight globally and four per owner. Explicit operator overrides are described in
+eight globally and eight per owner. Explicit operator overrides are described in
 [mobile upload performance](mobile-upload-performance-2026-10-09.md).
 
 ## Durable devices

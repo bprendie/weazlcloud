@@ -11,6 +11,9 @@ func (c *Catalog) saveLocked() error {
 }
 
 func (c *Catalog) saveFilesLocked(files []File) error {
+	if c.batchOnly {
+		return nil
+	}
 	journal, err := c.nextJournalLocked(files)
 	if err != nil {
 		return err

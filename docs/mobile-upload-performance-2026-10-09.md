@@ -31,15 +31,16 @@ Duplicate owner/upload pairs cannot run concurrently. Device revocation, owner
 deletion and vault lock still cancel work and guard final publication.
 
 Let P be visible CPU capacity and M be `max(1,min(8,visible_RAM/2_GiB))`.
-Defaults are `max(1,min(M,P/2))` globally and `max(1,min(4,M,P/4))` per owner,
-using integer division. CPU affinity/GOMAXPROCS and cgroup CPU/RAM limits govern
-sizing. A two-CPU/four-GiB host uses one finalizer; a sixteen-CPU/sixteen-GiB or
-larger allocation uses eight globally and at most four per owner.
+Defaults are `max(1,min(M,P/2))` globally. Per owner, hosts below 16 visible
+CPUs use `max(1,min(M,P/4))`; hosts with at least 16 visible CPUs use `min(8,M)`.
+Integer division rounds down. CPU affinity/GOMAXPROCS and cgroup CPU/RAM limits
+govern sizing. A two-CPU/four-GiB host uses one finalizer; a host with at least
+16 visible CPUs and 16 GiB RAM uses eight globally and eight per owner.
 
 Optional settings, also forwarded by the reference Compose configuration:
 
 - `WEAZLCLOUD_MOBILE_FINALIZE_WORKERS`: 1–8 globally.
-- `WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER`: 1–4, capped by the global limit.
+- `WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER`: 1–8, capped by the global limit.
 
 Defaults account for resources; explicit overrides can raise those defaults up
 to the hard maxima. Malformed nonempty values fail startup. These are concurrency
@@ -227,3 +228,31 @@ TLS readiness, served assets and browser login. Resource limits and data mounts
 were preserved. Owner unlock is required after this restart. Confirmation that
 all old grants have been renewed still requires authenticated app reconciliation;
 the rollout does not claim every queued production upload has completed.
+
+
+## Catalog batching follow-up
+
+A direct-LAN seed exposed a separate bottleneck: each private component and final
+photo publication rewrote the full encrypted catalog. On this owner that catalog
+was approximately 27 MB, including about 24,000 retained Drive entries. Several
+finalizers contended on those durable writes while most CPU capacity stayed idle.
+
+Photo component insertions and same-grant final publications now coalesce for
+20 ms, up to eight requests per atomic catalog write. A private shadow transaction
+validates each member with the existing mutation logic; conflicts are isolated.
+No success is returned before the encrypted catalog and directory are synced.
+Source mappings, album memberships, Live Photo pairs and journal changes publish
+together. Device authorization keys include owner, device, authorization epoch,
+expiry and scopes, and the current grant remains locked across publication.
+Cancelled/stale-vault requests are excluded; groups with different grants never
+share authorization. Storage intents and existing receipts remain compatible.
+
+This keeps the encrypted catalog format and Restic layout unchanged. Restic
+storage batching remains bounded and sequential per owner; catalog coalescing
+allows more useful work per snapshot and pipelines storage with metadata work.
+Eight finalizers are now allowed per owner on large hosts. There is no unlimited
+worker setting and no need to resend previously accepted parts.
+
+A local metadata-only benchmark with 24,000 retained rows and eight new component
+updates measured 973 ms with individual saves versus 167 ms with one batch
+(about 5.8x for this catalog stage, one sample, not an end-to-end throughput claim).

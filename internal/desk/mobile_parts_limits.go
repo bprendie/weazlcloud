@@ -19,7 +19,11 @@ func mobileFinalizerLimits() mobileFinalizeLimits {
 func resolveMobileFinalizerLimits(cpus int, memory int64, getenv func(string) string) mobileFinalizeLimits {
 	// Budget roughly 2 GiB of visible RAM per concurrent index writer.
 	memoryWorkers := int(min(int64(8), max(int64(1), memory/(2<<30))))
-	limit := mobileFinalizeLimits{min(memoryWorkers, max(1, cpus/2)), min(4, memoryWorkers, max(1, cpus/4))}
+	ownerWorkers := max(1, cpus/4)
+	if cpus >= 16 {
+		ownerWorkers = 8
+	}
+	limit := mobileFinalizeLimits{min(memoryWorkers, max(1, cpus/2)), min(8, memoryWorkers, ownerWorkers)}
 	read := func(name string, fallback, ceiling int) int {
 		n, err := strconv.Atoi(getenv(name))
 		if err != nil || n < 1 || n > ceiling {
@@ -28,7 +32,7 @@ func resolveMobileFinalizerLimits(cpus int, memory int64, getenv func(string) st
 		return n
 	}
 	limit.global = read("WEAZLCLOUD_MOBILE_FINALIZE_WORKERS", limit.global, 8)
-	limit.perOwner = min(limit.global, read("WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER", limit.perOwner, 4))
+	limit.perOwner = min(limit.global, read("WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER", limit.perOwner, 8))
 	return limit
 }
 
@@ -36,7 +40,7 @@ func resolveMobileFinalizerLimits(cpus int, memory int64, getenv func(string) st
 func ValidateMobileFinalizeSettings() error {
 	for name, ceiling := range map[string]int{
 		"WEAZLCLOUD_MOBILE_FINALIZE_WORKERS":           8,
-		"WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER": 4,
+		"WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER": 8,
 	} {
 		raw := os.Getenv(name)
 		if raw == "" {

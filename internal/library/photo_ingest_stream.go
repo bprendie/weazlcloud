@@ -14,7 +14,6 @@ import (
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/sharedstore"
-	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 var ErrPhotoComponentChecksum = errors.New("photo component size or checksum mismatch")
@@ -135,31 +134,7 @@ func (l *Library) StorePhotoComponent(parent context.Context, name string, body 
 			return catalog.File{}, err
 		}
 	}
-	err = func() error {
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if unlocked, current := l.vault.State(); !unlocked || current != session {
-			return vault.ErrLocked
-		}
-		if err := l.loadCatalogSession(session); err != nil {
-			return err
-		}
-		if existing, ok := l.catalog.Get(name); ok {
-			if existing.Size != size || existing.Hash != checksum {
-				return catalog.ErrRevisionMismatch
-			}
-			f = existing
-			return nil
-		}
-		if err := l.catalog.Put(f); err != nil {
-			return err
-		}
-		f, _ = l.catalog.Get(name)
-		return nil
-	}()
+	f, err = l.enqueuePhotoCatalog(photoCatalogRequest{ctx: ctx, session: session, file: f})
 	if err != nil {
 		return catalog.File{}, err
 	}

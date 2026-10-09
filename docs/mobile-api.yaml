@@ -2525,12 +2525,12 @@ components:
             ordered_chunk_bytes: {type: integer, const: 16777216}
             part_bytes: {type: integer, const: 16777216}
             missing_parts_page: {type: integer, const: 200}
-            mobile_finalize_workers_per_owner: {type: integer, minimum: 1, maximum: 4}
+            mobile_finalize_workers_per_owner: {type: integer, minimum: 1, maximum: 8}
             mobile_finalize_workers:
               type: integer
               minimum: 1
               maximum: 8
-              description: CPU/cgroup-RAM sized pool; two-CPU profile = 1. Operator overrides are bounded at eight globally and four per owner.
+              description: CPU/cgroup-RAM sized pool; two-CPU profile = 1. Operator overrides are bounded at eight globally and eight per owner.
           additionalProperties: true
     FileItem:
       type: object
@@ -3031,7 +3031,7 @@ x-release-status: implemented; see mobile-upload-performance-2026-10-09.md for v
 x-part-size-bytes: 16777216
 x-staging-inactivity-seconds: 86400
 x-legacy-reference: photo-api.md and photo-api.yaml
-x-finalizer-limit: CPU/cgroup-RAM sized fair pool; at most eight globally and four per owner; one on two-CPU hosts
+x-finalizer-limit: CPU/cgroup-RAM sized fair pool; at most eight globally and eight per owner; one on two-CPU hosts
 x-unimplemented-route-inventory:
 - method: PATCH
   path: /api/v1/photos/collections/{id}

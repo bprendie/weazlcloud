@@ -46,7 +46,7 @@ func TestMobileFinalizerMemoryLimits(t *testing.T) {
 	}{
 		{0, mobileFinalizeLimits{1, 1}}, {512 << 20, mobileFinalizeLimits{1, 1}},
 		{2 << 30, mobileFinalizeLimits{1, 1}}, {4 << 30, mobileFinalizeLimits{2, 2}},
-		{8 << 30, mobileFinalizeLimits{4, 4}}, {16 << 30, mobileFinalizeLimits{8, 4}},
+		{8 << 30, mobileFinalizeLimits{4, 4}}, {16 << 30, mobileFinalizeLimits{8, 8}},
 	} {
 		got := resolveMobileFinalizerLimits(32, tc.memory, func(string) string { return "" })
 		if got != tc.want {

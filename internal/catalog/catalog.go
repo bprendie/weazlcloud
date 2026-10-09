@@ -85,6 +85,7 @@ type tree struct {
 }
 
 type Catalog struct {
+	batchOnly        bool // private shadow transactions only
 	collections      collectionState
 	savedCollections collectionState
 	mu               sync.Mutex

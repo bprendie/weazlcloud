@@ -17,6 +17,9 @@ import (
 )
 
 type Library struct {
+	photoCatalogMu             sync.Mutex
+	photoCatalogPending        []photoCatalogRequest
+	photoCatalogRunning        bool
 	componentOnce              sync.Once
 	components                 *photoComponentWork
 	liveMu                     sync.Mutex

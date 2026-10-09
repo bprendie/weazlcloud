@@ -9,7 +9,7 @@ import (
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
-func testCatalog(t *testing.T) *Catalog {
+func testCatalog(t testing.TB) *Catalog {
 	t.Helper()
 	dir := t.TempDir()
 	v := vault.New(filepath.Join(dir, "vault.json"), filepath.Join(dir, "node.key"))

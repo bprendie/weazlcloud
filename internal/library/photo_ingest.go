@@ -68,6 +68,10 @@ func (l *Library) CommitPhotoIngest(ctx context.Context, commit catalog.PhotoIng
 // guard, matching backup publication: library -> users -> catalog. The guard
 // invokes publish synchronously; publish only calls the catalog, never Library.
 func (l *Library) CommitPhotoIngestGuarded(ctx context.Context, commit catalog.PhotoIngestCommit, guard func(func() error) error) (catalog.File, error) {
+	if group, _ := ctx.Value(photoCommitGroupKey{}).(string); group != "" && guard != nil {
+		_, session := l.vault.State()
+		return l.enqueuePhotoCatalog(photoCatalogRequest{ctx: ctx, session: session, commit: commit, group: group, guard: guard})
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if err := ctx.Err(); err != nil {

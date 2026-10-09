@@ -149,6 +149,11 @@ func (h *Handler) commitMobilePart(ctx context.Context, res *filesvc.Resource, u
 		return h.users.WithDeviceGrant(intent.Grant, publish, partScopes(s.Spec.Kind)...)
 	}
 	if s.Spec.Kind == "photo" {
+		group, e := json.Marshal(intent.Grant)
+		if e != nil {
+			return nil, e
+		}
+		ctx = library.WithPhotoCommitGroup(ctx, string(group))
 		out, e := h.photoUploads.FinalizePartsGuarded(ctx, res, user, s.ID, s.Spec.DeviceID, open, guard)
 		if e != nil {
 			return nil, e
