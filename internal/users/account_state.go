@@ -5,6 +5,8 @@ import "errors"
 // SetDisabled persists the account state and revokes sessions. The last active
 // administrator cannot be disabled.
 func (s *Store) SetDisabled(id string, disabled bool) error {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := s.indexLocked(id)
@@ -57,6 +59,8 @@ func (s *Store) SetDisableError(id, category string) error {
 }
 
 func (s *Store) BeginDelete(id string) (User, error) {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := s.indexLocked(id)
@@ -97,6 +101,8 @@ func (s *Store) SetDeleteError(id, category string) error {
 }
 
 func (s *Store) CompleteDelete(id string) error {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx := s.indexLocked(id)

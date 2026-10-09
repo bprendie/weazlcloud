@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 	"github.com/bprendie/weazlcloud/internal/mobileparts"
@@ -49,6 +51,10 @@ func (h *Handler) mobilePartGrant(r *http.Request, user users.User, device, kind
 	return users.DeviceGrant{OwnerID: user.ID, DeviceID: d.ID, AuthorizationVersion: d.AuthorizationVersion, ExpiresAt: d.ExpiresAt, Scopes: scopes}, nil
 }
 func (h *Handler) tryMobileParts(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/api/v1/photos/uploads/status" {
+		h.mobilePartsStatusBatch(w, r)
+		return true
+	}
 	kind, base := "photo", "/api/v1/photos/uploads"
 	if strings.HasPrefix(r.URL.Path, "/api/v1/backups/uploads") {
 		kind, base = "file", "/api/v1/backups/uploads"
@@ -103,6 +109,10 @@ func (h *Handler) tryMobileParts(w http.ResponseWriter, r *http.Request) bool {
 			return
 		}
 		if r.Method == http.MethodDelete && len(chunks) == 1 {
+			if e = h.matchMobilePartKind(res, chunks[0], kind); e != nil {
+				mobilePartError(w, e)
+				return
+			}
 			h.cancelMobileParts(w, r, res, user, device, chunks[0], kind)
 			return
 		}
@@ -127,7 +137,7 @@ func (h *Handler) tryMobileParts(w http.ResponseWriter, r *http.Request) bool {
 func (h *Handler) matchMobilePartKind(res *filesvc.Resource, id, kind string) error {
 	// Inspect only encrypted metadata, never return the authorization intent to clients.
 	s, e := h.mobileParts.Session(res, id)
-	if e != nil {
+	if e != nil && !errors.Is(e, mobileparts.ErrExpired) {
 		return e
 	}
 	if s.Spec.Kind != kind {
@@ -163,8 +173,14 @@ func (h *Handler) mobilePartOperation(w http.ResponseWriter, r *http.Request, re
 			apiUsersError(w, err)
 			return
 		}
-		body := mobileGrantReader{src: r.Body, store: h.users, grant: grant, scopes: partScopes(session.Spec.Kind)}
-		v, e = h.mobileParts.Append(ctx, res, id, device, p[2], index, r.ContentLength, r.Header.Get("X-Weazl-SHA256"), body)
+		body := &mobileGrantReader{src: r.Body, store: h.users, grant: grant, scopes: partScopes(session.Spec.Kind), interrupt: func() { _ = http.NewResponseController(w).SetReadDeadline(time.Now()) }}
+		started := time.Now()
+		v, e = h.mobileParts.AppendGuarded(ctx, res, id, device, p[2], index, r.ContentLength, r.Header.Get("X-Weazl-SHA256"), body, func(publish func() error) error {
+			return h.users.WithDeviceGrant(grant, publish, partScopes(session.Spec.Kind)...)
+		})
+		if e != nil || time.Since(started) > 10*time.Second {
+			log.Printf("mobile receive transport=%s tls=%t proxy_headers_present=%t auth_ms=%d body_ms=%d outcome=%s", r.Proto, r.TLS != nil, r.Header.Get("X-Forwarded-For") != "", body.auth.Milliseconds(), body.read.Milliseconds(), mobileparts.ReceiveFailureClass(e))
+		}
 	case len(p) == 2 && p[1] == "parts" && r.Method == http.MethodGet:
 		cursor, limit := int64(0), 200
 		if raw := r.URL.Query().Get("cursor"); raw != "" {
@@ -211,6 +227,9 @@ func (h *Handler) mobilePartOperation(w http.ResponseWriter, r *http.Request, re
 func mobilePartError(w http.ResponseWriter, e error) {
 	status, code := 503, "storage_unavailable"
 	switch {
+	case errors.Is(e, mobileparts.ErrBusy):
+		status, code = 429, "upload_busy"
+		w.Header().Set("Retry-After", "5")
 	case errors.Is(e, mobileparts.ErrInvalid):
 		status, code = 400, "invalid_request"
 	case errors.Is(e, users.ErrNoSession):
@@ -245,22 +264,4 @@ func mobilePartsExists(res *filesvc.Resource, id string) bool {
 	}
 	_, err := os.Stat(filepath.Join(mobileparts.Root(res), id, "session.enc"))
 	return err == nil
-}
-
-type mobileGrantReader struct {
-	src    io.Reader
-	store  *users.Store
-	grant  users.DeviceGrant
-	scopes []string
-}
-
-func (r mobileGrantReader) Read(p []byte) (int, error) {
-	if err := r.store.CheckDeviceGrant(r.grant, r.scopes...); err != nil {
-		return 0, err
-	}
-	n, err := r.src.Read(p)
-	if revoked := r.store.CheckDeviceGrant(r.grant, r.scopes...); revoked != nil {
-		return 0, revoked
-	}
-	return n, err
 }

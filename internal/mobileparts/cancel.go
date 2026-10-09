@@ -12,6 +12,11 @@ import (
 // a non-nil JSON result proving publication already completed. Errors preserve
 // the engine's state, permitting an idempotent retry after coordinator recovery.
 func (m *Manager) CancelCoordinated(res *filesvc.Resource, id, device string, cleanup func(Session) (json.RawMessage, error)) (View, error) {
+	resume, err := m.stopReceivers(res, id, device)
+	if err != nil {
+		return View{}, err
+	}
+	defer resume()
 	unlock := m.lock(res, id)
 	defer unlock()
 	s, err := m.load(res, id)

@@ -548,3 +548,19 @@ Intrinsic grants: GET mobile capabilities/profile/status, GET devices/self-devic
 POST self rotate/revoke and the legacy self-revoke endpoint. Enrollment and
 reauthorization remain cookie-only. The allowlist's duplicate maintenance routes
 require `photos:v1`, which is not an enrollable explicit scope.
+
+## Upload responsiveness and batched receipt polling (October 9)
+
+See [mobile-upload-status-batch.md](mobile-upload-status-batch.md) for the additive
+`POST /api/v1/photos/uploads/status` contract. Discover
+`features.upload_status_batch_v1` before switching from individual status GETs.
+Statuses remain owner/device isolated and carry the existing durable stored
+receipt. Capabilities publish batch/polling, receiving, and pending-work limits.
+
+The parts receiver streams encrypted bytes outside the upload-session lock, then
+revalidates current authorization and session identity for durable publication.
+An authorization publication barrier preserves revoke-versus-commit ordering
+without holding the general user-state mutex during catalog persistence.
+Receiver/backlog pressure returns 429 `upload_busy` with Retry-After 5; accepted
+work resumes normally. Originals, encryption, receipts, and API transports retain
+their existing formats. See the release results for verified limits and timings.

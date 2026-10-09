@@ -17,21 +17,25 @@ import (
 )
 
 type Manager struct {
-	mu           sync.Mutex
-	scanMu       sync.Mutex
-	scans        map[string]*directoryScan
-	scanTick     uint64
-	gates        map[string]*sessionGate
-	checked      map[string]time.Time
-	reservations map[string]reservation
-	active       map[string]*activeJob
-	draining     map[string]int
-	quota        *quota.Manager
-	now          func() time.Time
+	admissionMu    sync.Mutex
+	mu             sync.Mutex
+	scanMu         sync.Mutex
+	scans          map[string]*directoryScan
+	scanTick       uint64
+	gates          map[string]*sessionGate
+	checked        map[string]time.Time
+	reservations   map[string]reservation
+	active         map[string]*activeJob
+	draining       map[string]int
+	quota          *quota.Manager
+	now            func() time.Time
+	receivers      map[*receiver]bool
+	receiveBlocked map[string]int
+	receiveLimits  ReceiveLimits
 }
 
 func New(q *quota.Manager) *Manager {
-	return &Manager{scans: map[string]*directoryScan{}, gates: map[string]*sessionGate{}, checked: map[string]time.Time{}, reservations: map[string]reservation{}, active: map[string]*activeJob{}, draining: map[string]int{}, quota: q, now: time.Now}
+	return &Manager{scans: map[string]*directoryScan{}, gates: map[string]*sessionGate{}, checked: map[string]time.Time{}, reservations: map[string]reservation{}, active: map[string]*activeJob{}, draining: map[string]int{}, quota: q, now: time.Now, receivers: map[*receiver]bool{}, receiveBlocked: map[string]int{}, receiveLimits: ReceiveLimits{Global: 32, PerOwner: 32, Pending: 512, PendingBytes: 32 << 30}}
 }
 func Root(res *filesvc.Resource) string {
 	return filepath.Join(filepath.Dir(res.Lib.PhotoIngestDir()), ".weazl-mobile-parts")
@@ -63,7 +67,9 @@ func (m *Manager) unlockGate(key string, g *sessionGate) {
 	g.refs--
 	if g.refs == 0 {
 		delete(m.gates, key)
-		delete(m.checked, key)
+		if !m.hasReceiversLocked(key) {
+			delete(m.checked, key)
+		}
 	}
 	m.mu.Unlock()
 }

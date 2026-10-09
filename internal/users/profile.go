@@ -29,6 +29,8 @@ func (s *Store) UpdateProfile(id, fullName string) (User, error) {
 }
 
 func (s *Store) ChangePassword(id, current, next string) error {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	if len(next) < 8 {
 		return errors.New("password must be at least 8 characters")
 	}

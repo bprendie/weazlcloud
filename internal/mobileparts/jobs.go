@@ -24,7 +24,7 @@ func (m *Manager) Process(ctx context.Context, res *filesvc.Resource, id string,
 		return e
 	}
 	m.mu.Lock()
-	if m.active[key] != nil {
+	if m.active[key] != nil || m.hasReceiversLocked(key) {
 		m.mu.Unlock()
 		u()
 		return nil

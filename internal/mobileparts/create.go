@@ -48,6 +48,11 @@ func (m *Manager) Create(res *filesvc.Resource, owner, id string, spec Spec) (Vi
 	if e != nil && !errors.Is(e, ErrNotFound) {
 		return View{}, e
 	}
+	m.admissionMu.Lock()
+	defer m.admissionMu.Unlock()
+	if e = m.admitNew(res, spec); e != nil {
+		return View{}, e
+	}
 	key, e := cryptox.Random(32)
 	if e != nil {
 		return View{}, e

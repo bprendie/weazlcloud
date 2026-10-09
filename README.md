@@ -210,6 +210,10 @@ and heavier concurrent work need their own measurements.
   bounded server workers after all components arrive. A durable processing
   record queues metadata and previews after the original is stored. Mobile
   clients should send the original capture date, including for HEIC and video.
+  Batched photo-upload status polling is available through capability discovery;
+  see [the app handoff](docs/mobile-upload-status-batch.md). Receivers stream
+  encrypted parts outside session locks, and bounded admission preserves queued
+  work when the server is busy.
 
 Set `WEAZLCLOUD_PHOTO_SCHEDULE` in `deploy/compose.env` (or the service environment):
 

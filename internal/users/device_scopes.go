@@ -115,6 +115,7 @@ var deviceGrants = []routeGrant{
 	grant("POST", "/api/v1/photos/source-collections", false, PhotosWrite),
 	grant("POST", "/api/v1/photos/source-memberships", false, PhotosWrite),
 	grant("POST", "/api/v1/photos/uploads", true, PhotosWrite),
+	grant("POST", "/api/v1/photos/uploads/status", false, PhotosWrite),
 	grant("GET", "/api/v1/photos/uploads/*", true, PhotosWrite),
 	grant("GET", "/api/v1/photos/uploads/*/parts", false, PhotosWrite),
 	grant("POST", "/api/v1/photos/uploads/*/retry", false, PhotosWrite),

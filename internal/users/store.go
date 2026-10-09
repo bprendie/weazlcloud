@@ -69,6 +69,7 @@ type file struct {
 
 type Store struct {
 	mu            sync.Mutex
+	publishMu     sync.RWMutex
 	path          string
 	userRoot      string
 	users         []User
@@ -121,7 +122,6 @@ func (s *Store) AccessRequests() []AccessRequest {
 	copy(out, s.requests)
 	return out
 }
-
 func (s *Store) Count() int { s.mu.Lock(); defer s.mu.Unlock(); return len(s.users) }
 
 func (s *Store) Users() []User {

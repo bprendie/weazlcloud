@@ -31,6 +31,9 @@ import sys
 import time
 import uuid
 import zlib
+import threading
+import http.client
+import urllib.parse
 
 
 sys.dont_write_bytecode = True
@@ -39,6 +42,7 @@ SPEC = importlib.util.spec_from_file_location('mobile_smoke_fixtures', SOURCE)
 smoke = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(smoke)
 ROUTE = '/api/v1/photos/uploads'
+from mobile_upload_load import PollingLoad, seed_catalog, responsive
 
 
 def png(index, width=768, height=768):
@@ -190,6 +194,11 @@ def percentile(values, fraction):
 
 def benchmark(image, backend, args, payloads, label):
     with Fixture(image, backend, args) as fixture:
+        if args.catalog_rows:
+            seed_catalog(fixture, args.catalog_rows)
+        pressure = PollingLoad(fixture, args) if args.polling_load else None
+        if pressure:
+            pressure.start()
         started = time.monotonic()
         records = []
 
@@ -199,11 +208,14 @@ def benchmark(image, backend, args, payloads, label):
             before = time.monotonic()
             transfer = smoke.transfer_create(client, ROUTE, spec)
             latency = time.monotonic() - before
+            part_latencies = []
             for part in range((len(body) + smoke.PART_SIZE - 1) // smoke.PART_SIZE):
+                part_started = time.monotonic()
                 accepted = put_part(client, transfer['id'], body, part)
+                part_latencies.append(time.monotonic() - part_started)
             smoke.require(accepted['components'][0]['received_bytes'] == len(body), 'landed counters mismatch')
             return {'id': transfer['id'], 'spec': spec, 'body': body,
-                    'create_s': latency, 'landed_s': time.monotonic() - started}
+                    'part_latencies': part_latencies, 'create_s': latency, 'landed_s': time.monotonic() - started}
 
         # Separate pools: waiting for stored must never occupy an upload lane.
         with ThreadPoolExecutor(max_workers=args.concurrency) as uploads, ThreadPoolExecutor(max_workers=args.concurrency) as polls:
@@ -211,6 +223,8 @@ def benchmark(image, backend, args, payloads, label):
             for future in as_completed([uploads.submit(upload, i) for i in range(len(payloads))]):
                 record = future.result()
                 records.append(record)
+                if pressure:
+                    pressure.add(record['id'])
 
                 def observe(record=record):
                     view = wait_stored(fixture.client(), record['id'], args.timeout)
@@ -238,8 +252,14 @@ def benchmark(image, backend, args, payloads, label):
             replay = smoke.transfer_create(fixture.client(), ROUTE, record['spec'])
             smoke.require(replay['id'] == record['id'] and replay['result'] == record['view']['result'], 'receipt replay changed')
         verify_membership(fixture, records)
+        if pressure:
+            pressure.stop()
         total = sum(map(len, payloads)) / (1 << 20)
         metrics = {'run': label, 'backend': backend, 'cpus': args.cpus, 'memory': args.memory,
+                   'stored_photos_per_minute': round(len(records) * 60 / stored_s, 2),
+                   'part_p50_ms': round(percentile([v for r in records for v in r['part_latencies']], .5) * 1000, 2),
+                   'part_p95_ms': round(percentile([v for r in records for v in r['part_latencies']], .95) * 1000, 2),
+                   'resource_snapshot': smoke.docker('stats', '--no-stream', '--format', '{{.CPUPerc}} {{.MemUsage}}', fixture.name).stdout.strip(),
                    'assets': len(records), 'concurrency': args.concurrency, 'mib': round(total, 3),
                    'all_landed_s': round(landed_s, 3), 'all_stored_observed_s': round(stored_s, 3),
                    'landed_mib_s': round(total / landed_s, 3), 'stored_mib_s': round(total / stored_s, 3),
@@ -248,7 +268,8 @@ def benchmark(image, backend, args, payloads, label):
                    'landed_to_stored_p50_s': round(percentile([r['stored_s'] - r['landed_s'] for r in records], .5), 3),
                    'landed_to_stored_p95_s': round(percentile([r['stored_s'] - r['landed_s'] for r in records], .95), 3),
                    'preview_complete_observed_s': round(preview_s, 3),
-                   'preview_after_stored_s': round(preview_s - stored_s, 3)}
+                   'preview_after_stored_s': round(preview_s - stored_s, 3),
+                   'catalog_rows': args.catalog_rows, 'status_load': pressure.metrics() if pressure else None}
         print('METRICS ' + json.dumps(metrics, sort_keys=True), flush=True)
         return metrics
 
@@ -379,9 +400,15 @@ def main():
     parser.add_argument('--backend', choices=('both', 'restic', 'shared-experimental'), default='both')
     parser.add_argument('--count', type=int, choices=range(12, 17), default=12)
     parser.add_argument('--concurrency', type=int, choices=range(1, 9), default=4)
-    parser.add_argument('--cpus', type=int, choices=(4, 8), default=4)
+    parser.add_argument('--cpus', type=int, choices=(2, 4, 8), default=4)
     parser.add_argument('--memory', choices=('4g', '8g'), default='4g')
     parser.add_argument('--timeout', type=int, default=300)
+    parser.add_argument('--repeats', type=int, choices=(1, 3), default=1)
+    parser.add_argument('--catalog-rows', type=int, choices=(0, 24000), default=0)
+    parser.add_argument('--polling-load', action='store_true')
+    parser.add_argument('--status-mode', choices=('individual', 'batch'), default='individual')
+    parser.add_argument('--responsiveness', action='store_true')
+    parser.add_argument('--only-responsiveness', action='store_true')
     parser.add_argument('--full-smokes', action='store_true', help='also run existing extended native smoke and 250 MiB fixture')
     args = parser.parse_args()
     if not 30 <= args.timeout <= 1800:
@@ -397,12 +424,20 @@ def main():
         print('DATASET ' + hashlib.sha256(b''.join(hashlib.sha256(p).digest() for p in payloads)).hexdigest(), flush=True)
         backends = ('restic', 'shared-experimental') if args.backend == 'both' else (args.backend,)
         for backend in backends:
-            baseline = benchmark(old, backend, args, payloads, 'baseline') if old else None
-            candidate = benchmark(new, backend, args, payloads, 'new')
-            if baseline:
-                print('COMPARISON ' + json.dumps({'backend': backend, 'stored_rate_ratio': round(candidate['stored_mib_s'] / baseline['stored_mib_s'], 3),
-                                                 'note': 'single cold disposable run each; polling observations, no performance assertion'}), flush=True)
+            if args.only_responsiveness:
+                responsive(new, backend, args)
+                continue
+            for repeat in range(args.repeats):
+                baseline = benchmark(old, backend, args, payloads, 'baseline-' + str(repeat)) if old else None
+                candidate = benchmark(new, backend, args, payloads, 'new-' + str(repeat))
+                if baseline:
+                    print('COMPARISON ' + json.dumps({'backend': backend, 'repeat': repeat,
+                          'stored_rate_ratio': round(candidate['stored_mib_s'] / baseline['stored_mib_s'], 3),
+                          'note': 'cold disposable run; client polling observations'}), flush=True)
+            if old:
                 upgrade(old, new, backend, args)
+            if args.responsiveness:
+                responsive(new, backend, args)
             if args.full_smokes:
                 full_mobile(new, backend, args)
         return 0

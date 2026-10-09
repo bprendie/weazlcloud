@@ -108,7 +108,17 @@ func (m *Manager) ReleaseOwner(owner string) error {
 			gates[key] = g
 		}
 	}
+	var receivers []*receiver
+	for r := range m.receivers {
+		if r.owner == owner {
+			r.cancel()
+			receivers = append(receivers, r)
+		}
+	}
 	m.mu.Unlock()
+	for _, r := range receivers {
+		<-r.done
+	}
 	for _, job := range jobs {
 		<-job.done
 	}
@@ -134,5 +144,6 @@ func (m *Manager) ReleaseOwner(owner string) error {
 func (m *Manager) isActive(res *filesvc.Resource, id string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.active[keyFor(res, id)] != nil
+	key := keyFor(res, id)
+	return m.active[key] != nil || m.hasReceiversLocked(key)
 }

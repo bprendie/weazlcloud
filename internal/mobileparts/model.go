@@ -14,6 +14,7 @@ const PartSize int64 = 16 << 20
 const Lifetime = 24 * time.Hour
 
 var (
+	ErrBusy       = errors.New("mobile upload admission busy")
 	ErrInvalid    = errors.New("invalid mobile parts specification")
 	ErrNotFound   = errors.New("mobile upload not found")
 	ErrConflict   = errors.New("mobile upload identity conflict")

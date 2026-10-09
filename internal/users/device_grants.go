@@ -83,12 +83,17 @@ func (s *Store) CheckDeviceGrant(g DeviceGrant, scopes ...string) error {
 }
 
 // WithDeviceGrant serializes the final publish with device/account invalidation.
-// publish MUST NOT call Store methods. Caller still holds its vault/lifecycle
+// publish MUST NOT call authorization mutation methods. Ordinary grant reads
+// use only the short state mutex; persistence never holds it. Lock order is
+// publication barrier then state mutex. Caller still holds its vault/lifecycle
 // lease and checks destination revisions atomically in its own catalog commit.
 func (s *Store) WithDeviceGrant(g DeviceGrant, publish func() error, scopes ...string) error {
+	s.publishMu.RLock()
+	defer s.publishMu.RUnlock()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.checkGrantLocked(g, scopes); err != nil {
+	err := s.checkGrantLocked(g, scopes)
+	s.mu.Unlock()
+	if err != nil {
 		return err
 	}
 	return publish()

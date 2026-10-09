@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/capsule"
 	"github.com/bprendie/weazlcloud/internal/catalog"
@@ -83,7 +84,14 @@ func runNativePhotoSimulator(t *testing.T, backend string) {
 	request("POST", "/api/unlock", jsonBody(map[string]string{"passphrase": "native-vault"}), "", nil, 200)
 	user := us.Users()[0]
 	resource := h.registry.For(user)
-	t.Cleanup(func() { resource.LockVault() })
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := resource.Lib.Drain(ctx); err != nil {
+			t.Error(err)
+		}
+		resource.LockVault()
+	})
 	device, token, err := us.CreateDevice(user.ID, "iPhone")
 	if err != nil {
 		t.Fatal(err)

@@ -36,6 +36,8 @@ func tokenHash(value string) string {
 
 // SetClock injects the device credential clock. nil restores wall time.
 func (s *Store) SetClock(clock func() time.Time) {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clock = clock
@@ -116,6 +118,8 @@ func publicDevice(d Device) Device {
 	return d
 }
 func (s *Store) RevokeDevice(owner, id string) error {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, d := range s.devices {

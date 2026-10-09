@@ -31,6 +31,8 @@ func validRotation(operation, secret string, expected uint64) bool {
 // RotateDevice uses the client-prepared 32-byte hex secret; it never returns it.
 // A previous credential may replay only the last identical operation during grace.
 func (s *Store) RotateDevice(r *http.Request, id, operation string, expected uint64, replacement string) (Device, error) {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	if !validRotation(operation, replacement, expected) {
 		return Device{}, ErrInvalidRotation
 	}
@@ -80,6 +82,8 @@ func (s *Store) RotateDevice(r *http.Request, id, operation string, expected uin
 // ReauthorizeDevice requires an owner cookie session and preserves the identity.
 // Omitted scopes preserve existing grants, including an explicit empty grant set.
 func (s *Store) ReauthorizeDevice(r *http.Request, id, replacement string, scopes []string) (Device, error) {
+	s.publishMu.Lock()
+	defer s.publishMu.Unlock()
 	if r.Header.Get("Authorization") != "" {
 		return Device{}, ErrNoSession
 	}
