@@ -213,3 +213,17 @@ implementation fails that test. Separate coverage checks legacy marker recovery.
 The worker also emits a rate-limited aggregate count of queued uploads rejected
 by device-grant checks. This distinguishes stale authorization from unavailable
 workers without exposing credentials, manifests or filenames.
+
+Queue-scan fix activated as `weazlcloud:release-ba6c920d48c7` at 19:14 UTC on
+October 9. The API/renderer drained cleanly, a fresh 69,267-file reflink checkpoint
+passed canonical hash/inventory comparisons, and activation/verification completed
+in 21.9 seconds. Checkpoint:
+`/exports/dockervolume/weazlcloud-backups/upload-queue-20261009/data`.
+
+Validation passed: mobileparts and desk race suites, vet and source-size checks;
+release-image renderer, Desk/WebDAV/Grab/restart/migration checks; extended mobile
+smokes with 250-MiB fixtures on both storage backends at two CPUs/four GiB; public
+TLS readiness, served assets and browser login. Resource limits and data mounts
+were preserved. Owner unlock is required after this restart. Confirmation that
+all old grants have been renewed still requires authenticated app reconciliation;
+the rollout does not claim every queued production upload has completed.
