@@ -52,6 +52,28 @@ the unchanged Drive inventory. Production then restarted healthy on the same
 release image. Historical rollback-copy retirement requires a separate operator
 decision; it is not automatic when the live photo collection is reset.
 
+The owner subsequently approved deleting these three older copies under
+`/exports/dockervolume/weazlcloud-backups`:
+
+- `mobile-15c45144b660`
+- `photos-remediation-754465ea546f`
+- `photos-reset-2026-10-09`
+
+They were removed without stopping production. The verified post-reset copy
+remains. Filesystem use fell from 754,910,347,264 to 742,174,367,744 bytes,
+reclaiming 12,735,979,520 bytes (12.7 GB); free space became 1,455,774,097,408
+bytes. The app and worker remained healthy and `/ready` returned storage ready.
+
+An expanded volume inventory then identified ten additional historical rollback
+copies outside that backup directory: `weazlcloud.pre-p6-20260922`,
+`weazlcloud.pre-release-7bb01f4-20260928`,
+`weazlcloud.pre-turbo-56cf829-20260928`, and seven October 1–2 copies under
+`weazlcloud-rollbacks`. No existing Docker container mounts those paths. They
+still retain old blocks; their retirement is awaiting the owner's separate
+approval. Future space estimates must inventory the entire volume, not only
+the current backup directory. Reflink copies share blocks, so their individual
+`du` sizes do not predict how much each deletion will reclaim.
+
 Reports, bounded snapshot retirement logs, pre/post Compose/container records
 and the maintenance binary are retained privately under:
 
