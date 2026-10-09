@@ -10,6 +10,11 @@ for the graceful-shutdown fix, consistent checkpoint and live reconciliation.
 The runtime keeps the encrypted catalog authoritative. SQLCipher is a prototype,
 not a new live database or a dependency needed to enable these features.
 
+For an intentional empty Photos collection before an iCloud reseed, see the
+[October 9 reset procedure](photos-reset-2026-10-09.md). It preserves Drive and
+device authorization, expires old sync state, and explains rollback-copy disk
+retention and verification under the service UID.
+
 ## Data and volume inventory
 
 Keep the existing data volume mounted at `/data`. Do not substitute a fresh

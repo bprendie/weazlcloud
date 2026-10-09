@@ -1,0 +1,125 @@
+# Photos reset and Library loading repair — October 9, 2026
+
+## Production reset
+
+The owner requested an empty Photos collection before seeding it from iCloud.
+The offline reset removed `/Photos` and pending mobile-photo components,
+including hidden/archived files, photo trash, imported sidecars, photo albums,
+collection/source mappings, device sync checkpoints, photo upload receipts and
+derived preview/job state. Device credentials and account/vault settings remain.
+Drive files and Drive trash remain unchanged. Existing frozen grab payloads were
+not revoked or removed; they have independent retention.
+
+| Verification | Result |
+| --- | --- |
+| Removed catalog entries | 73,110, including 73,056 non-folder entries |
+| Removed logical bytes | 125,010,833,713 (includes JSON/other sidecars) |
+| Previously mobile-associated entries removed | 56 |
+| Retained Drive entries | 23,917, including 22,476 files |
+| Retained Drive logical bytes | 646,027,487,495 |
+| Retained metadata comparison | Identical SHA-256 before and after reset |
+| Photo-only Restic snapshots retired | 17,880 |
+| Remaining snapshots | 9,130; every retained file's snapshot exists |
+| Restic repository check | Passed; this was not a full `--read-data` rehash |
+| Sample original readback | Five files, 2,440,135 bytes; SHA-256 matched |
+
+Restic reported pruning 94.817 GiB from the active repository. That is not the
+same as filesystem free space: XFS reflink rollback copies continued to reference
+the old data blocks. The volume initially still used 754,965,225,472 bytes while
+the active data tree occupied approximately 589,967,208,448 bytes. `du` counts
+reflinked blocks in each copy; summing those copies overstates physical usage.
+
+The first reset helper ran as root. Atomic catalog replacement and Restic prune
+created a root-owned private catalog and 28 repository files. Ownership was
+restored to the service UID/GID, preserving restrictive modes. A subsequent
+catalog inventory and all five sample reads succeeded as UID/GID 7272, and
+production Library/Photos requests returned HTTP 200. The helper now preserves
+catalog ownership/mode and refuses retirement/verification under a different
+UID/GID. A Docker regression deliberately rewrites a UID-7272 catalog as root
+and checks that access is restored.
+
+Before the original reset, both containers were stopped. The app reported a
+drain deadline rather than a successful drain; after verifying that both writers
+were stopped, the complete owner repository/catalog/key state was reflinked.
+Following reset verification, both containers shut down with exit code zero and
+a fresh complete node checkpoint was created at:
+
+`/exports/dockervolume/weazlcloud-backups/post-photos-reset-2026-10-09/data`
+
+Catalog and key files were compared against the stopped source, and inspection
+of the new checkpoint under the service UID confirmed zero Photos entries and
+the unchanged Drive inventory. Production then restarted healthy on the same
+release image. Historical rollback-copy retirement requires a separate operator
+decision; it is not automatic when the live photo collection is reset.
+
+Reports, bounded snapshot retirement logs, pre/post Compose/container records
+and the maintenance binary are retained privately under:
+
+`/home/bobp/weazlcloud-maintenance/photos-reset-2026-10-09`
+
+The client must perform a full Photos reconciliation/reseed. Old server cursors
+expire, old source identities/receipts are gone, and the server must not report
+previously uploaded photos as still stored. Clearing a native client's local
+"already backed up" ledger, if it does not reconcile server resets, remains a
+client operation. Existing device authorization does not need to be reissued.
+
+## Offline maintenance helper
+
+Build `go build -o photos-reset ./cmd/photos-reset`. It is an operator tool for
+the owner's `/Photos` root on the Restic backend with stored unlock available.
+It does not implement shared-store retirement or arbitrary selected-root resets;
+it refuses shared-object Photos references. Running the binary without mutation
+flags only inspects the owner. Do not run apply/retire against an active writer.
+
+1. Stop/drain the app and worker; preserve the exact deployment settings.
+2. Make a consistent complete owner rollback copy, including its Restic
+   repository, vault/node key and catalog. A catalog-only backup is insufficient.
+3. Run `photos-reset -data /data -user USER` and review the counts and catalog
+   digest. The reset explicitly preserves the retained Drive metadata digest.
+4. Run `photos-reset -data /data -user USER -apply -expected DIGEST
+   -backup OWNER_COPY -report REPORT_DIR`. Catalog/key backup matches are checked
+   before mutation. Relevant mobile transport records are copied before removal;
+   large unfinished transport files cause refusal rather than buffering/deleting
+   an unprotected upload. Keep reports outside the live owner cache directories.
+5. Run `photos-reset -data /data -user USER -retire -prune -report REPORT_DIR`
+   **as the catalog's service UID/GID**. Make that identity able to write the
+   report directory. Retirement protects snapshots referenced by retained files,
+   forgets only the reviewed owner plan, and limits each prune repack to 1 GiB.
+6. While still offline, run `photos-reset -data /data -user USER -verify
+   -report REPORT_DIR` with that same service identity. Verify catalog access as
+   the runtime identity as well as repository integrity and original samples.
+   `-verify-readback` skips the exclusive repository check for an online sample
+   check; its report explicitly says that the repository check was not requested.
+7. Restart, check owner Library/Photos responses, and retain or explicitly retire
+   the rollback copy. Deletion is necessary to release blocks held by reflinks.
+
+No credentials or unwrapped vault keys should be placed in commands or reports.
+If apply fails after changing canonical state, keep writers stopped, inspect the
+report and restore the complete consistent copy before retrying as appropriate.
+Restoring just a pre-reset catalog after pruning will reference removed snapshots.
+
+## Library loading diagnosis and local fix
+
+A production goroutine trace found a preparation-status request decrypting and
+validating the entire thumbnail cache under `photoPrepMu` for approximately
+147 seconds. A Photos resume path could then wait for that lock while holding
+the Library lock, stalling folder navigation. This was intermittent contention,
+not a missing Library route or a permanently deadlocked process.
+
+Cache reconciliation now runs once in the background with a cancellable owner
+lifetime, outside the preparation lock. Publication checks generation/cache epoch
+so a superseded scan cannot overwrite new preparation results. Status exposes
+`cache_checking`; queue progress uses an already-loaded queue without blocking
+behind its initialization. Vault lock/shutdown drains reconciliation too.
+
+The regression deliberately blocks cache bookkeeping and the job queue while
+requiring preparation status and folder listing to return, then checks shutdown.
+Full `make check` passed, including Go tests, race tests, vet and JavaScript
+checks. The separate authenticated Docker/browser smoke initially hit an existing
+test race: its late Live Photo arrival check accepted the previous completed
+job before the async outbox queued the new file. The smoke now waits for the new
+queue total before accepting completion. The corrected smoke passed on both
+Restic and shared-experimental 2-CPU/4-GiB fixtures, including late Live Photo
+pairing, original-byte checks, Library uploads, bidirectional timeline scrolling
+and guest playback/downloads.
+The Library loading code change is local until a separately verified rollout.
