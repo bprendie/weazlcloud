@@ -164,3 +164,45 @@ and guest playback/downloads.
 The Library loading fix is now deployed; see the
 [October 9 production rollout](library-loading-rollout-2026-10-09.md) for the
 release identity, preservation checks and remaining authenticated-session check.
+
+## Second reset: interrupted iPhone seed, 19:55 UTC
+
+The owner requested a fresh Photos seed after duplicate entries appeared. The
+second reset removed 1,017 photo/pending-component file entries (4,810,819,371
+logical bytes), 376 albums, photo source/sync state, ingest receipts, photo parts
+and derived caches. All 23,917 retained Library entries and 646,027,487,495
+logical bytes have an identical retained-metadata digest before and after.
+Accounts, device credentials, regular file backups and frozen grabs remain.
+
+The maintenance helper now validates each encrypted multipart session's owner,
+ID and `spec.kind` against its rollback header before deletion. It removes only
+`photo` sessions and their `.live`/`.queue` markers; `file` sessions and payloads
+survive. The old whole-directory removal was unsafe now that Photos and Files
+share staging. A regression covers mixed photo/file sessions, missing rollback,
+wrong owner, read-only inspection and retained file payload/markers. Targeted
+Go race tests for the helper/catalog, helper vet, file-length and diff checks
+passed. No runtime application rebuild was needed for this offline tool change.
+
+Both services exited zero before a verified complete owner reflink copy at:
+
+`/exports/dockervolume/weazlcloud-backups/photos-reseed-20261009/owner`
+
+The reset/prune/verification ran as UID/GID 7272. It retired 969 photo-only
+snapshots; the repository check passed with 9,130 retained snapshots, all 22,476
+retained file references present and five streamed SHA-256 samples matching
+(2,440,135 bytes). Post-restart inspection as the service identity confirmed
+zero photo entries, zero albums and zero multipart sessions. Both containers
+are healthy on `release-091de04ab396`; public TLS readiness, exact UI assets and
+browser login smoke checks passed. Deployment settings were unchanged.
+
+Private reports and the exact maintenance binary/script are at:
+`/home/bobp/weazlcloud-maintenance/photos-reseed-20261009`.
+Rollback copies remain, so reclaimed repository bytes must not be reported as
+filesystem space freed. They have not been purged by this reset.
+
+Before reseeding, the app must discard/reconcile its previous Photos checkpoint
+and "already uploaded" ledger. Login/unlock is required after the service
+restart. Reuse existing device credentials; the app can use content lookup on
+this deployment. The inaccessible iOS client's local state was not modified.
+The separate duplicate-review `formatBytes` UI error remains unfixed; the owner
+switched to the reset before that patch was made.

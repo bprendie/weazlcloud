@@ -15,6 +15,9 @@ import (
 // Validate and back up photo transport records before removing their receipts.
 // Ordinary file uploads, device credentials and account settings are preserved.
 func resetUploadState(data, root, backup, owner string, v *vault.Vault, apply bool) error {
+	if err := resetPhotoParts(root, backup, owner, v, false); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(filepath.Join(root, ".weazl-photo-ingest"))
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -90,8 +93,11 @@ func resetUploadState(data, root, backup, owner string, v *vault.Vault, apply bo
 	if !apply {
 		return nil
 	}
+	if err := resetPhotoParts(root, backup, owner, v, true); err != nil {
+		return err
+	}
 	for _, name := range []string{
-		".weazl-photo-ingest", ".weazl-mobile-parts", ".weazl-photo-components",
+		".weazl-photo-ingest", ".weazl-photo-components",
 		".weazl-photo-albums.enc", ".weazl-photo-jobs.enc", ".weazl-photo-jobs.journal.enc",
 		".weazl-photo-metadata.enc", ".weazl-photo-metadata-dry-run.enc", ".weazl-photo-preparation.enc",
 		".weazl-photo-selections", ".weazl-photos-index.enc", ".weazl-live-photos.enc",
