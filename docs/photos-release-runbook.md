@@ -16,6 +16,9 @@ device authorization, expires old sync state, and explains rollback-copy disk
 retention and verification under the service UID.
 The [October 9 Library loading rollout](library-loading-rollout-2026-10-09.md)
 records the background cache-reconciliation fix and current production checks.
+The subsequent [October 9 Photos stability rollout](photos-stability-rollout-2026-10-09.md)
+records the current deployed image, preserved data checkpoint, selection/cache
+fixes, MOV posters and portrait viewer sizing.
 
 ## Data and volume inventory
 
