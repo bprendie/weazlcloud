@@ -139,7 +139,7 @@ served UI assets and the unauthenticated browser login check passed. Mounts,
 ownership, environment and resource limits were compared before/after and
 preserved. No seed reset or staging purge was performed.
 
-Production reports eight global finalizers and four per owner. Preview policy
+That earlier release reported eight global finalizers and four per owner. Preview policy
 remains eight render workers, four background workers and four source readers.
 Owner sign-in/unlock is required after restart before private queued work can
 resume. The public check did not submit owner credentials; it does not establish
@@ -256,3 +256,33 @@ worker setting and no need to resend previously accepted parts.
 A local metadata-only benchmark with 24,000 retained rows and eight new component
 updates measured 973 ms with individual saves versus 167 ms with one batch
 (about 5.8x for this catalog stage, one sample, not an end-to-end throughput claim).
+
+
+### Catalog-batch production rollout — 20:22 UTC
+
+Release `f63cc3d4c58ae15eafc65730eb6a9180aceb709b` is live as
+`weazlcloud:release-f63cc3d4c58a` for the API and isolated renderer. Production
+reports `mobile finalize workers=8 per_owner=8`; container resource allocations,
+environment, security controls, ports and data mounts are unchanged.
+
+Validation passed: full `make check` (unit/race/vet/JS/native helpers/line limits),
+focused failed-write and authorization-group tests, exact-release container
+smokes on both storage backends, renderer probes, and 2-CPU/4-GiB extended mobile
+smokes with 250 MiB uploads. Old-to-new upgrade fixtures passed on both backends:
+three queued complete uploads resumed and an incomplete upload retained accepted
+parts; hashes, receipt IDs, album membership, Hidden flags, Live Photo components
+and stored replay survived. The 12-image empty-library comparison was roughly
+unchanged (Restic stored-rate ratio 1.040; shared 0.994, single cold runs). This
+is distinct from the 5.8x catalog-only benchmark above.
+
+The old API and renderer exited zero. A complete XFS reflink checkpoint at
+`/exports/dockervolume/weazlcloud-backups/catalog-batch-20261009/data` matched
+canonical hashes and the sizes/modes/owners of all 63,206 files. There were 247
+queued upload markers at the pre-cutover sample; staged parts and receipts were
+preserved. Cutover completed in about 24 seconds. Public TLS readiness, exact
+UI assets and login rendering passed. Private evidence is under
+`/home/bobp/weazlcloud-releases/catalog-batch-20261009`.
+
+Live throughput remains to be measured after the owner unlocks the vault again;
+background finalization cannot run while it is locked. No reseed, credential
+rotation or reset of the app's accepted parts is needed for this upgrade.
