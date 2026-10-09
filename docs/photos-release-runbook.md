@@ -14,6 +14,8 @@ For an intentional empty Photos collection before an iCloud reseed, see the
 [October 9 reset procedure](photos-reset-2026-10-09.md). It preserves Drive and
 device authorization, expires old sync state, and explains rollback-copy disk
 retention and verification under the service UID.
+The [October 9 Library loading rollout](library-loading-rollout-2026-10-09.md)
+records the background cache-reconciliation fix and current production checks.
 
 ## Data and volume inventory
 

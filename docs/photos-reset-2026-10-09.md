@@ -161,4 +161,6 @@ queue total before accepting completion. The corrected smoke passed on both
 Restic and shared-experimental 2-CPU/4-GiB fixtures, including late Live Photo
 pairing, original-byte checks, Library uploads, bidirectional timeline scrolling
 and guest playback/downloads.
-The Library loading code change is local until a separately verified rollout.
+The Library loading fix is now deployed; see the
+[October 9 production rollout](library-loading-rollout-2026-10-09.md) for the
+release identity, preservation checks and remaining authenticated-session check.
