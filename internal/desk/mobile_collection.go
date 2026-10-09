@@ -12,6 +12,9 @@ import (
 // The parent router must apply its normal owner/scope/lifecycle checks first.
 func (h *Handler) tryMobileCollections(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
+	case "/api/v1/photos/source-collections/recover":
+		h.mobileSourceRecoveryWrite(w, r)
+		return true
 	case "/api/v1/photos/source-collections/lookup":
 		h.mobileSourceRecovery(w, r)
 		return true

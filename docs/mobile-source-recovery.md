@@ -54,28 +54,69 @@ current state under a catalog lock, but pagination is a live traversal, not a
 snapshot. Concurrent additions earlier in key order require a fresh pass. Merge
 by `(device_id,namespace,source_id)` and repeat recovery if source import continues.
 
-Recovery leaves collections, nesting, membership lists, source mappings,
-operation receipts and revisions unchanged. No device adoption/rebinding occurs.
-Clients should restore their local association to an unambiguous, existing
-`server_id`. Keep multiple distinct target IDs unresolved instead of choosing
-one silently. Do not infer deletion from a missing match or automatically create
-an album when `target_exists` is false.
+The lookup leaves collections, nesting, memberships, mappings and receipts
+unchanged. To continue syncing under the current device, adopt one selected
+existing target with `POST /api/v1/photos/source-collections/recover`.
+Discover `features.source_collection_recovery_write`; this POST requires
+`photos:write`, an unlocked vault and `X-Weazl-Desk: 1`. Bearer requests always
+bind the new mapping to the authenticated device. Owner-cookie callers must
+include `device_id` for an active owner device with `photos:write`.
 
-Before later edits, reconcile current server metadata and use the appropriate
-revision check. Existing source-import writes remain device-scoped; replaying old
-source creations under a new device can create duplicates. This lookup does not
-make old-device source operations writable with a new credential. Use existing
-server-ID collection/membership APIs where appropriate, preserving memberships;
-automatic source-namespace adoption would require a separate explicit contract.
+```json
+{
+  "operation_id": "unique-retry-stable-id",
+  "from_device_id": "previous-device-id",
+  "from_namespace": "photokit",
+  "from_source_id": "opaque-album-id",
+  "from_source_revision": "source-r3",
+  "from_server_revision": 5,
+  "namespace": "photokit-current",
+  "source_id": "opaque-album-id",
+  "server_id": "pa_existing-album-id",
+  "expected_server_revision": 8
+}
+```
+
+Use values from a single lookup match: `from_server_revision` is its recorded
+`server_revision`; `expected_server_revision` is its current server revision.
+The latter must be non-null and `target_exists` true. Supply the destination
+source ID and namespace from the current device. A successful response is
+`{"mapping":{...}}`, containing the existing server ID, the old source revision,
+and the **current** server revision. Keep `operation_id` stable across retries.
+The server stores a durable receipt, so an identical retry returns the current adopted mapping without repeating
+the write, provided that target still exists. A different request using the same
+operation ID conflicts.
+
+The write verifies the old mapping, target ID, and current target revision
+atomically with authorization. It adds only a current-device source mapping and
+receipt; the old mapping, album, folder hierarchy, original files and all member
+IDs remain intact. A current-device mapping for the same source identity already
+in use is a conflict. Distinct targets sharing a source ID require client or
+owner selection; do not adopt one automatically. `404 source_not_found` means the
+selected old mapping is absent. `409 stale_revision` means the old mapping or
+target changed/disappeared; run lookup again. `409 mapping_conflict` means the
+new identity or operation ID is already occupied; do not overwrite it. Malformed
+input is 400, locked vault 423, and authorization failures 401/403.
+
+After adoption, use `mapping.server_revision` as the next source-operation
+`expected_revision`. The copied source revision describes the last source version
+that was already committed on the old device; it does not claim that newer phone
+changes are synced. Import any changed source revision normally. Adopt parent
+folders before subsequent album source updates that refer to those parents.
+Adopting an album does not resend or prune its memberships.
+
+The lookup still exposes deleted targets with `target_exists: false`; recovery
+writes refuse them. A source ID with no match does not imply that the server
+should delete or recreate an album. Pages are live reads, so repeat lookup if
+source imports continue concurrently.
 
 Responses are `Cache-Control: private, no-store`. Invalid input/cursor is 400;
 invalid credentials 401; insufficient scope or missing request guard 403;
 locked vault 423. Invalid bearer credentials never fall back to an owner cookie.
 Retry after owner unlock without clearing local recovery state.
 
-Validation: `make check` passed (unit/race suites, vet, native helpers, Go length
-and JavaScript checks). Recovery tests cover revoked-device discovery from a new
-credential, owner/scope/vault isolation, cursor binding, bounded pagination,
-asset exclusion, stale/current revisions, deleted targets, and unchanged catalog
-bytes, collections, source receipts and memberships. OpenAPI parses and local
-schema references resolve. This addition has not yet been deployed.
+Validation: the initial read-only lookup passed `make check` and was deployed
+on October 9. The adoption write has focused race tests for owner/device/scope
+checks, durable replay, stale revisions, deletion, save failure, and unchanged
+album memberships and folder hierarchy. The full release checks are required
+before the adoption write is deployed.

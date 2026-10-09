@@ -837,6 +837,50 @@ paths:
         '401': {description: Authentication required; invalid bearer never falls back to cookie}
         '403': {description: Missing photos read scope or X-Weazl-Desk header}
         '423': {description: Vault locked}
+  /api/v1/photos/source-collections/recover:
+    post:
+      summary: Adopt one selected existing album/folder mapping for the current device
+      operationId: recoverPhotoSourceCollection
+      x-required-scopes: [photos:write]
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      description: >-
+        Discover features.source_collection_recovery_write. Caller selects a lookup
+        match and provides its old mapping revision, source revision, existing
+        server ID and current target revision. Server binds the new source identity
+        to the authenticated device using a durable operation receipt. Existing
+        album/folder content and memberships are preserved. 16 KiB body maximum.
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceRecoveryAdoption'
+      responses:
+        default: *id001
+        '200':
+          description: Existing server target adopted; identical retries return its mapping
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mapping]
+                properties:
+                  mapping:
+                    $ref: '#/components/schemas/SourceMapping'
+        '400': {description: Invalid request}
+        '401': {description: Authentication required}
+        '403': {description: Missing photos write scope or request guard}
+        '404': {description: Selected old source mapping not found}
+        '409': {description: Stale old/current revision or occupied new mapping/operation ID}
+        '423': {description: Vault locked}
   /api/v1/photos/source-memberships:
     post:
       summary: POST /api/v1/photos/source-memberships
@@ -2603,6 +2647,7 @@ components:
             credential_rotation: {type: boolean}
             photo_collections: {type: boolean}
             source_collection_recovery: {type: boolean}
+            source_collection_recovery_write: {type: boolean}
             source_collections: {type: boolean}
             source_memberships: {type: boolean}
             file_reads: {type: boolean}
@@ -2968,6 +3013,25 @@ components:
           description: Optional exact namespace; omit or empty for all. At most 200 UTF-8 bytes, no NUL.
         limit: {type: integer, minimum: 1, maximum: 200, default: 200}
         cursor: {type: string, maxLength: 2048}
+    SourceRecoveryAdoption:
+      type: object
+      additionalProperties: false
+      required: [operation_id, from_device_id, from_namespace, from_source_id, from_source_revision, from_server_revision, namespace, source_id, server_id, expected_server_revision]
+      properties:
+        operation_id: {type: string, minLength: 1, maxLength: 200}
+        device_id:
+          type: string
+          description: Optional for bearer; required for owner-cookie callers and must name an active photos-write device.
+        from_device_id: {type: string, minLength: 1, maxLength: 100}
+        from_namespace: {type: string, minLength: 1, maxLength: 200}
+        from_source_id: {type: string, minLength: 1, maxLength: 4096}
+        from_source_revision: {type: string, minLength: 1, maxLength: 200}
+        from_server_revision: {type: integer, minimum: 1}
+        namespace: {type: string, minLength: 1, maxLength: 200}
+        source_id: {type: string, minLength: 1, maxLength: 4096}
+        server_id: {type: string, minLength: 1, maxLength: 128}
+        expected_server_revision: {type: integer, minimum: 1}
+      x-source-type: internal/catalog/source_recovery_write.go:SourceRecoveryAdoption
     SourceRecoveryMatch:
       type: object
       required: [device_id, namespace, source_id, kind, server_id, source_revision, server_revision, current_server_revision, target_exists]

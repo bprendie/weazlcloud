@@ -71,7 +71,7 @@ capability projection: instance/contract/owner IDs, profile username/full name,
 Cookie requests instead include `authentication: account_session`.
 At final handler inspection, `features` advertises `scoped_devices`,
 `credential_rotation`, `photo_collections`, `source_collections`, `source_memberships`,
-`source_collection_recovery`,
+`source_collection_recovery`, `source_collection_recovery_write`,
 `file_reads`, `files_sync`, `recurring_backups`, and `idempotent_grabs` as true;
 `parts_v1` and `auto_finalize` reflect whether the parts manager is configured.
 `transports` advertises `ordered-patch-v1` and `parts-v1`. These are actual emitted
@@ -347,8 +347,12 @@ null when the target no longer exists. Deleted targets retain their mappings.
 Multiple matches are all returned; do not select or overwrite one automatically.
 Follow `next_cursor` while `has_more`, repeating the same IDs/namespace. Cursors
 are owner/query-bound; pages are live reads, not a stable catalog snapshot.
-No mapping adoption, collection creation, revision change, or membership mutation
-occurs. See [recovery contract and client handling](mobile-source-recovery.md).
+The lookup does not mutate the catalog. `POST /api/v1/photos/source-collections/recover`
+uses `photos:write` to adopt one explicitly selected existing album/folder into
+the authenticated current device namespace. It checks both the old mapping and
+current target revision, then stores a new source mapping and durable retry
+receipt. It never recreates a target or changes its membership/hierarchy. See
+[request fields, conflicts and retry semantics](mobile-source-recovery.md).
 
 Album summary `asset_ids` is bounded and is not a full album export. Use
 `GET /api/v1/photos/albums/memberships?id=&cursor=&limit=&hidden=1` to enumerate
@@ -511,6 +515,7 @@ are grants only, without matching operations in the new dispatchers.
 | `DELETE` | `/api/v1/photos/collections/*` | `photos:write` | no |
 | `POST` | `/api/v1/photos/source-collections` | `photos:write` | no |
 | `POST` | `/api/v1/photos/source-collections/lookup` | `photos:read` | no |
+| `POST` | `/api/v1/photos/source-collections/recover` | `photos:write` | no |
 | `POST` | `/api/v1/photos/source-memberships` | `photos:write` | no |
 | `POST` | `/api/v1/photos/uploads` | `photos:write` | yes |
 | `GET` | `/api/v1/photos/uploads/*` | `photos:write` | yes |

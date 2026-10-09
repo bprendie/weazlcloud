@@ -112,6 +112,7 @@ var deviceGrants = []routeGrant{
 	grant("POST", "/api/v1/photos/collections", false, PhotosWrite),
 	grant("PATCH", "/api/v1/photos/collections/*", false, PhotosWrite),
 	grant("DELETE", "/api/v1/photos/collections/*", false, PhotosWrite),
+	grant("POST", "/api/v1/photos/source-collections/recover", false, PhotosWrite),
 	grant("POST", "/api/v1/photos/source-collections/lookup", false, PhotosRead),
 	grant("POST", "/api/v1/photos/source-collections", false, PhotosWrite),
 	grant("POST", "/api/v1/photos/source-memberships", false, PhotosWrite),
