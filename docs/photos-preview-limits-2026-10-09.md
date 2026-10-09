@@ -49,5 +49,33 @@ Validation passed:
 - Portrait MOV poster/playback and viewport fit at desktop, phone portrait and
   phone landscape sizes; live upload retains already decoded grid thumbnails.
 
-Production activation is pending the versioned image smoke and verified data
-checkpoint. The image changes must preserve the host's custom Compose settings.
+Production rollout completed at 17:47 UTC on October 9:
+
+- Image `weazlcloud:release-10b031d48096` is running in the API and isolated
+  renderer. Versioned-image smoke passed for the worker and both storage backends,
+  including Desk/WebDAV transfers, resumable upload finalization and sealed grabs
+  across restart. Local and remote image IDs matched before activation.
+- A fresh XFS reflink checkpoint at
+  `/exports/dockervolume/weazlcloud-backups/preview-limits-20261009-v2/data`
+  matched all 64,242 file inventory entries (path, size, mode, UID and GID) and
+  six canonical file hashes before activation. Both services drained cleanly.
+  The preceding attempt stopped before activation because its read-only helper
+  lacked temporary sort space; old services restarted automatically. The final
+  verification helper has bounded tmpfs scratch and a 1-GiB memory limit.
+- Compose changed only the two image references. Environment, mounts,
+  permissions, resource limits, security options, ports and network settings
+  matched the previous deployment. The successful cutover took 26 seconds.
+- Desk, Grab and WebDAV readiness returned HTTP 200; the renderer's probe
+  passed. Both public TLS readiness routes passed, the served viewer assets
+  exactly matched this checkout, and Chromium rendered the public login without
+  JavaScript errors. No production user credentials were submitted.
+- The post-restart read-only audit still found the 31 saved failures and 508
+  cached 320px previews. Owner unlock resumes the automatic recovery; this
+  rollout does not claim the authenticated production recovery has finished.
+
+Deployment records are under
+`/home/bobp/weazlcloud-releases/preview-limits-20261009` on the host. The
+repository also includes `d34aa95`, a smoke-script portability fix: the GitHub
+container runner lacked `rg`, so its fixed-string assertion now uses standard
+`grep`. This does not change the runtime image. GitHub CI is separate from the
+local checks and production smoke results above.
