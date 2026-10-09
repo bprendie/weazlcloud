@@ -68,11 +68,28 @@ An expanded volume inventory then identified ten additional historical rollback
 copies outside that backup directory: `weazlcloud.pre-p6-20260922`,
 `weazlcloud.pre-release-7bb01f4-20260928`,
 `weazlcloud.pre-turbo-56cf829-20260928`, and seven October 1–2 copies under
-`weazlcloud-rollbacks`. No existing Docker container mounts those paths. They
-still retain old blocks; their retirement is awaiting the owner's separate
-approval. Future space estimates must inventory the entire volume, not only
-the current backup directory. Reflink copies share blocks, so their individual
-`du` sizes do not predict how much each deletion will reclaim.
+`weazlcloud-rollbacks`. After separate owner approval, all ten were removed;
+container references were checked again before deletion. The seven dated copies
+were `2026-10-01-modal-2c4cede`, `2026-10-01-timeline-4ca6cf2`,
+`2026-10-01-metadata-878fec4`, `2026-10-01-thumbnail-cache`,
+`2026-10-02-photo-selection`, `2026-10-02-photo-selection-rail`, and
+`2026-10-02-photo-selection-toggle`.
+
+The second pass reduced filesystem use to 631,819,657,216 bytes and increased
+available space to 1,566,128,807,936 bytes. It reclaimed another 110,354,710,528
+bytes, or **123,090,690,048 bytes (123.1 GB) across both cleanup passes**. Live
+data and the verified post-reset checkpoint were preserved; production stayed
+online, both containers remained healthy, and `/ready` returned storage ready.
+After deletion, all retained snapshot references and the five original-file
+hash samples passed again under service UID/GID 7272. Read-only inspection of
+the preserved checkpoint still found zero Photos entries and the unchanged
+23,917-entry Drive inventory. Final filesystem totals matched the second-pass
+measurement above. Private before/after disk reports and deletion logs accompany
+the original reset reports in the maintenance directory.
+
+Future space estimates must inventory the entire volume, not only the current
+backup directory. Reflink copies share blocks, so their individual `du` sizes
+do not predict how much each deletion will reclaim.
 
 Reports, bounded snapshot retirement logs, pre/post Compose/container records
 and the maintenance binary are retained privately under:
