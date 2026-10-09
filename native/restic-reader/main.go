@@ -91,17 +91,18 @@ func run(ctx context.Context, location string, workers, protocol int) error {
 	if err = repo.LoadIndex(ctx, nil); err != nil {
 		return errors.New("repository index unavailable")
 	}
+	indexed := &indexedRepository{repo: repo}
 	if protocol == 2 {
-		return serveBinary(ctx, repo, workers, os.Stdin, os.Stdout)
+		return serveBinary(ctx, indexed, workers, os.Stdin, os.Stdout)
 	}
 	enc := json.NewEncoder(os.Stdout)
 	if err = enc.Encode(response{Ready: true}); err != nil {
 		return err
 	}
-	return serve(ctx, repo, workers, enc)
+	return serve(ctx, indexed, workers, enc)
 }
 
-func serve(ctx context.Context, repo *repository.Repository, workers int, enc *json.Encoder) error {
+func serve(ctx context.Context, indexed *indexedRepository, workers int, enc *json.Encoder) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { <-ctx.Done(); os.Stdin.Close() }()
@@ -128,7 +129,15 @@ func serve(ctx context.Context, repo *repository.Repository, workers int, enc *j
 			defer jobs.Done()
 			defer func() { <-slots }()
 			readCtx, release := context.WithTimeout(ctx, 30*time.Second)
-			result := readFile(readCtx, repo, req)
+			var result response
+			err := indexed.read(readCtx, func() error {
+				var err error
+				result, err = readFile(readCtx, indexed.repo, req)
+				return err
+			})
+			if err != nil {
+				result = response{ID: req.ID, Error: "source_unavailable"}
+			}
 			release()
 			writes.Lock()
 			if enc.Encode(result) != nil {

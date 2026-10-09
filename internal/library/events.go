@@ -24,7 +24,9 @@ func (l *Library) SetChangeSink(sink ChangeSink) {
 
 func (l *Library) publishChange(change Change) {
 	l.markObsoletePreviews(change)
-	if change.Kind == "put" || change.Kind == "delete" || change.Kind == "restore" || change.Kind == "photo-visibility" {
+	// Immutable pixel keys keep unrelated uploads from flushing warm previews.
+	// Access-changing operations still invalidate the owner session cache.
+	if change.Kind == "delete" || change.Kind == "restore" || change.Kind == "photo-visibility" {
 		previewRAM.clearOwnerSession(l, nil)
 	}
 	// Folder copies/restores affect every descendant, including preview jobs.

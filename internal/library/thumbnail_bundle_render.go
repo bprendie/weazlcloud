@@ -59,7 +59,7 @@ func renderBundleBytes(ctx context.Context, data []byte, sizes []int, media stri
 		if media == "heif" {
 			data, err = convertHEIFPipe(ctx, data)
 		} else if media == "video" || media == "native" {
-			data, _, err = renderFFmpegPhotoPreview(ctx, data, sizes[len(sizes)-1])
+			data, _, err = renderFFmpegPhotoPreview(ctx, data, sizes[len(sizes)-1], media)
 		} else {
 			return ErrThumbnailUnavailable
 		}

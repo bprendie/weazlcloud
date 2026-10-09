@@ -13,6 +13,11 @@ export class ModeMemory {
   restore(mode, state) {
     const saved = this.saved.get(mode);
     if (!saved || saved.owner !== state.username || saved.location !== locationKey(mode,state) || !state.unlocked) return null;
+    state.photoSelecting = false;
+    if(mode==='photos'){
+      state.selected=null;state.selectedFiles=[];state.selectionAnchor='';state.photoSelection=null;state.photoSelectedItems=new Map();
+      return {scroll:saved.scroll,anchor:saved.anchor};
+    }
     state.selected = saved.selected ? {...saved.selected} : null;
     state.selectedFiles = [...saved.selectedFiles];
     state.selectionAnchor = saved.selectionAnchor;

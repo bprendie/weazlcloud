@@ -135,6 +135,31 @@ reader or `WEAZLCLOUD_PREVIEW_BUNDLE=off` for the legacy single-output renderer.
 See [measurements and limits](photos-thumbnail-performance-2026-10-01.md) and
 [the verified rollout](photos-thumbnail-rollout-2026-10-01.md).
 
+During ingestion, the resident reader refreshes its authenticated index when a
+new snapshot references unseen packs. Concurrent misses share a refresh, limited
+to once per second; old and new reads never race an index replacement. A failed
+read still uses the bounded CLI fallback. Uploads no longer clear unrelated warm
+RAM previews. The Photos grid keeps existing decoded image elements and blob
+URLs when new items arrive or capture metadata changes; changed pixels/rotation
+get a new key. Lock, owner and visibility boundaries still clear private caches.
+
+MOV posters use a seekable anonymous memory descriptor so ffmpeg can read a
+trailing `moov` index and return to the frames. Both single and bundled renderers
+use it. No plaintext video file is written to the volume. The existing 64 MiB
+source cap, worker/memory admission and 35-second render timeout remain in force;
+this does not yet add posters for larger videos. H.264 and HEVC portrait MOV
+fixtures cover both Library and Photos routes. After upgrading, use **Photos →
+☰ → Retry failed previews** for earlier failed MOV jobs; successful thumbnails
+do not need a rebuild. Portrait playback uses the available viewer stage with
+`object-fit: contain`, including phone landscape layouts.
+
+Regression coverage includes `make check`, single/bundled MOV worker requests,
+and `make smoke-photos` on Restic and shared storage with 2 CPUs / 4 GiB. Browser
+checks retain the same decoded image elements across 30 redraws and a live upload
+with no thumbnail refetches, and check video bounds at 1440×1000, 390×844 and
+844×390. The resident reader is also exercised against concurrent old/new sources
+on both protocol versions after new snapshots are committed.
+
 Compressed server RAM cache bytes count against preview memory, with a ceiling of
 `min(2 GiB, effective RAM/64, preview budget/4)`. Rendering reclaims them before
 waiting for memory. Browser reuse is session-only: at most 32 MiB/256 entries,

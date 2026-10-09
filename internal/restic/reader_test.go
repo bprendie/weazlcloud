@@ -75,8 +75,7 @@ func TestPersistentReaderParityParallelFailureAndRestart(t *testing.T) {
 	if err = runner.Run(ctx, repo, nil, nil, "check"); err != nil {
 		t.Fatal("reader leaked a repository lock", err)
 	}
-	// An index loaded before a new snapshot cannot read its new blobs. A new
-	// session can; callers must fall back or reopen instead of serving old data.
+	// Reopening remains supported in addition to resident index refresh.
 	newBody := []byte("new metadata")
 	newSnap, err := runner.Put(ctx, repo, "new.json", bytes.NewReader(newBody))
 	if err != nil {

@@ -44,7 +44,7 @@ func TestMetadataPersistentReaderMatchesCatalogAndSeesLaterUploads(t *testing.T)
 	if err != nil || string(got) != string(body) {
 		t.Fatal("persistent source mismatch", err)
 	}
-	// A source created after index load must be served by the fresh CLI fallback.
+	// A source created after index load refreshes the same authenticated reader.
 	newBody := []byte(`{"photoTakenTime":{"timestamp":"1565152400"}}`)
 	if _, err = l.Put(ctx, "Photos/new.json", newBody); err != nil {
 		t.Fatal(err)
@@ -53,9 +53,9 @@ func TestMetadataPersistentReaderMatchesCatalogAndSeesLaterUploads(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err = r.read(ctx, newFile, 4<<20)
+	got, err = r.readPersistent(ctx, newFile, 4<<20)
 	if err != nil || string(got) != string(newBody) {
-		t.Fatal("new upload fallback failed", err)
+		t.Fatal("resident reader did not refresh new upload", err)
 	}
 	if err = l.Rename(ctx, name, "Photos/renamed.json"); err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ def smoke_photo_cache(context,page,base,backend):
         report=page.evaluate("""async()=>{
           const {renderMain}=await import('/views.js'),{photoBlobCache}=await import('/photo-images.js');
           const before=photoBlobCache.hits,times=[];
+          const kept=[...document.querySelectorAll('.photo-grid [data-photo-thumbnail]')].filter(img=>img.complete&&img.naturalWidth).map(img=>({img,src:img.src}));
           for(let i=0;i<30;i++){
             const start=performance.now();renderMain();
             await new Promise((resolve,reject)=>{const poll=()=>{
@@ -21,10 +22,11 @@ def smoke_photo_cache(context,page,base,backend):
               requestAnimationFrame(poll);
             };requestAnimationFrame(poll);});
             times.push(performance.now()-start);
+            if(!kept.every(({img,src})=>img.isConnected && img.src===src && img.naturalWidth))throw Error('unchanged refresh replaced a decoded thumbnail');
           }
-          return {samples:times.length,warm_grid_p95_ms:times.sort((a,b)=>a-b)[28],browser_hits:photoBlobCache.hits-before,retained_bytes:photoBlobCache.bytes,retained_entries:photoBlobCache.items.size};
+          return {samples:times.length,preserved_images:kept.length,warm_grid_p95_ms:times.sort((a,b)=>a-b)[28],browser_hits:photoBlobCache.hits-before,retained_bytes:photoBlobCache.bytes,retained_entries:photoBlobCache.items.size};
         }""")
-        assert report['browser_hits']>=30,report
+        assert report['preserved_images']>0,report
         assert report['retained_bytes']<=32*1024*1024 and report['retained_entries']<=256,report
         assert not requests,requests
         report['repeat_thumbnail_requests']=len(requests)

@@ -101,7 +101,7 @@ func RenderPhotoPreview(ctx context.Context, data []byte, size int, media string
 			}
 			return renderFFmpegJPEGPreview(ctx, jpeg, size)
 		}
-		return renderFFmpegPhotoPreview(ctx, data, size)
+		return renderFFmpegPhotoPreview(ctx, data, size, media)
 	}
 	if media != "raster" {
 		return nil, "", ErrThumbnailUnavailable
@@ -126,19 +126,25 @@ func RenderPhotoPreview(ctx context.Context, data []byte, size int, media string
 	return renderThumbnailBytes(ctx, data, size)
 }
 
-func renderFFmpegPhotoPreview(ctx context.Context, data []byte, size int) ([]byte, string, error) {
+func renderFFmpegPhotoPreview(ctx context.Context, data []byte, size int, media string) ([]byte, string, error) {
 	path, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, "", ErrThumbnailUnavailable
 	}
 	work, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
+	input, files, cleanup, err := previewMediaInput(data, media)
+	if err != nil {
+		return nil, "", err
+	}
+	defer cleanup()
 	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", size, size)
-	cmd := exec.CommandContext(work, path,
-		"-hide_banner", "-loglevel", "error", "-nostdin", "-protocol_whitelist", "pipe,crypto,data",
-		"-threads", "1", "-filter_threads", "1", "-i", "pipe:0", "-map", "0:v:0", "-frames:v", "1",
+	args := append([]string{"-hide_banner", "-loglevel", "error", "-nostdin", "-threads", "1", "-filter_threads", "1"}, input...)
+	args = append(args, "-map", "0:v:0", "-frames:v", "1",
 		"-vf", scale, "-an", "-sn", "-dn", "-map_metadata", "-1", "-threads", "1",
 		"-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1")
+	cmd := exec.CommandContext(work, path, args...)
+	cmd.ExtraFiles = files
 	cmd.WaitDelay = time.Second
 	cmd.Stdin = bytes.NewReader(data)
 	output := &previewOutput{limit: thumbnailMaxOutput}
@@ -195,7 +201,7 @@ func renderPhotoPreview(ctx context.Context, data []byte, size int, media string
 		if media == "raster" {
 			return renderThumbnailBytes(ctx, data, size)
 		}
-		return renderFFmpegPhotoPreview(ctx, data, size)
+		return renderFFmpegPhotoPreview(ctx, data, size, media)
 	}
 	return previewrpc.Render(ctx, socket, data, size, media)
 }

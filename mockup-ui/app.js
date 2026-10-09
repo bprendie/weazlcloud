@@ -8,7 +8,9 @@ import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escape
 import {renderMain, renderDeck, renderUploadTray, refreshPhotoGrid, modifiedLabel} from './views.js';
 import * as engine from './engine.js';
 import {ModeMemory} from './mode-memory.js';
+import {installPhotoGestures} from './photo-gestures.js';
 const modeMemory = new ModeMemory();
+installPhotoGestures();
 const photoSessionChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('weazl-photo-session'):null;
 photoSessionChannel?.addEventListener('message',()=>clearPhotoImages());
 
@@ -49,6 +51,7 @@ function selectedFileRows() {
 }
 
 function clearFileSelection() {
+  state.photoSelecting = false;
   state.photoSelection = null;
   state.photoSelectedItems = new Map();
   state.selectedFiles = [];
@@ -442,6 +445,7 @@ async function resolveLibraryOperation(operation, target) {
 }
 
 function chooseRange(id) {
+  if(state.view==='photos')state.photoSelecting=true;
   state.photoSelection = null;
   const ids = state.view === 'photos' ? state.photoItems.map(item => item.id) : [...document.querySelectorAll('[data-select-file]')].map(button => button.dataset.selectFile);
   const start = ids.indexOf(state.selectionAnchor || id);
@@ -460,6 +464,7 @@ function toggleFileSelection(id) {
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
   state.selectedFiles = [...selected];
+  if(state.view==='photos')state.photoSelecting=selected.size>0;
   state.selected = selected.size ? {type: 'file', id: selected.has(id) ? id : selected.values().next().value} : null;
   state.selectionAnchor = id;
   renderMain();
@@ -491,14 +496,14 @@ async function runBatchAction(action) {
     if (action === 'delete' && !confirm(`Move ${selection.count} selected photos to Trash?`)) return;
     if (action === 'download' && selection.hidden && !confirm(`Download ${selection.count} selected hidden photos?`)) return;
     const result = await engine.photoSelectionAction({selection_id:selection.id,hidden:selection.hidden,confirm_hidden:selection.hidden,action:action === 'download' ? 'archive' : action});
-    if (action === 'download') { await createArchiveJob([],result); return; }
+    if (action === 'download') { await createArchiveJob([],result); clearFileSelection(); renderMain(); renderDeck(); return; }
     clearFileSelection(); await loadPhotoPage(true); await loadPhotoAlbums(false); renderMain(); renderDeck(); toast(`${result.deleted} photos moved to Trash.`); return;
   }
   const rows = selectedFileRows();
   if (!rows.length) return;
   if (action === 'clear') { clearFileSelection(); renderMain(); renderDeck(); return; }
   if (!live) { toast('Batch actions are available on the connected node.'); return; }
-  if (action === 'download' && rows.length > 1) { await createArchiveJob(rows.map(file => filePath(file.id))); return; }
+  if (action === 'download' && rows.length > 1) { await createArchiveJob(rows.map(file => filePath(file.id))); if(state.view==='photos'){clearFileSelection();renderMain();renderDeck();} return; }
   if (action === 'delete' && !confirm(`Move ${rows.length} selected file${rows.length === 1 ? '' : 's'} to Trash? They remain recoverable for ${state.trashRetention} days.`)) return;
   let destination = '';
   if (action === 'move') {
@@ -517,6 +522,7 @@ async function runBatchAction(action) {
   }
   state.selectedFiles = (state.selectedFiles || []).filter(id => !completed.includes(id));
   state.selected = state.selectedFiles.length ? {type: 'file', id: state.selectedFiles[0]} : null;
+  if(state.view==='photos')state.photoSelecting=state.selectedFiles.length>0;
   if (state.view === 'photos') await loadPhotoPage(true); else await loadLibrary();
   renderMain();
   renderDeck();
@@ -687,9 +693,6 @@ function openPhotoViewer(id, pushHistory = true) {
   }
   if (!$('#modal').open) photoViewerReturnScroll = viewScrollTop();
   photoViewerIndex = index;
-  state.selected = {type: 'file', id};
-  state.selectedFiles = [id];
-  state.selectionAnchor = id;
   state.photoViewerInfo = false;
   state.photoZoom = 1;
   renderPhotoViewer();
@@ -863,9 +866,6 @@ function movePhotoViewer(delta) {
     return;
   }
   photoViewerIndex = next;
-  state.selected = {type: 'file', id: state.photoItems[next].id};
-  state.selectedFiles = [state.photoItems[next].id];
-  state.selectionAnchor = state.photoItems[next].id;
   renderPhotoViewer();
 }
 
@@ -1197,7 +1197,7 @@ function applyRoute() {
   if(switching){
     const anchor=previous==='photos'?[...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight):null;
     modeMemory.remember(previous,state,viewScrollTop(),anchor);stopMediaPlayback();
-    if(previous==='photos'){photoPageController?.abort();photoPageRequest++;state.photoLoading=false;photoSelectionRequest++;}
+    if(previous==='photos'){photoPageController?.abort();photoPageRequest++;state.photoLoading=false;photoSelectionRequest++;clearFileSelection();}
   }
   state.view = allowed.has(view) ? view : 'home';
   if (state.view !== 'library' && libraryLoadController) {
@@ -1210,6 +1210,7 @@ function applyRoute() {
   }
   if (state.view === 'photos') {
     const parts = sourceRoute.split('/');
+    if(!photoRouteViewer)clearFileSelection();
     const hiddenSearch = encoded === 'hidden' && parts[2] === 'search';
     const regularSearch = encoded === 'search';
     state.photosMode = hiddenSearch ? 'hidden' : regularSearch ? 'all' : ['albums', 'favorites', 'recent', 'hidden', 'archived'].includes(encoded) || encoded === 'album' ? (encoded === 'album' ? 'albums' : encoded) : 'all';
@@ -1255,7 +1256,7 @@ function navigate(view, replace = false) {
     const anchor = previous === 'photos' ? [...document.querySelectorAll('.photo-grid [data-select-file]')].map(el=>({id:el.dataset.selectFile,top:el.getBoundingClientRect().top,date:state.photoItems.find(item=>item.id===el.dataset.selectFile)?.captureTime?.slice(0,10)||'unknown'})).find(row=>row.top>=0&&row.top<window.innerHeight) : null;
     modeMemory.remember(previous,state,viewScrollTop(),anchor);
   }
-  if (previous === 'photos' && view !== 'photos') { photoPageController?.abort(); photoPageRequest++; state.photoLoading=false; photoSelectionRequest++; }
+  if (previous === 'photos' && view !== 'photos') { photoPageController?.abort(); photoPageRequest++; state.photoLoading=false; photoSelectionRequest++; clearFileSelection(); }
   if (view === 'trash' && previous !== 'trash') {
     state.trashScope=previous === 'photos' ? 'photos' : 'library'; state.trashHidden=state.photosMode==='hidden'; state.trash=[];
   }
@@ -1555,6 +1556,7 @@ async function selectPhotoDay(day) {
   const selection = await engine.createPhotoSelection({filter,search:hasPhotoSearchFilters(),mode:['recent','favorites','hidden','archived'].includes(mode)?mode:'all',date:day});
   if (request !== photoSelectionRequest || username !== state.username || !state.unlocked || state.view !== 'photos' || mode !== state.photosMode || album !== (state.photosAlbum || '') || query !== (state.photoQuery || '') || filterKey !== JSON.stringify([state.photoCamera,state.photoSearchType,state.photoFrom,state.photoTo,state.photoOutsideAlbums])) return;
   state.photoSelection = selection;
+  state.photoSelecting = selection.count>0;
   state.photoSelectedItems = new Map();
   state.selectedFiles = state.photoItems.filter(item => day === 'unknown' ? !item.captureTime : String(item.captureTime || '').startsWith(day)).map(item=>item.id);
   state.selected = state.selectedFiles.length ? {type:'file',id:state.selectedFiles[0]} : null;
@@ -1673,7 +1675,6 @@ async function loadPhotoPage(reset = false, render = true, direction = 'next', r
   } catch (err) {
     if (request !== photoPageRequest || username !== state.username || err.name === 'AbortError') return;
     if (err.message?.includes('photo library changed')) {
-      state.photoItems = [];
       state.photoCursor = '';
       state.photoPreviousCursor = '';
       state.photoAnchor = '';
@@ -1722,12 +1723,12 @@ async function loadPhotoDates() {
   if (state.view === 'photos') renderMain();
 }
 
-async function loadPhotoPreparation() {
+async function loadPhotoPreparation(render = true) {
   if (!live || !state.unlocked) return;
   const username=state.username;
   try {const metadata=await engine.photoMetadata();if(username!==state.username || !state.unlocked)return;state.photoMetadata=metadata;}catch{if(username!==state.username || !state.unlocked)return;state.photoMetadata=null;}
   try {const preparation=await engine.photoPreparation();if(username!==state.username || !state.unlocked)return;state.photoPreparation=preparation;} catch {state.photoPreparation=null;}
-  if (state.view === 'photos') renderMain();
+  if (render && state.view === 'photos') renderMain();
 }
 
 async function loadPhotoAlbums(render = true) {
@@ -1758,7 +1759,7 @@ async function syncLibraryFromChange() {
   try {
     if (state.view === 'photos') {
       const navigationRequest=photoPageRequest,username=state.username;
-      await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation()]);
+      await Promise.all([loadPhotoAlbums(false), loadPhotoPreparation(false)]);
       // A date jump/filter/mode change owns its new page. An older event refresh
       // must not cancel that navigation after its status requests finish.
       if(state.view!=='photos' || state.username!==username || !state.unlocked || navigationRequest!==photoPageRequest)return;
@@ -1863,7 +1864,7 @@ function startLibraryEvents() {
   libraryEventSource?.close();
   if (!live || !state.unlocked) return;
   libraryEventSource = engine.libraryEvents(change => {
-    if(['put','delete','restore','rename','photo-visibility','photo-metadata','photo-live'].includes(change?.kind))clearPhotoImages();
+    if(['delete','restore','rename','photo-visibility'].includes(change?.kind))clearPhotoImages();
     if (state.view !== 'photos') { state.photoModeDirty=true; state.photoItems=[]; }
     if (['photo-visibility','rename','delete','restore','photo-live'].includes(change?.kind)) {
       modeMemory.clearSelections();
@@ -2136,12 +2137,14 @@ document.addEventListener('click', async e => {
   }
   if (b.dataset.libraryView !== undefined) { state.libraryView = b.dataset.libraryView; renderMain(); }
   if (b.dataset.batch) { runBatchAction(b.dataset.batch); return; }
+  if(b.dataset.action==='photos-selection-start'){clearFileSelection();state.photoSelecting=true;renderMain();return;}
+  if(b.dataset.action==='photos-selection-cancel'){clearFileSelection();renderMain();renderDeck();return;}
   if (b.dataset.photoSelect) { if (e.shiftKey) chooseRange(b.dataset.photoSelect); else toggleFileSelection(b.dataset.photoSelect); return; }
   if (b.dataset.photoVisibility) { changeSelectedPhotoVisibility(b.dataset.photoVisibility).catch(err => toast(err.message)); return; }
   if (b.dataset.selectFile) {
     if (e.shiftKey) chooseRange(b.dataset.selectFile);
     else if (e.ctrlKey || e.metaKey) toggleFileSelection(b.dataset.selectFile);
-    else if (state.view === 'photos' && (state.photoSelection || state.selectedFiles?.length)) toggleFileSelection(b.dataset.selectFile);
+    else if (state.view === 'photos' && state.photoSelecting) toggleFileSelection(b.dataset.selectFile);
     else if (state.view === 'photos') openPhotoViewer(b.dataset.selectFile);
     else { selectFile(b.dataset.selectFile); previewFile(b.dataset.selectFile); }
   }
@@ -2574,6 +2577,7 @@ document.addEventListener('submit', e => {
     const passphrase=String(data.get('passphrase') || '');
     engine.mintPhotoGrab({...(photoGrabSelection ? {selection_id:photoGrabSelection.id} : {ids:photoGrabIDs}),title:String(data.get('title') || 'Photos'),expiry:String(data.get('expiry') || '24h'),grabs:Number(data.get('grabs') || 1),gate:passphrase?'passphrase':'open',passphrase,hidden:photoGrabSelection?.hidden ?? (state.photosMode==='hidden'),confirm_hidden:data.get('confirm_hidden')==='on'}).then(async row=>{
       await loadCapsules();
+      clearFileSelection();renderMain();renderDeck();
       modal(`<h2>Gallery ready</h2><p><a href="${esc(row.url)}" target="_blank" rel="noopener">${esc(row.url)}</a></p><img class="mint-qr" src="/api/qr?url=${encodeURIComponent(row.url)}" alt="QR code for this gallery"><div class="dialog-actions"><button class="secondary" type="button" data-close>Done</button></div>`);
     }).catch(err=>{toast(err.message);submit.disabled=false;submit.textContent='Create grab';});
   }
@@ -2584,7 +2588,7 @@ document.addEventListener('submit', e => {
     const body = {id, revision:Number(data.get('revision') || 0), title:String(data.get('title') || ''), description:String(data.get('description') || ''), position:Number(data.get('position') || 0), cover_id:String(data.get('cover_id') || '')};
     if (!id && photoAlbumPendingSelection) { body.selection_id = photoAlbumPendingSelection.id; body.hidden = photoAlbumPendingSelection.hidden; }
     else if (!id) body.asset_ids = photoAlbumPendingIDs.map(key => state.photoItems.find(item => item.id === key)?.entryID || key);
-    engine.savePhotoAlbum(body).then(async () => { $('#modal').close(); await loadPhotoAlbums(false); state.photosMode = 'albums'; state.photosAlbum = ''; renderMain(); toast(id ? 'Album updated.' : 'Album created.'); }).catch(err => toast(err.message));
+    engine.savePhotoAlbum(body).then(async () => { clearFileSelection(); $('#modal').close(); await loadPhotoAlbums(false); state.photosMode = 'albums'; state.photosAlbum = ''; renderMain(); toast(id ? 'Album updated.' : 'Album created.'); }).catch(err => toast(err.message));
   }
   if (e.target.id === 'photo-album-members-form') {
     e.preventDefault();
@@ -2592,7 +2596,7 @@ document.addEventListener('submit', e => {
     const albumID = String(new FormData(e.target).get('album_id') || ''), album = photoAlbumByID(albumID);
     if (!album) { toast('That album is no longer available.'); return; }
     const addIDs = photoAlbumPendingIDs;
-    (photoAlbumPendingSelection ? engine.photoSelectionAction({selection_id:photoAlbumPendingSelection.id,hidden:photoAlbumPendingSelection.hidden,action:'add_album',album_id:albumID,revision:album.revision}) : engine.editPhotoAlbumMembers({id:albumID, revision:album.revision, add_ids:addIDs})).then(async () => { await loadPhotoAlbums(false); $('#modal').close(); renderMain(); toast(`Added ${addIDs.length} photos to ${album.title}.`); }).catch(err => toast(err.message));
+    (photoAlbumPendingSelection ? engine.photoSelectionAction({selection_id:photoAlbumPendingSelection.id,hidden:photoAlbumPendingSelection.hidden,action:'add_album',album_id:albumID,revision:album.revision}) : engine.editPhotoAlbumMembers({id:albumID, revision:album.revision, add_ids:addIDs})).then(async () => { clearFileSelection(); await loadPhotoAlbums(false); $('#modal').close(); renderMain(); toast(`Added ${addIDs.length} photos to ${album.title}.`); }).catch(err => toast(err.message));
   }
   if (e.target.id === 'photo-edit-form') {
     e.preventDefault();
@@ -2678,7 +2682,7 @@ document.addEventListener('keydown', e => {
   }
   if (modifier && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClipboard(); return; }
   if (modifier) return;
-  if (e.key === 'Escape') { hideMenu(); if (state.view === 'photos' && (state.photoSelection || state.selectedFiles?.length)) { clearFileSelection(); renderMain(); renderDeck(); } }
+  if (e.key === 'Escape') { hideMenu(); if (state.view === 'photos' && state.photoSelecting) { clearFileSelection(); renderMain(); renderDeck(); } }
   if (e.key === 'Delete' && state.view === 'library') { e.preventDefault(); state.selected?.type === 'folder' ? deleteSelectedFolder() : runBatchAction('delete'); return; }
   if (e.key === 'F2' && state.view === 'library') { e.preventDefault(); renameSelected(); return; }
   if (e.key === '?') help();

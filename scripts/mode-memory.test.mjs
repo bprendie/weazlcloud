@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ModeMemory} from '../mockup-ui/mode-memory.js';
 
-test('mode switches restore independent selections and scroll without aliasing',()=>{
+test('mode switches retain Library selection and Photos scroll but exit photo selection',()=>{
   const memory = new ModeMemory();
   const state = {username:'owner',unlocked:true,selectedFiles:['file'],selected:{id:'file'},selectionAnchor:'file',photoSelectedItems:new Map()};
   memory.remember('library',state,1000);
@@ -10,7 +10,8 @@ test('mode switches restore independent selections and scroll without aliasing',
   memory.remember('photos',state,2000,{id:'photo',top:20});
   assert.deepEqual(memory.restore('library',state),{scroll:1000,anchor:null});
   assert.deepEqual(state.selectedFiles,['file']); assert.equal(state.photoSelection,null);
-  assert.equal(memory.restore('photos',state).anchor.id,'photo'); assert.equal(state.photoSelection.count,32000);
+  assert.deepEqual(memory.restore('photos',state),{scroll:2000,anchor:{id:'photo',top:20}});
+  assert.equal(state.photoSelection,null);assert.equal(state.photoSelecting,false);assert.deepEqual(state.selectedFiles,[]);
   memory.clearSelections(); memory.restore('photos',state); assert.equal(state.selectedFiles.length,0); assert.equal(state.photoSelection,null);
 });
 

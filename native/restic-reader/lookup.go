@@ -23,6 +23,9 @@ func findFile(ctx context.Context, repo *repository.Repository, snapshotID, obje
 	parts := strings.Split(strings.TrimPrefix(path.Clean("/"+object), "/"), "/")
 	treeID := *snapshot.Tree
 	for depth, part := range parts {
+		if _, exists := repo.LookupBlobSize(restic.TreeBlob, treeID); !exists {
+			return nil, errIndexStale
+		}
 		tree, err := restic.LoadTree(ctx, repo, treeID)
 		if err != nil {
 			return nil, unavailable
@@ -40,6 +43,13 @@ func findFile(ctx context.Context, repo *repository.Repository, snapshotID, obje
 		if depth == len(parts)-1 {
 			if found.Type != restic.NodeTypeFile {
 				return nil, unavailable
+			}
+			// Detect new packs before the first binary response frame. A refresh
+			// must never replay a partially streamed image.
+			for _, blob := range found.Content {
+				if _, exists := repo.LookupBlobSize(restic.DataBlob, blob); !exists {
+					return nil, errIndexStale
+				}
 			}
 			return found, nil
 		}

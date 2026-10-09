@@ -161,6 +161,18 @@ def smoke_photo_performance(context, page, base, backend, jump_ms):
 def smoke_photo_selection(context, page, base):
     page.goto(base + '/#photos')
     expect(page.locator('.photo-grid .photo-tile')).to_have_count(5)
+    # Ordinary viewing/next/close never creates a bulk selection.
+    for _ in range(2):
+        page.locator('.photo-grid [data-select-file]').first.click()
+        expect(page.locator('#modal.photo-viewer')).to_be_visible()
+        page.locator('[data-action="photo-viewer-next"]').click()
+        page.locator('[data-action="photo-viewer-close"]').click()
+        expect(page.locator('.selection-toolbar')).to_have_count(0)
+    page.locator('[data-action="photos-selection-start"]').click()
+    expect(page.locator('.selection-toolbar')).to_contain_text('0 selected')
+    expect(page.locator('[data-photo-visibility="hide"]')).to_be_disabled()
+    page.locator('[data-action="photos-selection-cancel"]').click()
+    expect(page.locator('.selection-toolbar')).to_have_count(0)
     tile = page.locator('.photo-grid .photo-tile').first
     tile.hover()
     selector = tile.locator('[data-photo-select]')
@@ -205,9 +217,10 @@ def smoke_photo_selection(context, page, base):
     page.locator('[data-photo-select]').first.click(force=True)
     page.keyboard.press('Escape')
     expect(page.locator('.selection-toolbar')).to_have_count(0)
-    # Touch users get a persistent, finger-sized selector.
+    # Narrow screens expose an explicit Select action before bulk selection.
     page.set_viewport_size({'width':390,'height':844})
     page.emulate_media(media='screen')
+    page.locator('[data-action="photos-selection-start"]').click()
     selector=page.locator('[data-photo-select]').first
     selector.focus()
     expect(selector).to_have_css('opacity','1')

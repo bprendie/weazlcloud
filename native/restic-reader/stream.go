@@ -42,7 +42,7 @@ func (s *responseStream) send(kind byte, id, size uint64, body []byte) error {
 	return err
 }
 
-func serveBinary(parent context.Context, repo *repository.Repository, workers int, input io.ReadCloser, output io.Writer) error {
+func serveBinary(parent context.Context, indexed *indexedRepository, workers int, input io.ReadCloser, output io.Writer) error {
 	ctx, stop := context.WithCancel(parent)
 	defer stop()
 	defer input.Close()
@@ -89,7 +89,7 @@ func serveBinary(parent context.Context, repo *repository.Repository, workers in
 		go func(req request) {
 			defer jobs.Done()
 			defer cancel()
-			err := streamFile(work, repo, req, stream)
+			err := indexed.read(work, func() error { return streamFile(work, indexed.repo, req, stream) })
 			// Release the slot before the completion frame, so its consumer may
 			// immediately issue a replacement request without a false busy result.
 			mu.Lock()

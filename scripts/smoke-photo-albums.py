@@ -19,6 +19,7 @@ from smoke_photo_preparation import smoke_photo_preparation
 from smoke_modal_photos import smoke_modal_photos
 from smoke_photo_browsing import smoke_bidirectional_photos
 from smoke_live_photos import smoke_live_photos
+from smoke_photo_refresh import smoke_photo_refresh
 
 name = 'weazl-albums-' + uuid.uuid4().hex[:10]
 volume = name + '-data'
@@ -102,6 +103,11 @@ try:
                     time.sleep(.25)
                 raise AssertionError('import timed out')
             import_zip('part1.zip')
+            if os.environ.get('WEAZLCLOUD_SMOKE_REFRESH_ONLY') == '1':
+                smoke_photo_refresh(context,page,base,png,image)
+                assert not errors,errors
+                browser.close()
+                raise SystemExit(0)
             page.locator('nav [data-view="photos"]').click()
             page.locator('[data-photos-mode="albums"]').click()
             expect(page.locator('.photo-album-card')).to_have_count(1)
@@ -210,6 +216,8 @@ try:
                 post('/api/login', {'username':'albums','password':'album-test-pass'})
                 post('/api/unlock', {'passphrase':'album-test-pass'})
             smoke_live_photos(context,page,post,browser,base,image,restart_live)
+            assert not errors, errors
+            smoke_photo_refresh(context,page,base,png,image)
             assert not errors, errors
             assert (Path(root)/'part1.zip').exists()
             browser.close()

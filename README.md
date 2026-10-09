@@ -16,8 +16,9 @@ capture-date rail: drag to a month, pick a day, or scrub with your keyboard.
 The timeline pages through a private metadata index and cached previews.
 New uploads feed the same background indexing and preview pipeline as imports.
 
-- **Triage:** Hover over a photo to reveal its selection circle; touch devices
-  keep it visible. Shift-click ranges to bulk **Archive** (pull from the timeline)
+- **Triage:** Hover over a photo to reveal its selection circle, or choose
+  **Select** (including on touch devices). Browsing does not select photos;
+  **Cancel selection** or Escape returns to browsing. Shift-click ranges to bulk **Archive** (pull from the timeline)
   or **Hide** (keep out of normal Photos search and albums). Originals and album
   memberships remain. Hidden photos are still accessible through Library and
   use the same vault password.
@@ -32,6 +33,11 @@ New uploads feed the same background indexing and preview pipeline as imports.
   or extracting temporary plaintext audio. Playback follows browser codec support.
 
 Previews are generated in the background and cached encrypted.
+New uploads preserve already displayed thumbnails instead of clearing the grid.
+QuickTime `.mov` videos, including H.264/HEVC clips with a trailing movie index,
+get poster thumbnails within the existing 64 MiB preview input limit. Larger
+videos remain stored and downloadable. Portrait playback fits inside the viewer;
+playback codecs still depend on the browser.
 **Photos → ☰ → Prepare previews** can prepare the existing collection; closing
 the browser does not stop an accepted job. A locked vault or explicit pause
 stops private work. Paired Live Photos open as a still, with motion playback

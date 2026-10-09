@@ -84,6 +84,24 @@ func TestPreviewRAMReclaimsAndSessionLockClears(t *testing.T) {
 		t.Fatal("locked session returned cached bytes")
 	}
 }
+
+func TestUnrelatedIngestRetainsWarmPreviewRAM(t *testing.T) {
+	l := newPhotoIndexTestLibrary(t)
+	previewRAM.put(l, "fixture", thumbnailEnvelope{ContentType: "image/png", Body: []byte("warm")})
+	if _, ok := previewRAM.get(l, "fixture"); !ok {
+		t.Skip("RAM discovery disabled cache")
+	}
+	if _, err := l.Put(context.Background(), "Photos/new.jpg", []byte("new upload")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := previewRAM.get(l, "fixture"); !ok {
+		t.Fatal("unrelated upload evicted warm previews")
+	}
+	l.publishChange(Change{Kind: "photo-visibility"})
+	if _, ok := previewRAM.get(l, "fixture"); ok {
+		t.Fatal("visibility change retained session bytes")
+	}
+}
 func TestEncryptedPreviewManifestAndCorruption(t *testing.T) {
 	l := newPhotoIndexTestLibrary(t)
 	f := putPreviewFixture(t, l, "Photos/private.png")
