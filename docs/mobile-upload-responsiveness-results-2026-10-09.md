@@ -94,9 +94,38 @@ uses a generated valid MOV. No production load tests or production content expor
 
 ## Final release gates and production record
 
-Pending: final make check, exact release-image container/mobile smokes, the
-S6 production cutover. All four three-run comparisons and batch polling passed.
-Do not treat this document as deployment evidence until those results are added.
+Full `make check` passed, including race tests, vet, native helpers, JavaScript
+and Go-file length checks. All four three-run comparisons and batch polling passed.
+The final release image passed renderer and Restic/shared container smokes,
+250-MiB mobile upload/restart/readback fixtures on both backends at 2 CPU / 4 GiB,
+and real HTTP stalled-body, batch-status, and disconnect/resume checks. On this
+exact image, stalled-body status maxima were 8.77 ms (Restic) and 6.58 ms (shared).
+
+Production is live on runtime commit
+`2508953cb554c648b1d1c9c829176fd1ec65abbd`,
+image `weazlcloud:release-2508953`, image ID
+`sha256:66ae67d86dfabe6b91da280ddd9170f9ea25f09c2df904a40ac44f7689c757b4`.
+The API and isolated renderer drained cleanly; the checkpoint verified 68,754
+file entries and six canonical hashes. It is retained at
+`/exports/dockervolume/weazlcloud-backups/upload-responsive-20261009/data`.
+Image-only cutover completed at 21:15:34 UTC October 9 (22.7 seconds). Both
+containers were healthy with unchanged mounts, settings, resource limits and
+security. Local 7272/7273/7274 readiness, public Desk/Grab TLS readiness, exact
+served assets, and the public login browser passed. The previous runtime image
+`weazlcloud:release-f63cc3d4c58a` is retained.
+
+The immediate 120-second baseline counted 84 successful part PUTs, no failed
+part PUTs, and 124 individual status GETs. Queue/live marker counts changed
+from 30/36 before drain to 26/31 after drain/restart. The baseline publication
+matcher used the wrong catalog kind; old container logs were replaced at cutover.
+No before/after publication speed claim is supported by that sample.
+
+Restart relocked the owner's vault; owner unlock was requested. Until it occurs,
+production seed resumption and live latency/error comparison remain unverified.
+Accepted parts and receipts were preserved, with no reset or deletion. Detailed
+deployment evidence is under
+`/home/bobp/weazlcloud-releases/upload-responsive-20261009` on production.
+Never restore the old checkpoint over data accepted after cutover.
 
 Batch polling fixture (2 CPU / 4 GiB): nine batch calls across 36.7 seconds with
 Restic (p95 6.87 ms), and one across 7.15 seconds with shared (3.07 ms), with zero

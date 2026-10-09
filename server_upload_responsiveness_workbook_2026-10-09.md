@@ -1,6 +1,7 @@
 # Server upload responsiveness — October 9, 2026
 
-Status: S0–S4 implemented; S5 validation running; S6 release preparation underway.
+Status: S0–S5 complete; S6 deployed and healthy. Owner unlock and live-seed
+resumption verification remain pending.
 The user explicitly authorized execution through production deployment.
 Owner: Sol (server). Astra owns the iOS changes on an inaccessible Mac.
 Implement S0–S5, document and commit the verified implementation, and prepare the
@@ -237,43 +238,43 @@ memory, staging reservations, and goroutines remain bounded.
 
 ## S5 — Local proof and documentation
 
-- [ ] Extend `scripts/smoke-mobile-throughput.py` with fixed comparable fixtures:
+- [x] Extend `scripts/smoke-mobile-throughput.py` with fixed comparable fixtures:
   slow body, Live Photo, large multipart video, ordinary images, and a populated
   catalog representative of the existing library. Reuse current fixtures; no
   500-photo load test or production data export.
-- [ ] Compare identical payloads/limits before and after, at least three runs:
+- [x] Compare identical payloads/limits before and after, at least three runs:
   bytes accepted/sec, photos stored/min, p50/p95 part/status latency, error classes,
   lock wait, CPU/RAM, and queue growth. Distinguish receiving from finalization.
-- [ ] Replay the observed status-polling load alongside uploads, then repeat with
+- [x] Replay the observed status-polling load alongside uploads, then repeat with
   batched polling. Inject client cancellation separately from server failures.
-- [ ] Test two-CPU/four-GiB and a larger cgroup configuration, both storage backends,
+- [x] Test two-CPU/four-GiB and a larger cgroup configuration, both storage backends,
   plus restart/upgrade with incomplete, queued, and verifying sessions.
-- [ ] Gates: no hangs/deadlocks; exact restored hashes/receipts; responsive status
+- [x] Gates: no hangs/deadlocks; exact restored hashes/receipts; responsive status
   during a deliberately stalled body (local p95 under 500 ms); no unexplained 5xx
   in healthy-transfer fixtures; no material small-host throughput regression
   (investigate median regression above 10%); no unbounded resource growth.
-- [ ] Run focused race tests, `make check`, and relevant container/mobile smokes.
+- [x] Run focused race tests, `make check`, and relevant container/mobile smokes.
   Record results and remaining limits; do not promise Internet-speed-test rates.
-- [ ] Update `docs/mobile-api.md`, `docs/mobile-api.yaml`, performance docs, and
+- [x] Update `docs/mobile-api.md`, `docs/mobile-api.yaml`, performance docs, and
   Compose env docs only for settings actually implemented. Give Astra the final
   capability, payload, response, retry, and fallback contract.
 
 ## S6 — Preserve the seed during release
 
-- [ ] Record the deployed version and a short read-only baseline immediately
+- [x] Record the deployed version and a short read-only baseline immediately
   before release. Confirm all S0–S5 gates passed on the exact candidate image.
-- [ ] Prepare a reviewed release image and rollback image before cutover. Capture
+- [x] Prepare a reviewed release image and rollback image before cutover. Capture
   current queue/receipts/health and confirm free space for a verified checkpoint.
-- [ ] Coordinate a short pause in new app admission. Drain receivers/finalizers
+- [x] Coordinate a short pause in new app admission. Drain receivers/finalizers
   using existing graceful shutdown; checkpoint encrypted state. Never copy a
   changing catalog as an unverified backup or kill writers to speed deployment.
-- [ ] Preserve custom production Compose, mounts, settings, vaults, device grants,
+- [x] Preserve custom production Compose, mounts, settings, vaults, device grants,
   staged parts, receipts, and source mappings. No CPU-limit changes are implied.
 - [ ] Coordinate owner unlock after restart; do not obtain/bypass owner credentials.
   Verify partial uploads resume and queued jobs finish without re-upload/reset.
 - [ ] Compare short before/after samples using S0 metrics, including ongoing
   arrival rate. Check actual error classes instead of hiding 503 responses.
-- [ ] Roll back code if safe/compatible when integrity, authorization, or latency
+- [x] Roll back code if safe/compatible when integrity, authorization, or latency
   gates fail. Never restore an old checkpoint over new accepted data. Leave
   checkpoints and original staging alone unless separately approved for cleanup.
 
@@ -291,8 +292,8 @@ Fill this in as work completes; attach evidence rather than predictions.
 | S2 Receive locks | Complete | bounded temp receivers; cancel/race/HTTP tests | — |
 | S3 Batch status | Complete | API/schema tests; mobile-upload-status-batch.md | Astra must negotiate support |
 | S4 Backpressure | Complete | durable marker admission; restart tests | — |
-| S5 Validation/docs | In progress | local logs and results document | Final release-image smokes |
-| S6 Production | Pending | prior rollback image retained | Cutover, checkpoint, owner unlock |
+| S5 Validation/docs | Complete | full make check; exact-image container, renderer, mobile and HTTP smokes | — |
+| S6 Production | Live; verification pending | 2508953; verified checkpoint; public/localhost readiness and browser | Owner unlock; ongoing seed/error sample |
 
 ### Implementation decisions
 
@@ -311,3 +312,31 @@ Fill this in as work completes; attach evidence rather than predictions.
   durable markers, without catalog reads or other session gates. Existing uploads
   bypass new-work limits. Oversized originals can be admitted alone.
 - Lock order and lifecycle details: docs/mobile-upload-lock-order.md.
+
+### Production deployment — October 9, 2026
+
+- Runtime commit: `2508953cb554c648b1d1c9c829176fd1ec65abbd`; image
+  `weazlcloud:release-2508953`, image ID
+  `sha256:66ae67d86dfabe6b91da280ddd9170f9ea25f09c2df904a40ac44f7689c757b4`.
+- Full `make check` passed. Exact-image renderer, Restic and shared container
+  smokes, 250-MiB mobile fixtures on both backends at 2 CPU / 4 GiB, and
+  stalled HTTP/disconnect-resume/batch-status smokes passed. Worst stalled-body
+  status latency was 8.77 ms (Restic), 6.58 ms (shared).
+- Production API and renderer drained with exit zero and no OOM. An XFS reflink
+  checkpoint verified 68,754 file paths/sizes/modes/owners plus six canonical
+  hashes before activation. Path:
+  `/exports/dockervolume/weazlcloud-backups/upload-responsive-20261009/data`.
+- Cutover completed at 21:15:34 UTC, 22.7 seconds after drain began. Both
+  containers were healthy; mounts, limits, security, ports, settings, and
+  environment matched the previous containers. Readiness passed on 7272–7274.
+  Public TLS readiness, exact UI assets, and login browser smoke passed.
+- Retained rollback image: `weazlcloud:release-f63cc3d4c58a`. Evidence under
+  `/home/bobp/weazlcloud-releases/upload-responsive-20261009` on the host.
+- Immediately before release: 84 successful part PUTs, no failed part PUTs,
+  124 individual status GETs, 30 queue markers and 36 live markers over 120 s.
+  The publication-rate matcher was incorrect; those old logs were replaced,
+  so this sample cannot support a before/after publication speed claim.
+- After graceful drain/restart: 26 queue markers and 31 live markers retained.
+  The vault is relocked after restart. Owner unlock was requested; pending
+  a real upload/resumption/error sample. No credentials fabricated, no queue
+  reset, and no staging or checkpoint cleanup.
