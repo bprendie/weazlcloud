@@ -1,5 +1,7 @@
 # Native mobile API — implementation contract
 
+Photo upload preflight: [SHA-256 and size lookup](photo-content-lookup.md).
+
 Updated October 9, 2026. This documents the implemented mobile contract and the
 concurrent finalization update. See [validation](mobile-server-validation-2026-10-02.md) and
 [decisions/migration](mobile-server-decisions.md). The machine-readable companion

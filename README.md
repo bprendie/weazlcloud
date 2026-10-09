@@ -51,6 +51,8 @@ Phone uploads can keep sending while earlier photos commit to storage. The
 server sizes its finalization pool to CPU/RAM capacity and batches small Restic
 writes through pipes, preserving encrypted staging and resumable receipts.
 See [mobile upload performance](docs/mobile-upload-performance-2026-10-09.md).
+Clients can [check SHA-256 and size before uploading](docs/photo-content-lookup.md)
+in batches of 200 against their own Photos library, including Hidden when requested.
 
 See the [Photos API](docs/photo-api.md) and
 [operations reference](docs/operations-reference.md) for formats, limits, and

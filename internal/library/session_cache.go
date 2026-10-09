@@ -61,6 +61,7 @@ func (l *Library) clearSessionCache() {
 	l.storageSummaryReady = false
 	l.photoMu.Lock()
 	l.photoRows, l.photoMediaRows = nil, nil
+	l.photoContentIndex = nil
 	l.photoByID, l.photoByPath, l.photoMediaByPath = nil, nil, nil
 	l.photoMediaByID, l.photoHiddenFolders = nil, nil
 	l.photoDateSummary = PhotoDateSummary{}

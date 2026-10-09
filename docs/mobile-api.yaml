@@ -10,6 +10,34 @@ security:
 - DeviceBearer: []
 - OwnerSession: []
 paths:
+  /api/v1/photos/lookup:
+    post:
+      summary: Check owner Photos originals by SHA-256 and byte size before upload
+      operationId: lookupPhotoContent
+      x-required-scopes: [photos:read]
+      description: Read-only catalog observation; no backup receipt or reservation. Hidden requires explicit inclusion. Live Photo components must match the same parent asset. See photo-content-lookup.md.
+      parameters:
+      - in: header
+        name: X-Weazl-Desk
+        required: true
+        schema: {type: string, enum: ['1']}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoContentLookupRequest'
+      responses:
+        '200':
+          description: Ordered results; at most 20 matches per item. Cache-Control is private, no-store.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoContentLookupResponse'
+        '400': {description: Invalid JSON, checksum, size, batch count or body over 64 KiB}
+        '401': {description: Invalid credentials}
+        '403': {description: Missing photos read scope or invalid request guard}
+        '423': {description: Vault locked; owner unlock required}
   /api/v1/photos:
     get:
       summary: GET /api/v1/photos
@@ -2362,6 +2390,53 @@ components:
       in: cookie
       name: weazl_session
   schemas:
+    PhotoContentKey:
+      type: object
+      additionalProperties: false
+      required: [sha256, size]
+      properties:
+        sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+        size: {type: integer, format: int64, minimum: 1}
+    PhotoContentLookupRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        include_hidden: {type: boolean, default: false}
+        items:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: {$ref: '#/components/schemas/PhotoContentKey'}
+    PhotoContentLookupResponse:
+      type: object
+      required: [generation, results]
+      properties:
+        generation: {type: integer, format: int64, minimum: 0}
+        results:
+          type: array
+          items:
+            type: object
+            required: [sha256, size, exists, matches, match_count, has_more_matches]
+            properties:
+              sha256: {type: string}
+              size: {type: integer, format: int64}
+              exists: {type: boolean}
+              match_count: {type: integer, minimum: 0}
+              has_more_matches: {type: boolean}
+              matches:
+                type: array
+                maxItems: 20
+                items:
+                  type: object
+                  required: [asset_id, revision, component_id, component_asset_id, hidden, archived]
+                  properties:
+                    asset_id: {type: string}
+                    revision: {type: integer, format: int64}
+                    component_id: {type: string, enum: [original, motion]}
+                    component_asset_id: {type: string}
+                    hidden: {type: boolean}
+                    archived: {type: boolean}
     Error:
       type: object
       properties:
@@ -2421,6 +2496,7 @@ components:
         features:
           type: object
           properties:
+            photo_content_lookup: {type: boolean}
             scoped_devices: {type: boolean}
             credential_rotation: {type: boolean}
             photo_collections: {type: boolean}
@@ -2440,6 +2516,8 @@ components:
         limits:
           type: object
           properties:
+            photo_lookup_items: {type: integer, const: 200}
+            photo_lookup_matches: {type: integer, const: 20}
             active_devices: {type: integer, const: 32}
             credential_ttl_seconds: {type: integer, const: 7776000}
             rotation_grace_seconds: {type: integer, const: 900}

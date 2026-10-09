@@ -1,5 +1,7 @@
 # Native app server handoff — October 2, 2026
 
+Photo upload preflight: [SHA-256 and size lookup](photo-content-lookup.md).
+
 Use [mobile-api.md](mobile-api.md), [mobile-api.yaml](mobile-api.yaml) and
 [validation evidence](mobile-server-validation-2026-10-02.md) as the current
 server contract. The scaffold's original gap table describes the earlier

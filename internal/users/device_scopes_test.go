@@ -25,6 +25,9 @@ func TestExplicitMethodGrantsLegacyAndEmptyPersistence(t *testing.T) {
 		legacy, reader bool
 	}{
 		{"GET", "/api/v1/photos", true, true},
+		{"POST", "/api/v1/photos/lookup", true, true},
+		{"GET", "/api/v1/photos/lookup", false, false},
+		{"DELETE", "/api/v1/photos/lookup", false, false},
 		{"POST", "/api/v1/photos/albums", true, false},
 		{"POST", "/api/v1/photos/metadata-jobs", true, false},
 		{"GET", "/api/v1/photos/collections", false, true},

@@ -10,6 +10,7 @@ import (
 )
 
 func (l *Library) rebuildPhotoLookupsLocked() {
+	l.photoContentIndex = make(map[PhotoContentKey][]string)
 	l.photoByID = make(map[string]catalog.File, len(l.photoRows))
 	l.photoByPath = make(map[string]int, len(l.photoRows))
 	l.photoMediaRows = make([]catalog.File, 0, len(l.photoRows))
@@ -17,6 +18,7 @@ func (l *Library) rebuildPhotoLookupsLocked() {
 	l.photoHiddenFolders = make(map[string]bool)
 	l.photoArchivedCount = 0
 	for i, f := range l.photoRows {
+		l.indexPhotoContentLocked(f, false)
 		l.photoByID[f.EntryID] = f
 		l.photoByPath[f.Path] = i
 		if f.Hidden {

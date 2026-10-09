@@ -3,6 +3,8 @@ package desk
 import (
 	"net/http"
 	"strings"
+
+	"github.com/bprendie/weazlcloud/internal/library"
 )
 
 // tryMobileIdentity is called by the parent before serveMulti's switch. It owns
@@ -102,7 +104,7 @@ func (h *Handler) mobileCapabilities(w http.ResponseWriter, r *http.Request) {
 		mobileIdentityError(w, err)
 		return
 	}
-	out := map[string]any{"instance_id": id, "contract_version": 1, "owner_id": u.ID, "profile": map[string]string{"username": u.Username, "full_name": u.FullName}, "vault_unlocked": res.Vault.Unlocked(), "features": map[string]bool{"scoped_devices": true, "credential_rotation": true, "photo_collections": true, "source_collections": true, "source_memberships": true, "file_reads": true, "files_sync": true, "recurring_backups": true, "idempotent_grabs": true, "parts_v1": h.mobileParts != nil, "auto_finalize": h.mobileParts != nil}, "transports": []string{"ordered-patch-v1", "parts-v1"}, "limits": map[string]any{"active_devices": 32, "credential_ttl_seconds": 7776000, "rotation_grace_seconds": 900, "staging_expiry_seconds": 86400, "ordered_chunk_bytes": 16 << 20, "part_bytes": 16 << 20, "missing_parts_page": 200, "mobile_finalize_workers": h.mobileFinalizerLimits().global, "mobile_finalize_workers_per_owner": h.mobileFinalizerLimits().perOwner}}
+	out := map[string]any{"instance_id": id, "contract_version": 1, "owner_id": u.ID, "profile": map[string]string{"username": u.Username, "full_name": u.FullName}, "vault_unlocked": res.Vault.Unlocked(), "features": map[string]bool{"photo_content_lookup": true, "scoped_devices": true, "credential_rotation": true, "photo_collections": true, "source_collections": true, "source_memberships": true, "file_reads": true, "files_sync": true, "recurring_backups": true, "idempotent_grabs": true, "parts_v1": h.mobileParts != nil, "auto_finalize": h.mobileParts != nil}, "transports": []string{"ordered-patch-v1", "parts-v1"}, "limits": map[string]any{"photo_lookup_items": library.PhotoContentLookupLimit, "photo_lookup_matches": library.PhotoContentMatchLimit, "active_devices": 32, "credential_ttl_seconds": 7776000, "rotation_grace_seconds": 900, "staging_expiry_seconds": 86400, "ordered_chunk_bytes": 16 << 20, "part_bytes": 16 << 20, "missing_parts_page": 200, "mobile_finalize_workers": h.mobileFinalizerLimits().global, "mobile_finalize_workers_per_owner": h.mobileFinalizerLimits().perOwner}}
 	if r.Header.Get("Authorization") != "" {
 		d, err := h.users.DeviceForRequest(r)
 		if err != nil {

@@ -66,6 +66,7 @@ type Library struct {
 	sharedWrites               bool
 	albumMetadata              map[string]albumMetadata
 	photoMu                    sync.Mutex
+	photoContentIndex          map[PhotoContentKey][]string
 	photoRows                  []catalog.File
 	photoMediaRows             []catalog.File
 	photoByID                  map[string]catalog.File

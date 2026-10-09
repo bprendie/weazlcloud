@@ -23,7 +23,8 @@ func (h *Handler) photoCapabilities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"version": 1, "vault_unlocked": res.Vault.Unlocked(), "page_limit": library.PhotoPageMaximum,
+		"content_lookup": map[string]any{"path": "/api/v1/photos/lookup", "algorithm": "sha256", "max_items": library.PhotoContentLookupLimit, "max_matches": library.PhotoContentMatchLimit},
+		"version":        1, "vault_unlocked": res.Vault.Unlocked(), "page_limit": library.PhotoPageMaximum,
 		"chunk_limit": upload.MaxChunkBytes, "upload_components": []string{"original", "motion"},
 		"roots":              roots,
 		"device_credentials": true, "durable_sync": true, "hidden_context": true, "album_edits": true,

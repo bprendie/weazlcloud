@@ -79,6 +79,7 @@ func grant(method, path string, legacy bool, scopes ...string) routeGrant {
 
 // Every route includes its method. Wildcards match exactly one nonempty segment.
 var deviceGrants = []routeGrant{
+	grant("POST", "/api/v1/photos/lookup", true, PhotosRead),
 	grant("GET", "/api/v1/photos", true, PhotosRead),
 	grant("GET", "/api/v1/photos/capabilities", true, PhotosRead),
 	grant("GET", "/api/v1/photos/albums", true, PhotosRead),

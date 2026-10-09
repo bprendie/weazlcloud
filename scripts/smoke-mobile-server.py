@@ -554,6 +554,19 @@ def run_backend(image, backend, extended, large_mib):
         photo = transfer_parts(client, '/api/v1/photos/uploads', photo_transfer, photo_payload)
         original, _ = client.request('GET', '/api/v1/photos/assets/' + photo['asset_id'] + '/original')
         require(original == photo_payload, 'photo original hash mismatch')
+        lookup_body = {'items': [{'sha256': hashlib.sha256(photo_payload).hexdigest(),
+                                  'size': len(photo_payload)},
+                                 {'sha256': hashlib.sha256(photo_payload).hexdigest(),
+                                  'size': len(photo_payload) + 1}]}
+        def check_lookup():
+            results = client.json('POST', '/api/v1/photos/lookup', lookup_body)['results']
+            require(results[0]['exists'] and not results[1]['exists'], 'content lookup size mismatch')
+            require(results[0]['matches'][0]['asset_id'] == photo['asset_id'],
+                    'content lookup lost uploaded photo identity')
+        check_lookup()
+        capabilities = client.json('GET', '/api/v1/mobile/capabilities')
+        require(capabilities['features']['photo_content_lookup'], 'lookup discovery missing')
+        require(capabilities['limits']['photo_lookup_items'] == 200, 'lookup batch limit missing')
         print(f'MOBILE ({backend}): photo auto commit verified', flush=True)
         file_payload = bytes(range(256)) * (PART_SIZE // 256 + 8)
         backup_spec, file_transfer, file = file_backup(admin, client, device_id, file_payload)
@@ -567,6 +580,7 @@ def run_backend(image, backend, extended, large_mib):
         restart_fixture(name, admin, client, guest)
         admin.json('POST', '/api/login', {'username': 'mobile-smoke', 'password': password})
         admin.json('POST', '/api/unlock', {'passphrase': vault_phrase})
+        check_lookup()
         client.stage = 'durable receipts after restart'
         for route, upload_spec, transfer in [('/api/v1/photos/uploads', spec, photo_transfer),
                                             ('/api/v1/backups/uploads', backup_spec, file_transfer)]:
@@ -591,7 +605,7 @@ def run_backend(image, backend, extended, large_mib):
                     'retry reminted a revoked capsule')
         large_stream(admin, client, name, backend, backup_spec, large_mib)
         print(f'PASS ({backend}): scoped enrollment, nested collections, reordered/repeated '
-              f'parts, auto commits, Files Range, restart receipts and idempotent/revoked grabs '
+              f'parts, auto commits, checksum lookup, Files Range, restart receipts and idempotent/revoked grabs '
               f'({time.monotonic()-started:.1f}s)', flush=True)
     except SmokeFailure:
         # Inspect logs locally but emit only fixed categories, never log lines.
