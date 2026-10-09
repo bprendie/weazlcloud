@@ -33,6 +33,7 @@ func (h *Handler) runMobileParts(ctx context.Context) {
 	timer := time.NewTicker(time.Second)
 	defer timer.Stop()
 	nextSweep := time.Now()
+	nextGrantReport := time.Time{}
 	var queues []mobileOwnerJobs
 	for {
 		select {
@@ -48,6 +49,7 @@ func (h *Handler) runMobileParts(ctx context.Context) {
 				return
 			}
 			owners := h.users.Users()
+			denied := 0
 			queues = nil
 			sweep := !time.Now().Before(nextSweep)
 			if sweep {
@@ -78,6 +80,7 @@ func (h *Handler) runMobileParts(ctx context.Context) {
 						continue
 					}
 					if h.authorizeMobilePart(session) != nil {
+						denied++
 						continue
 					}
 					queue.jobs = append(queue.jobs, mobileFinalizeJob{
@@ -91,6 +94,10 @@ func (h *Handler) runMobileParts(ctx context.Context) {
 					_ = h.mobileParts.Sweep(res)
 				}
 				release()
+			}
+			if denied > 0 && !time.Now().Before(nextGrantReport) {
+				log.Printf("mobile queue authorization deferred=%d; existing upload admission must be renewed", denied)
+				nextGrantReport = time.Now().Add(time.Minute)
 			}
 			pool.schedule(queues)
 		}

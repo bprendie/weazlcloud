@@ -98,7 +98,13 @@ func (m *Manager) recoverIndex(res *filesvc.Resource) error {
 			warnings = errors.Join(warnings, err)
 			continue
 		}
-		unlock := m.lock(res, id)
+		unlock, available := m.tryLock(res, id)
+		if !available {
+			// A legacy header may not have a marker yet. Preserve a recovery
+			// candidate before completing the durable index upgrade.
+			warnings = errors.Join(warnings, setMarker(res, ".live", id, true))
+			continue
+		}
 		var s Session
 		err = readSealed(res, filepath.Join(keyFor(res, id), "session.enc"), &s)
 		if err == nil {
@@ -126,7 +132,10 @@ func (m *Manager) recoverLive(res *filesvc.Resource) error {
 		if !validID(id) || entry.IsDir() {
 			continue
 		}
-		unlock := m.lock(res, id)
+		unlock, available := m.tryLock(res, id)
+		if !available {
+			continue
+		}
 		s, loadErr := m.load(res, id)
 		if loadErr == nil {
 			loadErr = syncSessionMarkers(res, s)

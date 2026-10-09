@@ -25,7 +25,10 @@ func (m *Manager) Pending(res *filesvc.Resource) ([]Session, error) {
 		if !validID(id) || entry.IsDir() {
 			continue
 		}
-		unlock := m.lock(res, id)
+		unlock, available := m.tryLock(res, id)
+		if !available {
+			continue
+		}
 		s, loadErr := m.load(res, id)
 		if loadErr == nil && queued(s) && !m.now().Before(s.RetryAfter) {
 			out = append(out, s)
@@ -53,7 +56,10 @@ func (m *Manager) Sweep(res *filesvc.Resource) error {
 		if !validID(id) || entry.IsDir() {
 			continue
 		}
-		unlock := m.lock(res, id)
+		unlock, available := m.tryLock(res, id)
+		if !available {
+			continue
+		}
 		if m.isActive(res, id) {
 			unlock()
 			continue

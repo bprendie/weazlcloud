@@ -193,3 +193,23 @@ existing create handler refreshes the grant for matching immutable intent and
 preserves accepted parts. A new upload identity or seed reset is unnecessary.
 GET status polling alone does not perform this recovery. Parallelize different
 assets first; part receipt operations on one upload currently share a session gate.
+
+### Queue scan blocked by an incoming part
+
+A second defect was reproduced independently of Traefik: `Pending` first reconciles
+live sessions, and both reconciliation and sweeping used a blocking session gate.
+`Append` holds that same gate while reading a request body. A slow/incomplete
+network upload could therefore stop discovery of every ready upload, despite
+available finalizer workers. Longer proxy timeouts alone cannot fix this.
+
+Background index recovery, pending discovery and sweeping now try the gate and
+skip busy sessions until a later bounded scan. Foreground writes retain their
+existing serialization and durability barriers. If a busy legacy session has no
+index marker, recovery persists a live marker before completing the index upgrade,
+so skipped work cannot disappear. Regression tests hold a real Append reader open
+and require discovery of its completed peer plus a successful sweep; the original
+implementation fails that test. Separate coverage checks legacy marker recovery.
+
+The worker also emits a rate-limited aggregate count of queued uploads rejected
+by device-grant checks. This distinguishes stale authorization from unavailable
+workers without exposing credentials, manifests or filenames.
