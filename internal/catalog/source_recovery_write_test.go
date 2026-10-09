@@ -96,7 +96,18 @@ func TestAdoptSourceCollectionPreservesTargetAndRejectsConflicts(t *testing.T) {
 	if !reflect.DeepEqual(beforeAlbums, c.Albums()) || !reflect.DeepEqual(beforeFolders, c.collections.Folders) {
 		t.Fatal("folder adoption changed album nesting or membership")
 	}
-	if err = c.DeleteAlbum(album.ID, album.Revision); err != nil {
+	// Subsequent source writes must address the adopted ID and retain the
+	// inherited folder and members while advancing the current source revision.
+	update := SourceOperation{OperationID: "later-update", Namespace: "current", SourceID: "same-album", SourceRevision: "a2", Kind: "album", ParentSourceID: "same-folder", Title: "Updated", ExpectedRevision: album.Revision}
+	updates, err := c.ImportSourceOperations("current-device", []SourceOperation{update}, false)
+	if err != nil || updates[0].Status != "applied" || updates[0].ServerID != album.ID || updates[0].Revision != album.Revision+1 {
+		t.Fatal("adopted source could not write", updates, err)
+	}
+	currentAlbum := c.Albums()[0]
+	if currentAlbum.ParentID != out[0].ServerID || len(currentAlbum.AssetIDs) != 1 || currentAlbum.AssetIDs[0] != f.EntryID {
+		t.Fatal("source update lost nesting or membership", currentAlbum)
+	}
+	if err = c.DeleteAlbum(album.ID, currentAlbum.Revision); err != nil {
 		t.Fatal(err)
 	}
 	changed = a

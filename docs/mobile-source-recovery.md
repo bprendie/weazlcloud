@@ -115,8 +115,27 @@ invalid credentials 401; insufficient scope or missing request guard 403;
 locked vault 423. Invalid bearer credentials never fall back to an owner cookie.
 Retry after owner unlock without clearing local recovery state.
 
-Validation: the initial read-only lookup passed `make check` and was deployed
-on October 9. The adoption write has focused race tests for owner/device/scope
-checks, durable replay, stale revisions, deletion, save failure, and unchanged
-album memberships and folder hierarchy. The full release checks are required
-before the adoption write is deployed.
+Validation: the read lookup and guarded adoption write passed `make check`,
+including full race tests, vet, native helpers, Go length and JavaScript checks.
+Focused race tests cover owner/device/scope isolation, durable replay, stale
+revisions, deleted targets, save rollback, and unchanged album memberships and
+folder hierarchy. A subsequent ordinary source update under the adopted device
+was verified to keep the existing album ID, parent folder and member IDs.
+OpenAPI parses with all local references resolved. The exact image passed
+renderer, Restic/shared container, and 250 MiB mobile upload/restart/readback
+smokes on both storage backends at 2 CPU / 4 GiB.
+
+Production release `weazlcloud:release-30cf2f5` (runtime commit
+`30cf2f5160e7a9d2f149a4c4ff57f1c8f4626ae1`, image ID
+`sha256:c31d45fc17d4153470b6b9d71f8f32ab6078b797364acbbec166ca59ae8ded7b`)
+was activated October 9 at 22:02:16 UTC. Both containers were healthy with
+unchanged mounts, security, settings, ports and resource limits. API, Grab,
+WebDAV and renderer readiness passed; public TLS/UI browser smoke passed; both
+recovery routes required authentication on the live Desk. The API and worker
+exited cleanly for cutover. A verified checkpoint of 76,927 files and six
+canonical hashes is retained at
+`/exports/dockervolume/weazlcloud-backups/source-recovery-write-20261009/data`.
+Previous image `weazlcloud:release-b1dbfb8` remains available for code rollback.
+No accepted staging or vault assets were reset. Production seed publication
+resumes after the owner vault is unlocked following restart; that continuation
+must be checked separately from HTTP readiness.
