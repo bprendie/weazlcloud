@@ -1,4 +1,5 @@
 """Generated Live Photo resources through ordinary imports, repair and sharing."""
+import base64
 import json
 import struct
 import subprocess
@@ -66,10 +67,58 @@ def smoke_live_photos(context, page, post, browser, base, image, restart):
     page.locator('[data-select-file="'+primary['id']+'"]').click()
     expect(page.locator('[data-action="photo-live-play"]')).to_be_visible()
     expect(page.locator('[data-live-motion]')).to_be_hidden()
+    expect(page.locator('[data-action="photo-live-play"]')).to_have_text('Loop motion')
+    def check_zoom(selector):
+        media=page.locator(selector)
+        before=media.bounding_box()
+        page.evaluate('(selector)=>{window.zoomMedia=document.querySelector(selector);}',selector)
+        page.get_by_role('button',name='Zoom in',exact=True).click()
+        expect(page.locator('.photo-viewer-zoom')).to_have_text('150%')
+        enlarged=media.bounding_box()
+        assert enlarged['width']>before['width']*1.4 and enlarged['height']>before['height']*1.4,(before,enlarged)
+        assert page.evaluate('(selector)=>window.zoomMedia===document.querySelector(selector)',selector)
+        pan=page.locator('.photo-viewer-stage')
+        initial=pan.evaluate('(el)=>({x:el.scrollLeft,y:el.scrollTop})')
+        box=pan.bounding_box();x=box['x']+box['width']/2;y=box['y']+box['height']/2
+        page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+90,y+60,steps=5);page.mouse.up()
+        moved=pan.evaluate('(el)=>({x:el.scrollLeft,y:el.scrollTop})')
+        assert moved['x']<initial['x']-40 and moved['y']<initial['y']-30,(initial,moved)
+        page.get_by_role('button',name='Fit photo to window').click()
+        page.get_by_role('button',name='Zoom out',exact=True).click()
+        expect(page.locator('.photo-viewer-zoom')).to_have_text('50%')
+        smaller=media.bounding_box()
+        assert smaller['width']<before['width']*.6 and smaller['height']<before['height']*.6,(before,smaller)
+        page.get_by_role('button',name='Fit photo to window').click()
+        expect(page.locator('.photo-viewer-zoom')).to_have_text('100%')
+    page.wait_for_function('()=>document.querySelector("[data-photo-viewer-image]")?.naturalWidth>0')
+    check_zoom('[data-photo-viewer-image]')
+    page.evaluate("""() => {
+      const video=document.querySelector('[data-live-motion]');
+      window.liveLoopCount=0;let previous=0;
+      video.addEventListener('timeupdate',()=>{if(video.currentTime<previous)window.liveLoopCount++;previous=video.currentTime;});
+    }""")
     page.locator('[data-action="photo-live-play"]').click()
     page.wait_for_function('()=>document.querySelector("[data-live-motion]")?.currentTime>0')
+    page.evaluate('()=>{window.liveVideo=document.querySelector("[data-live-motion]");}')
+    check_zoom('[data-live-motion]')
+    page.get_by_role('button',name='Zoom in',exact=True).click()
+    refreshed=[]
+    page.on('response',lambda r:refreshed.append(r.status) if '/api/v1/photos/seek' in r.url else None)
+    upload('Photos/live-refresh.png',base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
+    for _ in range(100):
+        if refreshed:break
+        page.wait_for_timeout(100)
+    assert refreshed, 'live upload did not refresh Photos'
+    page.wait_for_timeout(1000)
+    assert page.evaluate('()=>window.liveVideo.isConnected && window.liveVideo===document.querySelector("[data-live-motion]") && !window.liveVideo.paused'), 'upload replaced/stopped Live Photo playback'
+    expect(page.locator('.photo-viewer-zoom')).to_have_text('150%')
+    page.wait_for_function('()=>window.liveLoopCount>0',timeout=15000)
+    expect(page.locator('[data-live-motion]')).to_be_visible()
+    expect(page.locator('[data-action="photo-live-play"]')).to_have_attribute('aria-pressed','true')
     page.locator('[data-action="photo-live-play"]').click()
     expect(page.locator('[data-live-motion]')).to_be_hidden()
+    assert page.locator('[data-live-motion]').evaluate('(v)=>v.paused')
+    expect(page.locator('[data-action="photo-live-play"]')).to_have_attribute('aria-pressed','false')
     page.locator('[data-action="photo-viewer-close"]').click()
     grant=post('/api/v1/photos/grabs', {'ids':[primary['id']], 'gate':'open', 'grabs':3, 'expiry':'1d'})
     guest_base=f'http://{urlparse(base).hostname}:{urlparse(base).port+1}'
@@ -108,4 +157,4 @@ def smoke_live_photos(context, page, post, browser, base, image, restart):
     items=context.request.get('/api/v1/photos?limit=100').json()['items']
     late=next(x for x in items if x['path']=='Photos/live-late/still.jpg')
     assert len(late['components'])==2, late
-    print('PASS: Apple/QuickTime identifier repair, dry-run/pause/restart, still-first playback, Range, frozen guest motion, original bytes and late imports',flush=True)
+    print('PASS: Apple/QuickTime identifier repair, dry-run/pause/restart, still/motion zoom, pan, Fit, looping through live uploads, Stop, Range, frozen guest motion, original bytes and late imports',flush=True)

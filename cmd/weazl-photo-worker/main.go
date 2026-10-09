@@ -159,7 +159,7 @@ func render(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if r.ContentLength <= 0 || r.ContentLength > maxInput {
+	if r.ContentLength <= 0 || r.ContentLength > int64(previewrpc.InputLimit(r.URL.Query().Get("media"))) {
 		http.Error(w, "invalid source size", http.StatusRequestEntityTooLarge)
 		return
 	}
@@ -174,7 +174,7 @@ func render(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid preview request", http.StatusBadRequest)
 		return
 	}
-	source, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxInput))
+	source, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(previewrpc.InputLimit(media))))
 	if err != nil || int64(len(source)) != r.ContentLength {
 		clear(source)
 		http.Error(w, "invalid source", http.StatusBadRequest)

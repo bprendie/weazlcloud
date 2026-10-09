@@ -73,3 +73,28 @@ export function reconcilePhotoRows(grid, rows, markup) {
   }
   for(const node of oldRows.values())if(!kept.has(node))node.remove();
 }
+
+// Upload/metadata refreshes must not detach the playing media element: doing so
+// cancels a cold motion request and resets playback even when its pixels match.
+export function renderPhotoViewerContent(content, html, identity) {
+  const template=document.createElement('template');template.innerHTML=html;
+  const fresh=template.content.firstElementChild;
+  const previous=content.querySelector(':scope > .photo-viewer-shell');
+  if(previous && content.photoViewerIdentity===identity){
+    for(const node of [...fresh.children]){
+      const old=previous.querySelector(`:scope > .${node.classList[0]}${node.classList.contains('previous')?'.previous':node.classList.contains('next')?'.next':''}`);
+      if(node.classList.contains('photo-viewer-stage')){
+        const image=old?.querySelector('[data-photo-viewer-image]'), next=node.querySelector('[data-photo-viewer-image]');
+        if(image && next){image.alt=next.alt;image.style.cssText=next.style.cssText;}
+        continue;
+      }
+      const controls=old?.querySelector('.photo-live-controls');
+      if(controls)node.querySelector('.photo-live-controls')?.replaceWith(controls);
+      if(old)old.replaceWith(node);else previous.append(node);
+    }
+    return true;
+  }
+  for(const media of content.querySelectorAll('video,audio')){media.pause();media.removeAttribute('src');media.load();}
+  content.replaceChildren(template.content);content.photoViewerIdentity=identity;
+  return false;
+}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bprendie/weazlcloud/internal/catalog"
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 	"github.com/bprendie/weazlcloud/internal/photos"
 	"github.com/bprendie/weazlcloud/internal/previewrpc"
@@ -16,6 +17,23 @@ import (
 // RecoverHEICPreviews requeues legacy environmental rejections once, preserving
 // good derivatives and explicit pause. Originals and canonical metadata are untouched.
 func (l *Library) RecoverHEICPreviews(ctx context.Context) (int, error) {
+	return l.recoverPreviewFailures(ctx, "heic-scratch-v1", ".weazl-heic-scratch-recovery-v1.enc", func(f catalog.File) bool {
+		ext := strings.ToLower(filepath.Ext(f.Path))
+		return ext == ".heic" || ext == ".heif"
+	})
+}
+
+// RecoverExpandedPreviews retries old pixel/transport bounds and MOV decoder
+// failures once. Good derivatives and the user's explicit pause are preserved.
+func (l *Library) RecoverExpandedPreviews(ctx context.Context) (int, error) {
+	return l.recoverPreviewFailures(ctx, "preview-bounds-v1", ".weazl-preview-bounds-recovery-v1.enc", func(f catalog.File) bool {
+		ext := strings.ToLower(filepath.Ext(f.Path))
+		kind := photoPreviewKind(f.Path)
+		return f.Size > 0 && f.Size <= int64(previewrpc.InputLimit(kind)) && (kind == "video" || ext == ".jpg" || ext == ".jpeg")
+	})
+}
+
+func (l *Library) recoverPreviewFailures(ctx context.Context, version, filename string, eligible func(catalog.File) bool) (int, error) {
 	if socket := os.Getenv("WEAZLCLOUD_PREVIEW_WORKER_SOCKET"); socket != "" {
 		if err := previewrpc.Ready(socket); err != nil {
 			return 0, err
@@ -26,14 +44,14 @@ func (l *Library) RecoverHEICPreviews(ctx context.Context) (int, error) {
 	if err := l.ensurePhotoIndexLocked(ctx); err != nil {
 		return 0, err
 	}
-	marker := filepath.Join(filepath.Dir(l.repo), ".weazl-heic-scratch-recovery-v1.enc")
+	marker := filepath.Join(filepath.Dir(l.repo), filename)
 	if raw, err := os.ReadFile(marker); err == nil {
 		plain, err := l.vault.Unwrap(raw)
 		defer clear(plain)
 		if err != nil {
 			return 0, err
 		}
-		if string(plain) == "heic-scratch-v1" {
+		if string(plain) == version {
 			return 0, nil
 		}
 	} else if !os.IsNotExist(err) {
@@ -42,7 +60,7 @@ func (l *Library) RecoverHEICPreviews(ctx context.Context) (int, error) {
 	l.photoMu.Lock()
 	byID := make(map[string]uint64)
 	for _, f := range l.photoRows {
-		if strings.EqualFold(filepath.Ext(f.Path), ".heic") || strings.EqualFold(filepath.Ext(f.Path), ".heif") {
+		if eligible(f) {
 			byID[f.EntryID] = f.Revision
 		}
 	}
@@ -58,7 +76,7 @@ func (l *Library) RecoverHEICPreviews(ctx context.Context) (int, error) {
 		if byID[job.AssetID] == 0 || job.Status != photos.JobFailed {
 			continue
 		}
-		if job.ErrorCategory != "invalid_or_unsupported_media" && job.ErrorCategory != "previous_terminal_failure" && job.ErrorCategory != "worker_environment" {
+		if job.ErrorCategory != "invalid_or_unsupported_media" && job.ErrorCategory != "previous_terminal_failure" && job.ErrorCategory != "worker_environment" && job.ErrorCategory != "unsupported_size" {
 			continue
 		}
 		l.photoMu.Lock()
@@ -82,7 +100,7 @@ func (l *Library) RecoverHEICPreviews(ctx context.Context) (int, error) {
 	if err := l.savePhotoJobsLocked(); err != nil {
 		return recovered, err
 	}
-	wrapped, err := l.vault.Wrap([]byte("heic-scratch-v1"))
+	wrapped, err := l.vault.Wrap([]byte(version))
 	if err == nil {
 		err = cryptox.AtomicWrite(marker, wrapped, 0600)
 	}

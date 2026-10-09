@@ -22,10 +22,10 @@ import (
 // RenderPhotoBundle is the vault-agnostic worker entry. The API admits its own
 // source buffers separately; the worker admits decoded pixels and encoders here.
 func RenderPhotoBundle(ctx context.Context, data []byte, sizes []int, media string, emit func(previewrpc.Variant) error) error {
-	if !previewrpc.BundleSizes(sizes) || len(data) == 0 || len(data) > thumbnailMaxInput {
+	if !previewrpc.BundleSizes(sizes) || len(data) == 0 || len(data) > previewrpc.InputLimit(media) {
 		return ErrPreviewTooLarge
 	}
-	need := int64(len(data))*2 + 256<<20
+	need := int64(len(data))*3 + 256<<20
 	if media == "raster" {
 		cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 		if err != nil || !validThumbnailConfig(cfg) {
@@ -49,7 +49,7 @@ func renderPhotoBundle(ctx context.Context, data []byte, sizes []int, media stri
 }
 
 func renderBundleBytes(ctx context.Context, data []byte, sizes []int, media string, emit func(previewrpc.Variant) error) error {
-	if !previewrpc.BundleSizes(sizes) || len(data) == 0 || len(data) > thumbnailMaxInput {
+	if !previewrpc.BundleSizes(sizes) || len(data) == 0 || len(data) > previewrpc.InputLimit(media) {
 		return ErrPreviewTooLarge
 	}
 	sizes = append([]int(nil), sizes...)

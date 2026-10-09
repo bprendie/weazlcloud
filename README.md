@@ -35,13 +35,17 @@ New uploads feed the same background indexing and preview pipeline as imports.
 Previews are generated in the background and cached encrypted.
 New uploads preserve already displayed thumbnails instead of clearing the grid.
 QuickTime `.mov` videos, including H.264/HEVC clips with a trailing movie index,
-get poster thumbnails within the existing 64 MiB preview input limit. Larger
-videos remain stored and downloadable. Portrait playback fits inside the viewer;
+get poster thumbnails up to 256 MiB. Raster previews support up to 128 MP and
+128 MiB; native formats retain a 64 MiB source bound. Each job must fit the
+host’s preview memory budget, so smaller hosts can reject larger previews.
+Original uploads and downloads have no corresponding size limit. Portrait playback fits inside the viewer;
 playback codecs still depend on the browser.
 **Photos → ☰ → Prepare previews** can prepare the existing collection; closing
 the browser does not stop an accepted job. A locked vault or explicit pause
 stops private work. Paired Live Photos open as a still, with motion playback
-when you choose it.
+when you choose it. Open a **Live** photo and select **Loop motion**; **Stop motion**
+returns to the still. Use **− / +** to zoom, drag an enlarged photo to pan, and
+**Fit** to return to the window. Zoom also works during Live Photo playback.
 
 See the [Photos API](docs/photo-api.md) and
 [operations reference](docs/operations-reference.md) for formats, limits, and

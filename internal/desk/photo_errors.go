@@ -24,7 +24,7 @@ func photoAPIError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, quota.ErrExceeded):
 		status = http.StatusInsufficientStorage
-	case errors.Is(err, library.ErrPreviewTooLarge):
+	case errors.Is(err, library.ErrPreviewTooLarge), errors.Is(err, previewrpc.ErrTooLarge):
 		status = http.StatusRequestEntityTooLarge
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error(), "code": previewrpc.ErrorCode(err)})

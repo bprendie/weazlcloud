@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/bprendie/weazlcloud/internal/previewrpc"
 	"golang.org/x/sys/unix"
 )
 
@@ -15,7 +16,7 @@ func previewMediaInput(data []byte, media string) ([]string, []*os.File, func(),
 	if media != "video" {
 		return []string{"-protocol_whitelist", "pipe,crypto,data", "-i", "pipe:0"}, nil, noop, nil
 	}
-	if len(data) == 0 || len(data) > thumbnailMaxInput {
+	if len(data) == 0 || len(data) > previewrpc.InputLimit(media) {
 		return nil, nil, noop, ErrPreviewTooLarge
 	}
 	fd, err := unix.MemfdCreate("weazl-video-preview", unix.MFD_CLOEXEC)

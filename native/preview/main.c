@@ -6,8 +6,8 @@
 #include <jpeglib.h>
 #include <sys/resource.h>
 
-#define MAX_INPUT (64UL << 20)
-#define MAX_PIXELS 32000000UL
+#define MAX_INPUT (128UL << 20)
+#define MAX_PIXELS 128000000UL
 #define MAX_OUTPUT (8UL << 20)
 static size_t bundle_output = 0;
 
@@ -157,7 +157,9 @@ int main(int argc, char **argv) {
     dec.scale_num = 1;
     dec.scale_denom = longest >= size*8 ? 8 : longest >= size*4 ? 4 : longest >= size*2 ? 2 : 1;
     dec.out_color_space = JCS_RGB;
-    dec.mem->max_memory_to_use = 128UL << 20;
+    // Progressive 100-MP JPEGs retain coefficient arrays before scaled IDCT.
+    // Keep them in RAM inside the independent 512-MiB process ceiling.
+    dec.mem->max_memory_to_use = 384UL << 20;
     jpeg_start_decompress(&dec);
     w = dec.output_width; h = dec.output_height;
     if (dec.output_components != 3 || !w || !h || (uint64_t)w*h > MAX_PIXELS) fail();

@@ -29,7 +29,7 @@ export class PhotoBlobCache {
       request.promise=(async()=>{
         const response=await (0,this.fetcher)(url,{signal:controller.signal,cache:'no-store'});
         if(!response.ok){
-         const error=new Error(response.status>=500?'Preview temporarily unavailable':'Preview unavailable');
+         const error=new Error(response.status===413?'Preview exceeds server limits':response.status>=500?'Preview temporarily unavailable':'Preview unavailable');
          if(this.failures.size>=this.max)this.failures.delete(this.failures.keys().next().value);
          if(generation===this.generation)this.failures.set(key,{error,until:Date.now()+(response.status>=500?10000:60000)});
          throw error;

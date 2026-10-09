@@ -23,3 +23,6 @@ const cleared=new PhotoBlobCache({urls,fetcher:async()=>{await new Promise(resol
 const pending=cleared.acquire('secret','/x');cleared.clear();clearedRelease();
 await assert.rejects(pending,{name:'AbortError'});assert.equal(cleared.items.size,0);
 console.log('PASS: bounded Photos blob LRU, mounted leases, coalescing, cancellation and session clear');
+
+const bounded=new PhotoBlobCache({urls,fetcher:async()=>({ok:false,status:413})});
+await assert.rejects(bounded.acquire('oversized','/thumb'), /Preview exceeds server limits/);

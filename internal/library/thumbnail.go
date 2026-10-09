@@ -10,13 +10,14 @@ import (
 	"sync"
 
 	"github.com/bprendie/weazlcloud/internal/catalog"
+	"github.com/bprendie/weazlcloud/internal/previewrpc"
 	"github.com/bprendie/weazlcloud/internal/vault"
 )
 
 const (
 	thumbnailRenderer  = "media-v4"
 	thumbnailMaxInput  = 64 << 20
-	thumbnailMaxPixels = 32_000_000
+	thumbnailMaxPixels = 128_000_000
 	thumbnailMaxOutput = 8 << 20
 )
 
@@ -71,7 +72,7 @@ func (l *Library) Thumbnail(ctx context.Context, name string, size int) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
-	if f.Folder || f.Size <= 0 || f.Size > thumbnailMaxInput {
+	if f.Folder || f.Size <= 0 {
 		return nil, "", ErrThumbnailUnavailable
 	}
 
@@ -155,8 +156,11 @@ func (l *Library) thumbnailFor(ctx context.Context, f catalog.File, size int, ba
 	if size > 1280 {
 		size = 1280
 	}
-	if f.Folder || f.Size <= 0 || f.Size > thumbnailMaxInput {
+	if f.Folder || f.Size <= 0 {
 		return nil, "", ErrThumbnailUnavailable
+	}
+	if f.Size > int64(previewrpc.InputLimit(photoPreviewKind(f.Path))) {
+		return nil, "", ErrPreviewTooLarge
 	}
 	key, err := thumbnailKey(l.vault, f, size)
 	if err != nil {

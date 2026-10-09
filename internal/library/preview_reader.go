@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bprendie/weazlcloud/internal/previewrpc"
 	"github.com/bprendie/weazlcloud/internal/restic"
 )
 
 // Resident indexes must leave enough room for at least one maximum admitted
 // source/decode pipeline, even when several unlocked owners use the node.
-var previewIndexMemory = newPreviewMemoryBudget(max(0, previewPolicy.MemoryBytes-(2*thumbnailMaxInput+8*thumbnailMaxPixels+(192<<20))))
+var previewIndexMemory = newPreviewMemoryBudget(max(0, previewPolicy.MemoryBytes-(2*int64(previewrpc.InputLimit("raster"))+8*thumbnailMaxPixels+(192<<20))))
 
 type previewReaderSession struct {
 	reader *restic.Reader

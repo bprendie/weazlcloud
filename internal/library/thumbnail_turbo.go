@@ -81,11 +81,11 @@ func ValidatePhotoRenderer() error {
 // RenderPhotoPreview is the bounded, vault-agnostic rendering entry point for
 // the local Unix-socket worker. Callers pass only already-authorized bytes.
 func RenderPhotoPreview(ctx context.Context, data []byte, size int, media string) ([]byte, string, error) {
-	if size < 96 || size > 1280 || len(data) == 0 || len(data) > thumbnailMaxInput {
+	if size < 96 || size > 1280 || len(data) == 0 || len(data) > previewrpc.InputLimit(media) {
 		return nil, "", ErrPreviewTooLarge
 	}
 	if media == "heif" || media == "video" || media == "native" {
-		need := int64(len(data))*2 + 64<<20
+		need := int64(len(data))*3 + 256<<20
 		if media == "heif" {
 			need = max(need, int64(256<<20))
 		}
@@ -106,18 +106,13 @@ func RenderPhotoPreview(ctx context.Context, data []byte, size int, media string
 	if media != "raster" {
 		return nil, "", ErrThumbnailUnavailable
 	}
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || !validThumbnailConfig(config) {
 		return nil, "", ErrThumbnailUnavailable
 	}
 	need := int64(len(data))*2 + int64(config.Width)*int64(config.Height)*8 + int64(size*size)*8 + 32<<20
-	_, helper, rendererErr := previewRenderer()
-	if rendererErr != nil {
-		return nil, "", rendererErr
-	}
-	if helper != "" && format == "jpeg" && config.ColorModel != color.CMYKModel {
-		need = int64(len(data))*2 + 64<<20
-	}
+	// Keep the decoded-pixel reservation for native JPEGs too: progressive
+	// sources retain large coefficient arrays even when scaled IDCT is small.
 	release, err := previewMemory.acquire(ctx, need)
 	if err != nil {
 		return nil, "", err
@@ -210,7 +205,7 @@ func renderThumbnailBytes(ctx context.Context, data []byte, size int) ([]byte, s
 	if err := ctx.Err(); err != nil {
 		return nil, "", err
 	}
-	if len(data) > thumbnailMaxInput || size < 96 || size > 1280 {
+	if len(data) > previewrpc.InputLimit("raster") || size < 96 || size > 1280 {
 		return nil, "", ErrPreviewTooLarge
 	}
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))

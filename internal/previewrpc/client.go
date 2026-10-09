@@ -39,7 +39,7 @@ type result struct {
 }
 
 func Render(ctx context.Context, socket string, source []byte, size int, media string) ([]byte, string, error) {
-	if len(source) == 0 || len(source) > maxInput || size < 96 || size > 1280 {
+	if len(source) == 0 || len(source) > InputLimit(media) || size < 96 || size > 1280 {
 		return nil, "", errors.New("photo preview request is outside supported bounds")
 	}
 	if media != "raster" && media != "heif" && media != "video" && media != "native" {

@@ -66,7 +66,7 @@ func writeFrame(out io.Writer, size uint16, kind byte, body []byte) error {
 }
 
 func RenderBundle(ctx context.Context, socket string, source []byte, sizes []int, media string, emit func(Variant) error) error {
-	if !BundleSizes(sizes) || len(source) == 0 || len(source) > maxInput {
+	if !BundleSizes(sizes) || len(source) == 0 || len(source) > InputLimit(media) {
 		return ErrTooLarge
 	}
 	values := make([]string, len(sizes))

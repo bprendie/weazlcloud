@@ -8,6 +8,8 @@ import {files, filesInFolder, takeouts, state, selectedName, seedPreview, escape
 import {renderMain, renderDeck, renderUploadTray, refreshPhotoGrid, modifiedLabel} from './views.js';
 import * as engine from './engine.js';
 import {ModeMemory} from './mode-memory.js';
+import {zoomPhotoViewer,installPhotoPan} from './photo-zoom.js';
+import {photoTileIdentity,renderPhotoViewerContent} from './photo-dom.js';
 import {installPhotoGestures} from './photo-gestures.js';
 const modeMemory = new ModeMemory();
 installPhotoGestures();
@@ -138,7 +140,7 @@ function pumpGridThumbnails() {
       const item=state.photoItems.find(item=>item.id===photoID) || {id:photoID};
       const tile=el.closest('.photo-tile');
       if(tile && item.thumbHash){tile.style.backgroundImage=photoPlaceholder(item.thumbHash);tile.style.backgroundSize='cover';}
-      mountPhotoImage(el,state,item,320,controller.signal).catch(err=>{if(err.name!=='AbortError' && el.isConnected)el.replaceWith(Object.assign(document.createElement('div'),{className:'grid-kind',textContent:'Preview unavailable'}));}).finally(done);
+      mountPhotoImage(el,state,item,320,controller.signal).catch(err=>{if(err.name!=='AbortError' && el.isConnected)el.replaceWith(Object.assign(document.createElement('div'),{className:'grid-kind',textContent:err.message || 'Preview unavailable'}));}).finally(done);
     } else el.src=`/api/library/thumbnail?path=${encodeURIComponent(path)}&size=320`;
     el.addEventListener('load', done, {once: true});
     el.addEventListener('error', () => {
@@ -745,7 +747,6 @@ async function restorePhotoViewerRoute(id) {
 }
 
 function renderPhotoViewer() {
- const oldMotion=document.querySelector('[data-live-motion]');if(oldMotion){oldMotion.pause();oldMotion.removeAttribute('src');oldMotion.load();}
   const item = state.photoItems[photoViewerIndex];
   if (!item) { $('#modal').close(); return; }
   const path = item.path || filePath(item.id);
@@ -755,21 +756,27 @@ function renderPhotoViewer() {
   const date = item.captureTime ? modifiedLabel(item.captureTime) : 'Date unknown';
   const source = video
     ? `<video class="photo-viewer-media" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original${state.photosMode === 'hidden' ? '?hidden=1' : ''}" controls autoplay playsinline preload="metadata"></video>`
-    : `<img class="photo-viewer-media" style="--photo-zoom:${state.photoZoom || 1}" data-photo-viewer-image alt="${esc(item.title)}">`;
+    : `<img class="photo-viewer-media" data-photo-viewer-image alt="${esc(item.title)}">`;
   const caption = item.caption ? `<p>${esc(item.caption)}</p>` : '';
   $('#modal').classList.add('photo-viewer');
   $('#modal').classList.remove('wide');
-  $('#modal-content').innerHTML = `<div class="photo-viewer-shell" data-photo-viewer-stage>
+  const viewerHTML = `<div class="photo-viewer-shell" data-photo-viewer-stage>
     <header class="photo-viewer-top"><div><strong>${esc(item.title)}</strong><small>${photoViewerIndex + 1} of ${state.photoItems.length}</small></div>
-      <div class="photo-viewer-actions"><button class="secondary" data-action="photo-show-library">Show in Library</button><button class="secondary" data-action="photo-add-to-album">Add to album</button><button class="secondary" data-action="photo-edit">Edit details</button><button class="secondary" data-action="photo-toggle-archive">${item.archived ? 'Unarchive' : 'Archive'}</button><button class="secondary" data-action="photo-toggle-favorite" aria-pressed="${item.favorite ? 'true' : 'false'}">${item.favorite ? '★ Favorite' : '☆ Favorite'}</button><button class="secondary" data-action="photo-zoom-out" aria-label="Zoom out">−</button><span class="photo-viewer-zoom">${Math.round((state.photoZoom || 1) * 100)}%</span><button class="secondary" data-action="photo-zoom-in" aria-label="Zoom in">+</button><button class="secondary" data-action="photo-viewer-info" aria-expanded="${state.photoViewerInfo ? 'true' : 'false'}">Details</button><a class="secondary button-link" href="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original?download=1${state.photosMode === 'hidden' ? '&hidden=1' : ''}" download="${esc(item.title)}">Download original</a><button class="icon-button" data-action="photo-viewer-close" aria-label="Close viewer">×</button></div>
+      <div class="photo-viewer-actions"><button class="secondary" data-action="photo-show-library">Show in Library</button><button class="secondary" data-action="photo-add-to-album">Add to album</button><button class="secondary" data-action="photo-edit">Edit details</button><button class="secondary" data-action="photo-toggle-archive">${item.archived ? 'Unarchive' : 'Archive'}</button><button class="secondary" data-action="photo-toggle-favorite" aria-pressed="${item.favorite ? 'true' : 'false'}">${item.favorite ? '★ Favorite' : '☆ Favorite'}</button><button class="secondary" data-action="photo-zoom-out" aria-label="Zoom out" ${(state.photoZoom || 1)<=0.5?'disabled':''}>−</button><span class="photo-viewer-zoom">${Math.round((state.photoZoom || 1) * 100)}%</span><button class="secondary" data-action="photo-zoom-in" aria-label="Zoom in" ${(state.photoZoom || 1)>=4?'disabled':''}>+</button><button class="secondary" data-action="photo-zoom-fit" aria-label="Fit photo to window">Fit</button><button class="secondary" data-action="photo-viewer-info" aria-expanded="${state.photoViewerInfo ? 'true' : 'false'}">Details</button><a class="secondary button-link" href="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/original?download=1${state.photosMode === 'hidden' ? '&hidden=1' : ''}" download="${esc(item.title)}">Download original</a><button class="icon-button" data-action="photo-viewer-close" aria-label="Close viewer">×</button></div>
     </header>
     <button class="photo-viewer-nav previous" data-action="photo-viewer-prev" aria-label="Previous photo" ${photoViewerIndex === 0 ? 'disabled' : ''}>‹</button>
-    <div class="photo-viewer-stage">${source}${livePhoto ? `<video class="photo-viewer-media" data-live-motion hidden muted playsinline preload="none" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/motion${state.photosMode==='hidden'?'?hidden=1':''}"></video>` : ''}</div>
+    <div class="photo-viewer-stage"><div class="photo-viewer-canvas">${source}${livePhoto ? `<video class="photo-viewer-media" data-live-motion hidden muted playsinline loop preload="none" src="/api/v1/photos/assets/${encodeURIComponent(item.entryID || item.id)}/motion${state.photosMode==='hidden'?'?hidden=1':''}"></video>` : ''}</div></div>
     <button class="photo-viewer-nav next" data-action="photo-viewer-next" aria-label="Next photo" ${photoViewerIndex >= state.photoItems.length - 1 && !state.photoHasMore ? 'disabled' : ''}>›</button>
-    <footer class="photo-viewer-caption">${livePhoto ? '<div class="photo-live-controls"><span>Live</span><button class="secondary" data-action="photo-live-play">Play motion</button><button class="secondary" data-action="photo-live-download">Download Live Photo</button><button class="text-button" data-action="photo-live-unlink">Unlink motion</button></div>' : ''}<span>${esc(date)}</span>${caption}</footer>
+    <footer class="photo-viewer-caption">${livePhoto ? '<div class="photo-live-controls"><span>Live</span><button class="secondary" data-action="photo-live-play" aria-pressed="false">Loop motion</button><button class="secondary" data-action="photo-live-download">Download Live Photo</button><button class="text-button" data-action="photo-live-unlink">Unlink motion</button></div>' : ''}<span>${esc(date)}</span>${caption}</footer>
     <aside class="photo-viewer-info" ${state.photoViewerInfo ? '' : 'hidden'}><strong>Details</strong><dl><dt>Capture date</dt><dd>${esc(date)}</dd><dt>File</dt><dd>${esc(path)}</dd><dt>Size</dt><dd>${esc(item.size)}</dd>${item.captureSource ? `<dt>Date source</dt><dd>${esc(item.captureSource)}</dd>` : ''}</dl></aside>
   </div>`;
+  const identity=JSON.stringify([state.username,state.photosMode==='hidden',photoTileIdentity(item),item.components || []]);
+  const retained=renderPhotoViewerContent($('#modal-content'),viewerHTML,identity);
   if (!$('#modal').open) $('#modal').showModal();
+  const viewport=$('#modal .photo-viewer-stage');
+  zoomPhotoViewer(viewport,state.photoZoom || 1);
+  if(retained)return;
+  installPhotoPan(viewport);
   const stage = $('#modal [data-photo-viewer-stage]');
   let touchStart = null;
   stage?.addEventListener('pointerdown', event => { touchStart = event.clientX; });
@@ -777,7 +784,7 @@ function renderPhotoViewer() {
     if (touchStart === null) return;
     const delta = event.clientX - touchStart;
     touchStart = null;
-    if (Math.abs(delta) > 70) movePhotoViewer(delta < 0 ? 1 : -1);
+    if ((state.photoZoom || 1)<=1 && Math.abs(delta) > 70) movePhotoViewer(delta < 0 ? 1 : -1);
   });
   releaseDetachedPhotoImages();
   const image=$('[data-photo-viewer-image]');
@@ -2213,9 +2220,9 @@ document.addEventListener('click', async e => {
     }).catch(err => toast(err.message));
     return;
   }
-  if (b.dataset.action === 'photo-zoom-in' || b.dataset.action === 'photo-zoom-out') {
+  if (['photo-zoom-in','photo-zoom-out','photo-zoom-fit'].includes(b.dataset.action)) {
     const scale = state.photoZoom || 1;
-    state.photoZoom = Math.max(1, Math.min(4, scale + (b.dataset.action === 'photo-zoom-in' ? 0.5 : -0.5)));
+    state.photoZoom = b.dataset.action==='photo-zoom-fit'?1:Math.max(0.5, Math.min(4, scale + (b.dataset.action === 'photo-zoom-in' ? 0.5 : -0.5)));
     renderPhotoViewer(); return;
   }
   if (b.dataset.action === 'photos-more') {
@@ -2238,10 +2245,11 @@ document.addEventListener('click', async e => {
   }
   if(b.dataset.action==='photo-live-play'){
     const media=document.querySelector('[data-live-motion]'),still=document.querySelector('[data-photo-viewer-image]');if(!media)return;
-    if(!media.hidden){media.pause();media.hidden=true;if(still)still.hidden=false;b.textContent='Play motion';return;}
-    media.hidden=false;if(still)still.hidden=true;b.textContent='Stop motion';
-    const stop=()=>{media.hidden=true;if(still)still.hidden=false;b.textContent='Play motion';};
-    media.onended=stop;media.onerror=()=>{stop();toast('Motion preview unavailable. Both originals are preserved.');};media.play().catch(()=>{stop();toast('Motion playback unavailable.');});return;
+    const stop=()=>{media.pause();media.currentTime=0;media.hidden=true;if(still)still.hidden=false;b.textContent='Loop motion';b.setAttribute('aria-pressed','false');};
+    if(!media.hidden){stop();return;}
+    media.hidden=false;if(still)still.hidden=true;b.textContent='Stop motion';b.setAttribute('aria-pressed','true');
+    const failed=()=>{if(!media.isConnected || media.hidden || !$('#modal').open)return;stop();toast('Motion preview unavailable. Both originals are preserved.');};
+    media.onerror=failed;media.play().catch(failed);return;
   }
   if(b.dataset.action==='photo-live-download'){
     const item=state.photoItems[photoViewerIndex];if(!item)return;
@@ -2694,7 +2702,7 @@ document.addEventListener('keydown', e => {
   if (/^[1-5]$/.test(e.key)) navigate(['home', 'library', 'send', 'capsules', 'places'][Number(e.key) - 1]);
 });
 
-$('#modal').addEventListener('close', () => { if (photoViewerReturnScroll !== null && state.view === 'photos') { const top=photoViewerReturnScroll; photoViewerReturnScroll=null; viewScrollTo({top,behavior:'auto'}); requestAnimationFrame(()=>{viewScrollTo({top,behavior:'auto'});schedulePhotoGridWindow();}); } $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide', 'photo-viewer'); photoViewerIndex = -1; state.photoViewerInfo = false; });
+$('#modal').addEventListener('close', () => { for(const media of $('#modal').querySelectorAll('video,audio')){media.pause();media.removeAttribute('src');media.load();} if (photoViewerReturnScroll !== null && state.view === 'photos') { const top=photoViewerReturnScroll; photoViewerReturnScroll=null; viewScrollTo({top,behavior:'auto'}); requestAnimationFrame(()=>{viewScrollTo({top,behavior:'auto'});schedulePhotoGridWindow();}); } $('#modal-content').replaceChildren(); $('#modal').classList.remove('wide', 'photo-viewer'); photoViewerIndex = -1; state.photoViewerInfo = false; });
 $('#modal').addEventListener('cancel', event => {
   if ($('#modal').classList.contains('photo-viewer') && photoViewerHistoryPushed) {
     event.preventDefault();

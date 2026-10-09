@@ -13,7 +13,7 @@ import (
 )
 
 func renderBundle(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || r.ContentLength <= 0 || r.ContentLength > maxInput {
+	if r.Method != http.MethodPost || r.ContentLength <= 0 || r.ContentLength > int64(previewrpc.InputLimit(r.URL.Query().Get("media"))) {
 		http.Error(w, "invalid source", http.StatusBadRequest)
 		return
 	}
@@ -36,7 +36,7 @@ func renderBundle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid sizes", 400)
 		return
 	}
-	source, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxInput))
+	source, err := io.ReadAll(http.MaxBytesReader(w, r.Body, int64(previewrpc.InputLimit(media))))
 	if err != nil || int64(len(source)) != r.ContentLength {
 		clear(source)
 		http.Error(w, "invalid source", 400)

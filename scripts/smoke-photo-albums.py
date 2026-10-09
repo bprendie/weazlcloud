@@ -103,6 +103,21 @@ try:
                     time.sleep(.25)
                 raise AssertionError('import timed out')
             import_zip('part1.zip')
+            def restart_live():
+                docker('restart', name)
+                for _ in range(80):
+                    try:
+                        if context.request.get('/ready', timeout=2000).ok: break
+                    except Exception: pass
+                    time.sleep(.25)
+                post('/api/login', {'username':'albums','password':'album-test-pass'})
+                post('/api/unlock', {'passphrase':'album-test-pass'})
+            if os.environ.get('WEAZLCLOUD_SMOKE_LIVE_ONLY') == '1':
+                post('/api/node', {'hostname': 'grab.test'})
+                smoke_live_photos(context,page,post,browser,base,image,restart_live)
+                assert not errors,errors
+                browser.close()
+                raise SystemExit(0)
             if os.environ.get('WEAZLCLOUD_SMOKE_REFRESH_ONLY') == '1':
                 smoke_photo_refresh(context,page,base,png,image)
                 assert not errors,errors
@@ -206,15 +221,6 @@ try:
             assert not errors, errors
             smoke_music(context, page, post)
             assert not errors, errors
-            def restart_live():
-                docker('restart', name)
-                for _ in range(80):
-                    try:
-                        if context.request.get('/ready', timeout=2000).ok: break
-                    except Exception: pass
-                    time.sleep(.25)
-                post('/api/login', {'username':'albums','password':'album-test-pass'})
-                post('/api/unlock', {'passphrase':'album-test-pass'})
             smoke_live_photos(context,page,post,browser,base,image,restart_live)
             assert not errors, errors
             smoke_photo_refresh(context,page,base,png,image)

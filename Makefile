@@ -38,6 +38,7 @@ js-check:
 	node --input-type=module --check < mockup-ui/photo-cache.js
 	node --input-type=module --check < mockup-ui/photo-images.js
 	node --input-type=module --check < mockup-ui/photo-dom.js
+	node --input-type=module --check < mockup-ui/photo-zoom.js
 	node --input-type=module --check < mockup-ui/photo-gestures.js
 	node --input-type=module --check < mockup-ui/photo-placeholder.js
 	node scripts/photo-cache.test.mjs

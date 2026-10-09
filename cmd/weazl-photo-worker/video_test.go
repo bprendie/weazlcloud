@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"image"
 	"net/http/httptest"
 	"os"
@@ -26,6 +27,12 @@ func TestWorkerQuickTimeSingleAndBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A trailing QuickTime free atom takes this valid movie over the old 64-MiB
+	// bound without a huge synthetic video encode or changing media offsets.
+	padding := make([]byte, 65<<20)
+	binary.BigEndian.PutUint32(padding[:4], uint32(len(padding)))
+	copy(padding[4:8], "free")
+	data = append(data, padding...)
 	for _, path := range []string{"/v1/thumbnail?size=320&media=video", "/v3/thumbnails?sizes=320,1280&media=video"} {
 		out := httptest.NewRecorder()
 		render(out, httptest.NewRequest("POST", path, bytes.NewReader(data)))
@@ -50,6 +57,20 @@ func TestWorkerQuickTimeSingleAndBundle(t *testing.T) {
 		})
 		if err != nil || count != 2 {
 			t.Fatal("incomplete bundle", count, err)
+		}
+	}
+}
+
+func TestWorkerMediaSpecificInputBounds(t *testing.T) {
+	for _, endpoint := range []string{"/v1/thumbnail?size=320", "/v3/thumbnails?sizes=320,1280"} {
+		for _, media := range []string{"raster", "heif", "video"} {
+			req := httptest.NewRequest("POST", endpoint+"&media="+media, bytes.NewReader(nil))
+			req.ContentLength = int64(previewrpc.InputLimit(media)) + 1
+			out := httptest.NewRecorder()
+			render(out, req)
+			if out.Code < 400 {
+				t.Fatalf("unbounded %s: %d", media, out.Code)
+			}
 		}
 	}
 }

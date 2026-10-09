@@ -61,3 +61,16 @@ for sizes in ['320,320','95,320','320,1281','320oops,1280']:
     result=subprocess.run([helper,'--bundle',sizes],input=baseline,capture_output=True,timeout=40)
     assert result.returncode!=0
 print('native shared-decode bundle framing/limits passed')
+
+# Full 100-MP camera JPEGs: scaled decode must work for baseline and progressive.
+# Keep the source grayscale to avoid a large Python RGB allocation.
+large_pgm = b'P5\n11656 8742\n255\n' + b'\x80' * (11656 * 8742)
+for flags in [[], ['-progressive']]:
+    source = subprocess.run(['cjpeg', '-grayscale', *flags], input=large_pgm,
+                            capture_output=True, check=True).stdout
+    proc = subprocess.run([helper, '320'], input=source, capture_output=True, timeout=40)
+    assert proc.returncode == 0, proc.stderr
+    assert b'Sanitizer' not in proc.stderr and b'runtime error:' not in proc.stderr
+    decoded = subprocess.run(['djpeg'], input=proc.stdout, capture_output=True, check=True).stdout
+    assert decoded.startswith(b'P6\n320 240\n255\n'), decoded[:40]
+print('native 100-MP baseline/progressive JPEG checks passed')

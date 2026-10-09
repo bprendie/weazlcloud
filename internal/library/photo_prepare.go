@@ -168,9 +168,15 @@ func (l *Library) ResumePhotoPreparation(_ context.Context) {
 		err := l.ensurePhotoIndexLocked(workCtx)
 		l.mu.Unlock()
 		if err == nil && workCtx.Err() == nil {
-			if recovered, recoveryErr := l.RecoverHEICPreviews(workCtx); recoveryErr != nil {
+			recovered, recoveryErr := l.RecoverHEICPreviews(workCtx)
+			if recoveryErr != nil {
 				return
-			} else if recovered > 0 {
+			}
+			expanded, recoveryErr := l.RecoverExpandedPreviews(workCtx)
+			if recoveryErr != nil {
+				return
+			}
+			if recovered+expanded > 0 {
 				l.photoPrepMu.Lock()
 				if !l.photoPrep.Paused {
 					l.photoPrep.Status = "queued"

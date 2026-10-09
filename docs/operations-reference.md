@@ -83,7 +83,12 @@ for supported video files. HEIC/HEIF and AVIF use libheif through anonymous
 memory files because Alpine FFmpeg lacks their demuxer; unavailable codecs use
 the preview fallback. Preparation shows active render count and average source-read
 progress. Ordinary video playback uses the original browser-compatible stream. Paired Live
-Photos have an explicit, bounded compatible motion preview. The originals are unchanged. The automatic disk
+Photos have an explicit, bounded compatible motion preview. In the viewer,
+**Loop motion** repeats the clip muted; **Stop motion** returns to the still.
+Closing the viewer or choosing another photo stops playback. Incoming uploads
+and metadata refreshes retain the active video element so they cannot interrupt
+a cold motion request or reset its playback. Still photos and motion support
+50–400% zoom, scroll/mouse pan when enlarged, and **Fit** to return to the window. The originals are unchanged. The automatic disk
 cache target is the smaller of 64 GiB and one tenth of current cache bytes plus
 free space above the silent system reserve. Owners share this allowance; there is
 no implicit 4-GiB owner cap. The default is 200,000 encrypted cache records per
@@ -116,8 +121,8 @@ builds without the helper use the Go renderer. Set
 helper reject startup. A corrupt native JPEG fails that preview rather than
 silently caching a partial image.
 
-The shared-decode JPEG helper uses pipes only, with no plaintext image files. Existing
-64-MiB input / 32-million-pixel limits remain; native workers additionally have a
+The shared-decode JPEG helper uses pipes only, with no plaintext image files. Raster sources are bounded at
+128 MiB / 128 million pixels (including full 100-MP camera JPEGs); the native JPEG helper additionally has a
 512-MiB address-space ceiling, 30-second CPU limit and 35-second wall timeout.
 Cancellation kills and reaps the helper. The Go process remains CGO-free. The
 `media-v4` cache identity regenerates derivatives lazily; old encrypted caches
@@ -145,12 +150,15 @@ get a new key. Lock, owner and visibility boundaries still clear private caches.
 
 MOV posters use a seekable anonymous memory descriptor so ffmpeg can read a
 trailing `moov` index and return to the frames. Both single and bundled renderers
-use it. No plaintext video file is written to the volume. The existing 64 MiB
-source cap, worker/memory admission and 35-second render timeout remain in force;
-this does not yet add posters for larger videos. H.264 and HEVC portrait MOV
-fixtures cover both Library and Photos routes. After upgrading, use **Photos →
-☰ → Retry failed previews** for earlier failed MOV jobs; successful thumbnails
-do not need a rebuild. Portrait playback uses the available viewer stage with
+use it. No plaintext video file is written to the volume. Video sources are bounded
+at 256 MiB; HEIF and other native formats retain the 64 MiB bound. Worker/memory
+admission and the 35-second render timeout still apply. These are preview limits,
+not upload limits: smaller hosts may reject a large preview when its full memory
+reservation cannot fit. Larger admitted sources use the bounded Restic CLI fallback
+when they exceed the resident reader’s 64 MiB transfer bound. H.264/HEVC portrait MOV
+fixtures and a movie over 64 MiB cover the renderers. Upgrading automatically
+requeues previous JPEG/video failures once, preserving successful thumbnails and
+manual pause. **Photos → ☰ → Retry failed previews** is also available. Portrait playback uses the available viewer stage with
 `object-fit: contain`, including phone landscape layouts.
 
 Regression coverage includes `make check`, single/bundled MOV worker requests,
