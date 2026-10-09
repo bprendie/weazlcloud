@@ -17,6 +17,8 @@ import (
 )
 
 func TestMobileIdentityDiscoveryEnrollmentAndLockedCapabilities(t *testing.T) {
+	t.Setenv("WEAZLCLOUD_MOBILE_FINALIZE_WORKERS", "3")
+	t.Setenv("WEAZLCLOUD_MOBILE_FINALIZE_WORKERS_PER_OWNER", "2")
 	dir := t.TempDir()
 	us, err := users.New(filepath.Join(dir, "users.json"), filepath.Join(dir, "users"))
 	if err != nil {
@@ -113,6 +115,13 @@ func TestMobileIdentityDiscoveryEnrollmentAndLockedCapabilities(t *testing.T) {
 	request("POST", "/api/v1/devices/"+device.ID+"/rotate", rotate, replacement, false, 200)
 	res.LockVault()
 	caps := request("GET", "/api/v1/mobile/capabilities", nil, replacement, false, 200)
+	var limits map[string]int
+	if err := json.Unmarshal(caps["limits"], &limits); err != nil {
+		t.Fatal(err)
+	}
+	if limits["mobile_finalize_workers"] != 3 || limits["mobile_finalize_workers_per_owner"] != 2 {
+		t.Fatalf("effective finalizer capabilities: %v", limits)
+	}
 	if string(caps["vault_unlocked"]) != "false" || string(caps["instance_id"]) != string(first["instance_id"]) {
 		t.Fatal("locked capabilities or identity")
 	}

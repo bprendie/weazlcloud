@@ -47,6 +47,11 @@ when you choose it. Open a **Live** photo and select **Loop motion**; **Stop mot
 returns to the still. Use **− / +** to zoom, drag an enlarged photo to pan, and
 **Fit** to return to the window. Zoom also works during Live Photo playback.
 
+Phone uploads can keep sending while earlier photos commit to storage. The
+server sizes its finalization pool to CPU/RAM capacity and batches small Restic
+writes through pipes, preserving encrypted staging and resumable receipts.
+See [mobile upload performance](docs/mobile-upload-performance-2026-10-09.md).
+
 See the [Photos API](docs/photo-api.md) and
 [operations reference](docs/operations-reference.md) for formats, limits, and
 recovery behavior.

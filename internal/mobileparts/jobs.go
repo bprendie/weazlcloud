@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/filesvc"
 )
@@ -44,7 +45,7 @@ func (m *Manager) Process(ctx context.Context, res *filesvc.Resource, id string,
 		close(job.done)
 		m.mu.Unlock()
 	}()
-	if s.Status != "queued" && s.Status != "verifying" {
+	if (s.Status != "queued" && s.Status != "verifying") || m.now().Before(s.RetryAfter) {
 		u()
 		return ErrConflict
 	}
@@ -86,6 +87,15 @@ func (m *Manager) Process(ctx context.Context, res *filesvc.Resource, id string,
 		if errors.Is(e, context.Canceled) || errors.Is(e, context.DeadlineExceeded) {
 			latest.Status = "queued"
 			latest.ErrorCode = ""
+		} else {
+			// A batch storage failure need not mean this member is corrupt.
+			// Reopen its durable encrypted parts, with bounded persisted backoff.
+			var retryable interface{ Retryable() bool }
+			if errors.As(e, &retryable) && retryable.Retryable() && latest.RetryAttempts < 3 {
+				latest.RetryAttempts++
+				latest.Status, latest.ErrorCode = "queued", "storage_retry"
+				latest.RetryAfter = m.now().Add(time.Second * time.Duration(1<<latest.RetryAttempts))
+			}
 		}
 		if saveErr := m.save(res, &latest); saveErr != nil {
 			return saveErr
@@ -93,6 +103,7 @@ func (m *Manager) Process(ctx context.Context, res *filesvc.Resource, id string,
 		return e
 	}
 	latest.Status = "stored"
+	latest.RetryAfter = time.Time{}
 	latest.Result = result
 	latest.ErrorCode = ""
 	if e = m.save(res, &latest); e != nil {

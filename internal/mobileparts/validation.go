@@ -8,6 +8,9 @@ func validateSession(s Session, id string) error {
 	if s.Version != 1 || !validID(id) || s.ID != id || !validID(s.OwnerID) || s.CreatedAt.IsZero() || s.UpdatedAt.IsZero() {
 		return ErrCorrupt
 	}
+	if s.RetryAttempts < 0 || s.RetryAttempts > 3 {
+		return ErrCorrupt
+	}
 	spec := s.Spec
 	spec.Components = append([]Component(nil), spec.Components...)
 	if spec.normalize() != nil {

@@ -101,7 +101,27 @@ func (l *Library) resumeTrashCleanup(ctx context.Context) error {
 				remaining = append(remaining, id)
 			}
 		}
-		deferred, err := l.backend.Forget(ctx, remaining)
+		protected, err := l.photoComponentSnapshots()
+		if err != nil {
+			return err
+		}
+		// A deferred component intent may have published since this cleanup
+		// plan was saved. Recheck current rows before forgetting its snapshot.
+		for _, f := range l.catalog.All() {
+			if ref, e := fileReference(f); e == nil && ref.Backend == catalog.ResticBackend {
+				protected[ref.Snapshot] = true
+			}
+		}
+		var retained, ready []string
+		for _, id := range remaining {
+			if protected[id] {
+				retained = append(retained, id)
+			} else {
+				ready = append(ready, id)
+			}
+		}
+		deferred, err := l.backend.Forget(ctx, ready)
+		deferred = append(deferred, retained...)
 		if err != nil {
 			return err
 		}

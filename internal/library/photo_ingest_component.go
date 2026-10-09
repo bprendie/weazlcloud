@@ -14,6 +14,7 @@ import (
 // A small owner-encrypted intent binds a retry to the same immutable storage
 // identity before PrepareWithID can commit any reference. It contains no bytes.
 type photoComponentIntent struct {
+	Canceled  bool         `json:"canceled,omitempty"`
 	Version   int          `json:"version"`
 	Operation string       `json:"operation"`
 	File      catalog.File `json:"file"`
@@ -86,4 +87,53 @@ func syncPhotoComponentDirectory(path string) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+// Cancellation is settled state, not pending storage work. Keep its encrypted
+// marker outside the retry-intent directory so cleanup can fully settle intents.
+func photoComponentCancellationPath(intentPath string) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(intentPath)), ".weazl-photo-component-cancellations", filepath.Base(intentPath))
+}
+
+func (l *Library) photoComponentCanceled(intentPath, name string, size int64, hash string) (bool, error) {
+	path := photoComponentCancellationPath(intentPath)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	marker, err := l.loadPhotoComponentIntent(path, name, size, hash)
+	if err != nil {
+		return false, err
+	}
+	if !marker.Canceled {
+		return false, catalog.ErrCollectionSchema
+	}
+	return true, nil
+}
+
+func (l *Library) settlePhotoComponentCancellation(intentPath string, intent photoComponentIntent) error {
+	intent.Canceled = true
+	intent.File.Reference = nil
+	intent.File.Snap, intent.File.Object = "", ""
+	markerPath := photoComponentCancellationPath(intentPath)
+	if err := l.savePhotoComponentIntent(markerPath, intent); err != nil {
+		return err
+	}
+	// Persist a newly created marker directory before deleting the retry intent.
+	if err := syncPhotoComponentDirectory(filepath.Dir(markerPath)); err != nil {
+		return err
+	}
+	return removePhotoComponentIntent(intentPath)
+}
+
+func removePhotoComponentIntent(path string) error {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return syncPhotoComponentDirectory(path)
 }

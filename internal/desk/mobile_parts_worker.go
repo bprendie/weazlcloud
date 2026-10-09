@@ -6,12 +6,11 @@ import (
 	"errors"
 	"io"
 	"log"
-	"runtime"
-	"sync"
 	"time"
 
 	"github.com/bprendie/weazlcloud/internal/backup"
 	"github.com/bprendie/weazlcloud/internal/filesvc"
+	"github.com/bprendie/weazlcloud/internal/library"
 	"github.com/bprendie/weazlcloud/internal/mobileparts"
 	"github.com/bprendie/weazlcloud/internal/users"
 	"github.com/bprendie/weazlcloud/internal/vault"
@@ -23,106 +22,97 @@ func mobileVaultContext(parent context.Context, res *filesvc.Resource) (context.
 	return ctx, func() { stop(); cancel() }
 }
 
-// At most two finalizers globally, one per owner in each fair round. Staging parts are
-// independent of finalization; uploads continue while older originals commit.
+// The pool persists across polling rounds; only shutdown waits for workers.
 func (h *Handler) runMobileParts(ctx context.Context) {
 	if h.mobileParts == nil {
 		return
 	}
+	pool := newMobileFinalizerPool(ctx, h.mobileFinalizerLimits())
+	log.Printf("mobile finalize workers=%d per_owner=%d", pool.limits.global, pool.limits.perOwner)
+	defer pool.close()
 	timer := time.NewTicker(time.Second)
 	defer timer.Stop()
-	offset := 0
 	nextSweep := time.Now()
+	var queues []mobileOwnerJobs
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case key := <-pool.done:
+			pool.complete(key)
+			// Refill from the bounded scan immediately; a fast batch must not
+			// idle until the next one-second discovery tick.
+			pool.schedule(queues)
 		case <-timer.C:
-		}
-		owners := h.users.Users()
-		if len(owners) == 0 {
-			continue
-		}
-		var wg sync.WaitGroup
-		slots := make(chan struct{}, mobileFinalizerLimit())
-		for i := range owners {
-			user := owners[(offset+i)%len(owners)]
-			if user.Disabled || user.Deleting {
-				continue
-			}
-			res := h.registry.For(user)
-			if !res.Vault.Unlocked() {
-				continue
-			}
-			lease, release, ok := h.registry.Enter(ctx, user.ID)
-			if !ok {
-				continue
-			}
-			pending, e := h.mobileParts.Pending(res)
-			if e != nil {
-				log.Printf("mobile queue warning: owner=%s error=%v", user.ID, e)
-			}
-			if len(pending) == 0 {
-				release()
-				continue
-			}
-			var chosen *mobileparts.Session
-			for j := range pending {
-				if h.authorizeMobilePart(pending[j]) == nil {
-					chosen = &pending[j]
-					break
-				}
-			}
-			if chosen == nil {
-				release()
-				continue
-			}
-			select {
-			case slots <- struct{}{}:
-			case <-ctx.Done():
-				release()
-				wg.Wait()
+			if ctx.Err() != nil {
 				return
 			}
-			wg.Add(1)
-			go func(user users.User, res *filesvc.Resource, id string, lease context.Context, release func()) {
-				defer wg.Done()
-				defer func() { <-slots }()
-				defer release()
-				job, cancel := mobileVaultContext(lease, res)
-				defer cancel()
-				stopGrant := h.watchMobileGrant(job, cancel, res, id)
-				defer stopGrant()
-				err := h.mobileParts.Process(job, res, id, h.authorizeMobilePart, func(s mobileparts.Session, open func(string) (io.ReadCloser, error)) (json.RawMessage, error) {
-					result, err := h.commitMobilePart(job, res, user, s, open)
-					return result, mobileCommitFailure(err)
-				})
-				if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, vault.ErrLocked) {
-					log.Printf("mobile finalize deferred: owner=%s upload=%s error=%v", user.ID, id, err)
-				}
-			}(user, res, chosen.ID, lease, release)
-		}
-		wg.Wait()
-		offset = (offset + 1) % len(owners)
-		if time.Now().Before(nextSweep) {
-			continue
-		}
-		nextSweep = time.Now().Add(15 * time.Minute)
-		// Sweep only unlocked owners; private state never uses an admin key.
-		for _, user := range owners {
-			if !user.Disabled && !user.Deleting {
-				res := h.registry.For(user)
-				if res.Vault.Unlocked() {
-					lease, release, ok := h.registry.Enter(ctx, user.ID)
-					if ok {
-						if lease.Err() == nil {
-							_ = h.mobileParts.Sweep(res)
-						}
-						release()
-					}
-				}
+			owners := h.users.Users()
+			queues = nil
+			sweep := !time.Now().Before(nextSweep)
+			if sweep {
+				nextSweep = time.Now().Add(15 * time.Minute)
 			}
+			for _, user := range owners {
+				if ctx.Err() != nil {
+					return
+				}
+				if user.Disabled || user.Deleting {
+					continue
+				}
+				res := h.registry.For(user)
+				if !res.Vault.Unlocked() {
+					continue
+				}
+				lease, release, ok := h.registry.Enter(ctx, user.ID)
+				if !ok {
+					continue
+				}
+				pending, err := h.mobileParts.Pending(res)
+				if err != nil {
+					log.Printf("mobile queue warning: owner=%s error=%v", user.ID, err)
+				}
+				queue := mobileOwnerJobs{owner: user.ID}
+				for _, session := range pending {
+					if pool.active[mobileFinalizeKey{user.ID, session.ID}] {
+						continue
+					}
+					if h.authorizeMobilePart(session) != nil {
+						continue
+					}
+					queue.jobs = append(queue.jobs, mobileFinalizeJob{
+						key: mobileFinalizeKey{user.ID, session.ID},
+						run: func(ctx context.Context) { h.processMobilePart(ctx, user, res, session.ID) },
+					})
+				}
+				queues = append(queues, queue)
+				// Sweep only unlocked owners under their lifecycle lease.
+				if sweep && lease.Err() == nil {
+					_ = h.mobileParts.Sweep(res)
+				}
+				release()
+			}
+			pool.schedule(queues)
 		}
+	}
+}
+
+func (h *Handler) processMobilePart(ctx context.Context, user users.User, res *filesvc.Resource, id string) {
+	lease, release, ok := h.registry.Enter(ctx, user.ID)
+	if !ok {
+		return
+	}
+	defer release()
+	job, cancel := mobileVaultContext(lease, res)
+	defer cancel()
+	stopGrant := h.watchMobileGrant(job, cancel, res, id)
+	defer stopGrant()
+	err := h.mobileParts.Process(job, res, id, h.authorizeMobilePart, func(s mobileparts.Session, open func(string) (io.ReadCloser, error)) (json.RawMessage, error) {
+		result, err := h.commitMobilePart(job, res, user, s, open)
+		return result, mobileCommitFailure(err)
+	})
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, vault.ErrLocked) {
+		log.Printf("mobile finalize deferred: owner=%s upload=%s error=%v", user.ID, id, err)
 	}
 }
 func (h *Handler) authorizeMobilePart(s mobileparts.Session) error {
@@ -133,6 +123,11 @@ func (h *Handler) authorizeMobilePart(s mobileparts.Session) error {
 	return h.users.CheckDeviceGrant(intent.Grant, partScopes(s.Spec.Kind)...)
 }
 func (h *Handler) commitMobilePart(ctx context.Context, res *filesvc.Resource, user users.User, s mobileparts.Session, open func(string) (io.ReadCloser, error)) (json.RawMessage, error) {
+	if s.RetryAttempts > 0 {
+		// Isolate retried members so one broken source cannot repeatedly abort
+		// the healthy members of its original batch.
+		ctx = library.WithPhotoStorageSingle(ctx)
+	}
 	var intent mobileIntent
 	if e := json.Unmarshal(s.Spec.Payload, &intent); e != nil {
 		return nil, mobileparts.ErrCorrupt
@@ -197,5 +192,3 @@ func (h *Handler) watchMobileGrant(ctx context.Context, cancel context.CancelFun
 	}()
 	return func() { close(done); <-stopped }
 }
-
-func mobileFinalizerLimit() int { return min(2, max(1, runtime.GOMAXPROCS(0)/2)) }

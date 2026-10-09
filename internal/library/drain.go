@@ -7,6 +7,9 @@ import (
 
 func (l *Library) Drain(ctx context.Context) error {
 	l.stopPreviews()
+	if err := l.drainPhotoComponents(ctx, false); err != nil {
+		return err
+	}
 	l.stopPreviewReader()
 	for {
 		l.thumbMu.Lock()

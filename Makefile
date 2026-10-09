@@ -12,16 +12,22 @@ metadata-reader:
 	cd native/restic-reader && CGO_ENABLED=0 go build -trimpath -o ../../.build/weazl-restic-reader .
 	cd native/restic-reader && go vet ./... && go test -race ./...
 
+.PHONY: stream-writer
+stream-writer:
+	mkdir -p .build
+	cd native/restic-writer && CGO_ENABLED=0 go build -trimpath -o ../../.build/weazl-restic-writer .
+	cd native/restic-writer && go vet ./... && go test -race ./...
+
 mockup:
 	python3 -m http.server 3001 --bind 127.0.0.1 --directory mockup-ui
 
-test: desk-assets metadata-reader
+test: desk-assets metadata-reader stream-writer
 	go test ./...
 
 vet: desk-assets
 	go vet ./...
 
-race: desk-assets metadata-reader
+race: desk-assets metadata-reader stream-writer
 	go test -race ./...
 
 lines: desk-assets

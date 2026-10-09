@@ -199,15 +199,14 @@ requests are already hitting the timeout boundary.
   safely after new writes, coalescing refreshes across a batch and preserving
   active reads, reference holds and memory limits. Avoid restarting it once per
   photo or increasing worker counts to hide repeated repository opens.
-- `StorePhotoComponent` holds `Library.mu` across the backend write. Reads and
-  upload creation also need that lock. Move slow byte storage outside the broad
-  library mutation lock with explicit reference/operation ownership, then take
-  the narrow lock for CAS-checked publication. Preserve deletion, revocation,
-  vault lock, dedupe, crash recovery and still/motion atomicity.
-- The current finalizer handles one logical upload per owner per scheduling round.
-  Small media incurs separate backend operations and catalog writes. Evaluate
-  bounded batch commits or a long-lived writer before adding more same-owner
-  finalizers that would queue behind the same lock. Keep small-host fallbacks.
+- Implemented in the [October 9 upload pipeline](mobile-upload-performance-2026-10-09.md):
+  slow photo storage runs outside `Library.mu`, with per-path gates and short
+  publication locks. A CPU/RAM-sized finalizer pool and streaming Restic batches
+  reduce repeated process/index/snapshot work. Existing seed parts and receipts
+  remain valid. Read the reported limits instead of hard-coding one finalizer.
+- The app can continue uploading after accepted parts; await `stored` separately.
+  Queued/verifying responses advertise `Retry-After: 2`. Back off receipt polling
+  instead of querying every active upload several times per second.
 - Add safe stage metrics for staging, verification, backend write, catalog commit,
   persistent-reader hit/miss/fallback and preview queue latency. Current endpoint
   timings cannot assign an exact percentage of delay to these stages.
@@ -217,5 +216,5 @@ projections; browsing remains responsive during ingest; slow parts survive the
 configured timeout window; lost replies resume without duplicate originals;
 finalization continues after the app closes; additional photos don't force a
 fresh Restic CLI read for each preview. Test vault lock, revoked credentials and
-a two-CPU/four-GiB deployment as well as the large host. These are recommended
-follow-up changes, not claims that production has already been optimized.
+a two-CPU/four-GiB deployment as well as the large host. The upload pipeline
+ledger records validation and deployment separately; the remaining reader-refresh and metrics recommendations are not completion claims.

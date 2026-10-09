@@ -17,6 +17,8 @@ import (
 )
 
 type Library struct {
+	componentOnce              sync.Once
+	components                 *photoComponentWork
 	liveMu                     sync.Mutex
 	liveJob                    *LivePhotoJob
 	liveRunning                bool

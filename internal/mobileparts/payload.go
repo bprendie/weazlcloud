@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/bprendie/weazlcloud/internal/cryptox"
 
@@ -50,6 +51,7 @@ func (m *Manager) restartExpired(res *filesvc.Resource, s *Session) error {
 	defer clear(key)
 	s.Key = cryptox.B64(key)
 	s.Status, s.ErrorCode, s.Result = "uploading", "", nil
+	s.RetryAttempts, s.RetryAfter = 0, time.Time{}
 	for i := range s.Spec.Components {
 		s.Spec.Components[i].ReceivedParts, s.Spec.Components[i].ReceivedBytes = 0, 0
 	}

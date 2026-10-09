@@ -24,6 +24,13 @@ RUN apk add --no-cache build-base libjpeg-turbo-dev
 COPY native/preview/main.c /src/main.c
 RUN cc -O3 -Wall -Wextra -Werror -o /weazl-preview-turbo /src/main.c -ljpeg
 
+FROM golang:1.25-bookworm AS stream-writer-build
+WORKDIR /src
+COPY native/restic-writer/go.mod native/restic-writer/go.sum ./
+RUN go mod download
+COPY native/restic-writer/*.go ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /weazl-restic-writer .
+
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata libjpeg-turbo ffmpeg libheif-tools exiftool \
  && adduser -D -H -u 7272 -g "" weazl \
@@ -34,8 +41,10 @@ COPY --from=build /out/takeout-layout /usr/local/bin/takeout-layout
 COPY --from=build /out/weazl-photo-worker /usr/local/bin/weazl-photo-worker
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
 COPY --from=metadata-reader-build /weazl-restic-reader /usr/local/bin/weazl-restic-reader
+COPY --from=stream-writer-build /weazl-restic-writer /usr/local/bin/weazl-restic-writer
 COPY --from=preview-build /weazl-preview-turbo /usr/local/bin/weazl-preview-turbo
 COPY docs/licenses/thumbhash-ISC.txt /usr/share/licenses/weazlcloud/thumbhash-ISC.txt
+COPY native/restic-writer/LICENSE.restic /usr/share/licenses/weazlcloud/restic-writer-BSD.txt
 USER 7272:7272
 ENV HOME=/data
 ENV XDG_CACHE_HOME=/data/cache

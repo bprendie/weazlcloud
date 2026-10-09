@@ -203,6 +203,9 @@ func (h *Handler) mobilePartOperation(w http.ResponseWriter, r *http.Request, re
 		mobilePartError(w, e)
 		return
 	}
+	if v.Status == "queued" || v.Status == "verifying" {
+		w.Header().Set("Retry-After", "2")
+	}
 	writeJSON(w, 200, map[string]any{"transfer": v})
 }
 func mobilePartError(w http.ResponseWriter, e error) {

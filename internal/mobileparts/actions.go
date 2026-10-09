@@ -1,6 +1,9 @@
 package mobileparts
 
-import "github.com/bprendie/weazlcloud/internal/filesvc"
+import (
+	"github.com/bprendie/weazlcloud/internal/filesvc"
+	"time"
+)
 
 func (m *Manager) Retry(res *filesvc.Resource, id, device string) (View, error) {
 	u := m.lock(res, id)
@@ -17,6 +20,7 @@ func (m *Manager) Retry(res *filesvc.Resource, id, device string) (View, error) 
 	}
 	s.Status = "queued"
 	s.ErrorCode = ""
+	s.RetryAttempts, s.RetryAfter = 0, time.Time{}
 	if e = m.save(res, &s); e != nil {
 		return View{}, e
 	}

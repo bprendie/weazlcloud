@@ -232,6 +232,7 @@ func (l *Library) startPhotoPreparationWorker() {
 // PrepareVaultLock cancels and drains background photo work while the vault
 // key remains available to release durable queue leases safely.
 func (l *Library) PrepareVaultLock() {
+	l.stopPhotoComponentsForLock()
 	l.photoPrepMu.Lock()
 	if !l.photoPrepRunning {
 		l.photoPrepMu.Unlock()

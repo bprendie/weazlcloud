@@ -52,6 +52,9 @@ type Handler struct {
 	importOwner       string
 	importMu          sync.Mutex
 	importJobs        map[string]*takeoutJob
+
+	mobileFinalizeOnce   sync.Once
+	mobileFinalizeConfig mobileFinalizeLimits
 }
 
 // EnableTakeout exposes a fixed, node-mounted staging directory to one owner.
@@ -99,6 +102,7 @@ func NewMulti(us *users.Store, caps *capsule.Store, q *quota.Manager, publicBase
 	}, q, us.Count)
 	h.photoUploads = photoingest.New(h.uploads)
 	h.mobileParts = mobileparts.New(q)
+	h.mobileFinalizerLimits() // Snapshot the pool and capability settings together.
 	h.accounts = accountlifecycle.New(us, h.registry, caps, h.uploads)
 	h.accounts.SetOwnerCleanup(func(_ context.Context, owner string) error {
 		return h.mobileParts.ReleaseOwner(owner)

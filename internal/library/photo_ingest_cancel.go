@@ -17,11 +17,20 @@ import (
 // pair wins even after a move or trash operation. Otherwise tombstone must persist
 // before private rows/references are discarded; a retry safely repeats cleanup.
 func (l *Library) CancelPhotoIngest(ctx context.Context, commit catalog.PhotoIngestCommit, tombstone func() error) (catalog.File, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
 	if commit.DeviceID == "" || commit.DeviceAssetID == "" || commit.SourceRevision == "" || len(commit.Files) < 1 || len(commit.Files) > 2 || tombstone == nil {
 		return catalog.File{}, catalog.ErrConflict
 	}
+	names := make([]string, len(commit.Files))
+	for i, f := range commit.Files {
+		names[i] = f.From
+	}
+	release, err := l.gatePhotoComponents(ctx, names...)
+	if err != nil {
+		return catalog.File{}, err
+	}
+	defer release()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for _, p := range commit.Files {
 		if !strings.HasPrefix(p.From, ".weazl-mobile-pending/") || path.Clean(p.From) != p.From {
 			return catalog.File{}, catalog.ErrConflict
@@ -83,7 +92,7 @@ func (l *Library) CancelPhotoIngest(ctx context.Context, commit catalog.PhotoIng
 			if e != nil {
 				return catalog.File{}, e
 			}
-			if l.sharedStore != nil {
+			if l.sharedStore != nil && !intent.Canceled && (intent.File.Reference == nil || intent.File.Reference.Backend == catalog.SharedBackend) {
 				if e = l.sharedStore.Recover(ctx, intent.Operation, false); e != nil && !errors.Is(e, sharedstore.ErrState) && !errors.Is(e, sql.ErrNoRows) {
 					return catalog.File{}, e
 				}
@@ -91,11 +100,18 @@ func (l *Library) CancelPhotoIngest(ctx context.Context, commit catalog.PhotoIng
 					return catalog.File{}, e
 				}
 			}
-			if e = os.Remove(intentPath); e != nil && !errors.Is(e, os.ErrNotExist) {
-				return catalog.File{}, e
-			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return catalog.File{}, err
+		}
+
+		// Retain a tiny encrypted tombstone. A Store already waiting on the
+		// name gate must not recreate a canceled private row after we release it.
+		intent, e := l.loadPhotoComponentIntent(intentPath, p.From, p.Size, p.Hash)
+		if e != nil {
+			return catalog.File{}, e
+		}
+		if e = l.settlePhotoComponentCancellation(intentPath, intent); e != nil {
+			return catalog.File{}, e
 		}
 	}
 	return catalog.File{}, l.catalog.DiscardPhotoPending(commit.Files)

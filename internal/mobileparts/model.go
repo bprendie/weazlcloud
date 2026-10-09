@@ -38,16 +38,18 @@ type Spec struct {
 	Payload            json.RawMessage `json:"payload"`
 }
 type Session struct {
-	Version   int             `json:"version"`
-	ID        string          `json:"id"`
-	OwnerID   string          `json:"owner_id"`
-	Spec      Spec            `json:"spec"`
-	Key       string          `json:"key"`
-	Status    string          `json:"status"`
-	ErrorCode string          `json:"error_code,omitempty"`
-	Result    json.RawMessage `json:"result,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	Version       int             `json:"version"`
+	ID            string          `json:"id"`
+	OwnerID       string          `json:"owner_id"`
+	Spec          Spec            `json:"spec"`
+	Key           string          `json:"key"`
+	Status        string          `json:"status"`
+	ErrorCode     string          `json:"error_code,omitempty"`
+	Result        json.RawMessage `json:"result,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	RetryAttempts int             `json:"retry_attempts,omitempty"`
+	RetryAfter    time.Time       `json:"retry_after,omitempty"`
 }
 type View struct {
 	ID         string          `json:"id"`

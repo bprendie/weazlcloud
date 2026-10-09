@@ -1,9 +1,7 @@
 # Native mobile API — implementation contract
 
-October 2, 2026. This describes the local working tree at baseline
-`a077baf336764ead17cbe983e44907a89efa16fd`, with uncommitted additions. It is not a
-published release. Router wiring and frozen-image server verification are complete; production
-rollout remains pending. See [validation](mobile-server-validation-2026-10-02.md) and
+Updated October 9, 2026. This documents the implemented mobile contract and the
+concurrent finalization update. See [validation](mobile-server-validation-2026-10-02.md) and
 [decisions/migration](mobile-server-decisions.md). The machine-readable companion
 is [mobile-api.yaml](mobile-api.yaml); its paths include implemented handlers, with
 grant-only/pending patterns isolated in `x-unimplemented-route-inventory`; existing Photos DTOs remain documented in
@@ -78,9 +76,14 @@ flags; verification results are recorded in the release ledger.
 Clients must inspect the server response rather than assume flags from this document.
 Limits are active devices 32, credential TTL 7,776,000 seconds, rotation grace 900
 seconds, staging expiry 86,400 seconds, ordered chunk/part size 16,777,216 bytes,
-missing parts page 200, `mobile_finalize_workers` equal to
-`min(2,max(1,GOMAXPROCS/2))`, and `mobile_finalize_workers_per_owner: 1`.
-A two-CPU/GOMAXPROCS=2 profile runs one finalizer; larger profiles run at most two.
+missing parts page 200. Finalization uses a persistent, fair worker pool.
+With P equal to visible CPU capacity (including GOMAXPROCS and cgroup limits)
+and M equal to `max(1,min(8,visible_RAM/2_GiB))`, defaults are
+`mobile_finalize_workers = max(1,min(M,P/2))` and
+`mobile_finalize_workers_per_owner = max(1,min(4,M,P/4))`.
+Integer division rounds down. Two-CPU hosts use one worker; large hosts can use
+eight globally and four per owner. Explicit operator overrides are described in
+[mobile upload performance](mobile-upload-performance-2026-10-09.md).
 
 ## Durable devices
 
@@ -171,6 +174,13 @@ Engine states are `uploading`, `queued`, `verifying`, `stored`, `failed`, `cance
 An accepted part or queued job is not a stored-original receipt. `stored` means
 component verification and coordinator/catalog commit succeeded, with the logical
 result in `result`. Preview processing and organization imports are separate.
+Queued/verifying transfer responses include `Retry-After: 2` as a polling hint.
+Clients may upload the next asset after accepted parts; they must still wait for
+`stored` before marking that original backed up. A transient batch writer failure
+retries from retained encrypted parts after 2, 4 and 8 seconds, at most three
+automatic retries. Retries isolate files into individual writes; persistent
+failures remain inspectable and explicitly retryable. Session IDs and results
+retain the existing format, including uploads staged before this upgrade.
 Retry queues a complete non-stored/non-cancelled session; incomplete retry is a
 conflict. Finalize must use the immutable create specification rather than change
 capture/Hidden/destination fields halfway through parts. Server work must recheck

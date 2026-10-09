@@ -27,7 +27,7 @@ func (m *Manager) Pending(res *filesvc.Resource) ([]Session, error) {
 		}
 		unlock := m.lock(res, id)
 		s, loadErr := m.load(res, id)
-		if loadErr == nil && queued(s) {
+		if loadErr == nil && queued(s) && !m.now().Before(s.RetryAfter) {
 			out = append(out, s)
 		}
 		if loadErr == nil && !queued(s) || errors.Is(loadErr, ErrExpired) || errors.Is(loadErr, ErrNotFound) {

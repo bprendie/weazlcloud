@@ -52,6 +52,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err := library.ValidatePreviewSettings(); err != nil {
 		return err
 	}
+	if err := desk.ValidateMobileFinalizeSettings(); err != nil {
+		return err
+	}
 	fs := flag.NewFlagSet("weazlcloud", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	showVersion := fs.Bool("version", false, "print version")
