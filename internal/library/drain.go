@@ -13,7 +13,7 @@ func (l *Library) Drain(ctx context.Context) error {
 		jobs := len(l.thumbJobs) + len(l.bundleJobs)
 		l.thumbMu.Unlock()
 		l.photoPrepMu.Lock()
-		running := l.photoPrepRunning || l.photoResumeWaiting
+		running := l.photoPrepRunning || l.photoResumeWaiting || l.photoCacheChecking
 		l.photoPrepMu.Unlock()
 		l.metadataMu.Lock()
 		metadataRunning := l.metadataRunning

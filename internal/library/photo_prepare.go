@@ -12,25 +12,26 @@ const photoPreparationStateLimit = 16 << 10
 var ErrPhotoPreparationAction = errors.New("photo preparation action must be start, resume, pause, or retry")
 
 type photoPreparation struct {
-	Enabled      bool   `json:"enabled"`
-	Status       string `json:"status"`
-	Total        int    `json:"total"`
-	Ready        int    `json:"ready"`
-	BundleReady  int    `json:"bundle_ready"`
-	Failed       int    `json:"failed"`
-	Position     int    `json:"position"`
-	Generation   uint64 `json:"generation"`
-	Updated      string `json:"updated"`
-	Paused       bool   `json:"paused,omitempty"`
-	Retry        bool   `json:"retry,omitempty"`
-	AutoOnly     bool   `json:"auto_only,omitempty"`
-	Error        string `json:"error,omitempty"`
-	CPUBudget    int    `json:"cpu_budget,omitempty"`
-	Workers      int    `json:"workers,omitempty"`
-	Readers      int    `json:"source_readers,omitempty"`
-	Schedule     string `json:"schedule,omitempty"`
-	Working      int    `json:"working,omitempty"`
-	WorkProgress int    `json:"work_progress,omitempty"`
+	Enabled       bool   `json:"enabled"`
+	Status        string `json:"status"`
+	Total         int    `json:"total"`
+	Ready         int    `json:"ready"`
+	BundleReady   int    `json:"bundle_ready"`
+	Failed        int    `json:"failed"`
+	Position      int    `json:"position"`
+	Generation    uint64 `json:"generation"`
+	Updated       string `json:"updated"`
+	Paused        bool   `json:"paused,omitempty"`
+	Retry         bool   `json:"retry,omitempty"`
+	AutoOnly      bool   `json:"auto_only,omitempty"`
+	Error         string `json:"error,omitempty"`
+	CPUBudget     int    `json:"cpu_budget,omitempty"`
+	Workers       int    `json:"workers,omitempty"`
+	Readers       int    `json:"source_readers,omitempty"`
+	Schedule      string `json:"schedule,omitempty"`
+	Working       int    `json:"working,omitempty"`
+	WorkProgress  int    `json:"work_progress,omitempty"`
+	CacheChecking bool   `json:"cache_checking,omitempty"`
 }
 
 func (l *Library) PhotoPreparation() (photoPreparation, error) {
@@ -42,6 +43,7 @@ func (l *Library) PhotoPreparation() (photoPreparation, error) {
 	l.loadPhotoPreparationLocked()
 	l.reconcilePreparedCacheLocked()
 	state := l.photoPrep
+	state.CacheChecking = l.photoCacheChecking
 	state.CPUBudget, state.Workers, state.Readers, state.Schedule = previewPolicy.CPUBudget, previewPolicy.RenderWorkers, previewPolicy.SourceReaders, previewPolicy.Schedule
 	l.photoPrepMu.Unlock()
 	state.Working, state.WorkProgress = l.photoJobProgress()

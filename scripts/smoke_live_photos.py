@@ -36,10 +36,10 @@ def smoke_live_photos(context, page, post, browser, base, image, restart):
         assert r.ok, r.text()
     for name, body in [('still.jpg',still), ('motion.mov',motion), ('short.mov',ordinary)]:
         upload('Photos/live-smoke/'+name, body)
-    def wait_job():
+    def wait_job(min_total=0):
         for _ in range(160):
             job = context.request.get('/api/v1/photos/live-jobs').json()
-            if job['status'].startswith('complete'):
+            if job['status'].startswith('complete') and job['total'] >= min_total:
                 return job
             time.sleep(.1)
         raise AssertionError(job)
@@ -98,10 +98,13 @@ def smoke_live_photos(context, page, post, browser, base, image, restart):
     finally:
         guest.close()
     # Late independently arriving resources are picked up by the durable queue.
+    # Upload completion precedes the asynchronous ingest outbox. Waiting only
+    # for "complete" can accept the previous pass before this file is queued.
+    total=context.request.get('/api/v1/photos/live-jobs').json()['total']
     upload('Photos/live-late/still.jpg',still)
-    wait_job()
+    wait_job(total+1)
     upload('Photos/live-late/motion.mov',motion)
-    wait_job()
+    wait_job(total+2)
     items=context.request.get('/api/v1/photos?limit=100').json()['items']
     late=next(x for x in items if x['path']=='Photos/live-late/still.jpg')
     assert len(late['components'])==2, late

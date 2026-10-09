@@ -101,26 +101,3 @@ func (l *Library) previewCached(key string) bool {
 	info, err := os.Stat(filepath.Join(l.thumbnailDir(), key+".enc"))
 	return err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= thumbnailMaxOutput
 }
-
-// Readiness is a cache inventory, not a count of historic render attempts.
-func (l *Library) reconcilePreparedCacheLocked() {
-	epoch := thumbnailCacheEpoch.Load()
-	if l.photoPrepRunning || l.photoPrepared == nil || l.photoCacheEpoch == epoch {
-		return
-	}
-	ready, bundles := 0, 0
-	for key, count := range l.photoPrepared {
-		if l.validCachedPreview(key) {
-			ready += count
-			if viewer := l.photoPreparedBundles[key]; viewer != "" && l.validCachedPreview(viewer) {
-				bundles += count
-			}
-		}
-	}
-	l.photoPrep.Ready, l.photoPrep.BundleReady = ready, bundles
-	if l.photoPrep.Status == "complete" && (ready < l.photoPrep.Total || l.photoPreparedBundles != nil && bundles < l.photoPrep.Total) {
-		l.photoPrep.Status = "partial"
-	}
-	l.photoCacheEpoch = epoch
-	l.touchPhotoPreparationLocked()
-}

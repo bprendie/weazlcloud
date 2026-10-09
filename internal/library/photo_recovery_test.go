@@ -170,8 +170,8 @@ func TestPhotoReadinessDropsAfterEviction(t *testing.T) {
 		t.Fatal(err)
 	}
 	thumbnailCacheEpoch.Add(1)
-	s, err := l.PhotoPreparation()
-	if err != nil || s.Ready != 0 || s.Status != "partial" {
-		t.Fatalf("eviction still counted: %+v %v", s, err)
+	s := waitPreparation(t, l, "partial")
+	if s.Ready != 0 {
+		t.Fatalf("eviction still counted: %+v", s)
 	}
 }

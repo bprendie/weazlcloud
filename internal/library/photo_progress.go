@@ -26,9 +26,13 @@ func (l *Library) setPhotoJobProgress(jobID, worker string, progress int) {
 }
 
 func (l *Library) photoJobProgress() (int, int) {
-	l.photoJobsMu.Lock()
+	// Queue initialization and cache inventory belong to the worker. A status
+	// poll must not wait behind either, or hold up a timeline's resume check.
+	if !l.photoJobsMu.TryLock() {
+		return 0, 0
+	}
 	defer l.photoJobsMu.Unlock()
-	if l.loadPhotoJobsLocked() != nil {
+	if !l.photoJobsLoaded {
 		return 0, 0
 	}
 	return l.photoJobs.Progress()

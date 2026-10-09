@@ -101,6 +101,7 @@ type Library struct {
 	photoPrepared              map[string]int
 	photoPreparedBundles       map[string]string
 	photoCacheEpoch            uint64
+	photoCacheChecking         bool
 	photoImports               int
 	pendingPhotoIngest         map[string]catalog.File
 	pendingMetadataDirectories map[string]bool

@@ -456,7 +456,7 @@ function photos() {
   }
   const media = state.photoItems || [];
   const prep = state.photoPreparation;
-  const prepWork = prep?.working ? ` · ${prep.working} rendering · ${prep.work_progress}% avg` : '';
+  const prepWork = (prep?.working ? ` · ${prep.working} rendering · ${prep.work_progress}% avg` : '') + (prep?.cache_checking ? ' · checking cached previews' : '');
   const prepLabel = prep?.enabled ? `${prep.ready} / ${prep.total} previews · ${prep.status.replaceAll('_', ' ')}${prepWork}` : 'Prepare previews';
   const prepActive = prep?.enabled && ['queued', 'running', 'paused_storage'].includes(prep.status);
   const metadata=state.photoMetadata;
