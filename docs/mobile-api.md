@@ -269,6 +269,16 @@ is committed atomically with the still/motion pair. Preview failure does not und
 an already stored receipt. Unknown capture offset stays unknown; preserve
 `offset_known: false` rather than inventing the phone's current timezone.
 
+For iOS Hidden backups, set `hidden: true` on the initial upload specification
+from the asset's PhotoKit hidden state. An album or folder named `Hidden` alone
+does not set visibility. The same unlocked owner vault and scoped credential
+authorize the explicit Hidden view; there is no separate Hidden password or
+unlock endpoint. Use `mode=hidden` for the timeline and `hidden=1` for asset,
+collection and membership reads that support that parameter. Normal views must
+continue to exclude Hidden content. Preserve album membership and the hidden
+state of both Live Photo components. See the [native handoff](mobile-app-handoff.md#ios-hidden-uploads--october-9-2026)
+for client behavior and upload performance guidance.
+
 `GET/HEAD /api/v1/photos/assets/{id}/original?hidden=1&download=1` reads the captured
 immutable original; `hidden=1` selects the explicit Hidden context and `download=1`
 sets attachment disposition. Normal and Hidden identities/components/covers are

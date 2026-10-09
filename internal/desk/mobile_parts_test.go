@@ -99,6 +99,30 @@ func TestMobilePartsHTTPAutonomousHiddenOriginalAndRevoke(t *testing.T) {
 	if e != nil || len(page.Items) != 0 {
 		t.Fatalf("hidden leaked: %+v %v", page, e)
 	}
+	// Hidden is a visibility scope inside the already-unlocked owner vault.
+	// The same device credential can browse and read it without another unlock.
+	hiddenPage := request("GET", "/api/v1/photos?mode=hidden", token, nil, 200)
+	var items []struct {
+		ID string `json:"id"`
+	}
+	if e = json.Unmarshal(hiddenPage["items"], &items); e != nil || len(items) != 1 {
+		t.Fatalf("hidden upload missing from Hidden: %s %v", hiddenPage["items"], e)
+	}
+	originalPath := "/api/v1/photos/assets/" + items[0].ID + "/original"
+	normalRequest := httptest.NewRequest("GET", originalPath, nil)
+	normalRequest.Header.Set("Authorization", "Bearer "+token)
+	normalResponse := httptest.NewRecorder()
+	h.ServeHTTP(normalResponse, normalRequest)
+	if normalResponse.Code != 404 {
+		t.Fatalf("hidden original leaked into normal context: status=%d", normalResponse.Code)
+	}
+	originalRequest := httptest.NewRequest("GET", originalPath+"?hidden=1", nil)
+	originalRequest.Header.Set("Authorization", "Bearer "+token)
+	originalResponse := httptest.NewRecorder()
+	h.ServeHTTP(originalResponse, originalRequest)
+	if originalResponse.Code != 200 || !bytes.Equal(originalResponse.Body.Bytes(), body) {
+		t.Fatalf("hidden original with existing credential: status=%d", originalResponse.Code)
+	}
 	retry := request("POST", "/api/v1/photos/uploads", token, raw, 200)
 	if len(retry["receipt"]) == 0 {
 		t.Fatal("lost reply receipt not recovered")
