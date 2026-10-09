@@ -146,3 +146,50 @@ that the phone has reconnected or that its seed has finished.
 
 The implementation is committed and pushed. GitHub CI was still running at the
 last release check; local checks and the release-image smokes above passed.
+
+
+### Upload stall trace and proxy timeout
+
+After the rollout, production accepted owner unlock and successfully wrote
+multi-file Restic batches. Later, repeated part PUTs returned 503 at approximately
+60,000 ms. The installed Traefik binary reported a default HTTPS request-body
+read timeout of 60 seconds, with no override in its static configuration.
+Restarting that unchanged configuration retained the limit.
+
+A harmless synthetic login request used a random nonexistent account and delayed
+its final request byte for 65 seconds. Direct access to port 7272 returned the
+expected 401 after reading the complete body; the same public HTTPS request
+returned 499 through the proxy. No production credentials or photo bytes were
+used in the probe.
+
+The operator configuration on `traefik.teralab.local` now explicitly sets:
+
+```yaml
+entryPoints:
+  https:
+    address: ":443"
+    transport:
+      respondingTimeouts:
+        readTimeout: 300s
+```
+
+This applies to the shared HTTPS entrypoint, not just the WeazlCloud router.
+Only that setting changed; the prior static configuration is preserved at
+`/home/bobp/traefik-releases/weazl-upload-timeout-20261009/before.yml`.
+The candidate parsed with the installed image in an isolated container (live
+providers and certificate files were intentionally absent). After the real proxy
+restart, WeazlCloud/Grab readiness and WeazlTunes/Subweazl/WeazlMusic returned 200.
+The repeated 65-second probe then returned the expected 401 through both direct
+and public HTTPS paths, confirming the former cutoff is removed. The vault
+server was not restarted and staging was not cleared.
+
+Separate recovery concern: an explicit device reauthorization was observed in
+server logs. It invalidates previously admitted upload grants; polling a transfer
+can still return 200 while the scheduler refuses its old grant. This is a code-
+verified possibility, not a decrypted inspection of each production manifest.
+The app must replay the same create request with current credentials and unchanged
+source revision, component hashes, destination, Hidden and album metadata. The
+existing create handler refreshes the grant for matching immutable intent and
+preserves accepted parts. A new upload identity or seed reset is unnecessary.
+GET status polling alone does not perform this recovery. Parallelize different
+assets first; part receipt operations on one upload currently share a session gate.
