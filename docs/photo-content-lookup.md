@@ -75,7 +75,7 @@ vaults. Existing upload and receipt APIs remain the fallback for absent content.
 
 `make check` passed, including the full Go unit/race suites, vet, native helper
 checks, JavaScript checks and the Go file-length gate. Both OpenAPI documents
-parse successfully. This change has not been deployed to production.
+parse successfully.
 
 Targeted tests cover owner and credential isolation, Hidden and archived entries,
 Live Photo components, opaque originals, exact size matching, Trash/restore,
@@ -88,3 +88,31 @@ The metadata-only `BenchmarkPhotoContentLookup100K` measured approximately
 0.20 ms per 200-item batch against 100,000 indexed records on a local i7-1365U.
 This is a warm in-process result; it excludes first-load, HTTP and client hashing
 costs and is not a production latency guarantee.
+
+## Production rollout (2026-10-09)
+
+Deployed `weazlcloud:release-091de04ab396` (commit
+`091de04ab39687dd7f41abc599033f95b775f1ea`) to both the API and isolated renderer
+at 19:39 UTC. Exact-image container smoke tests passed on both storage backends;
+renderer probes and the mobile checks above passed again on this release image.
+The transferred image ID matched locally and on production.
+
+Both old containers drained with exit code zero before a fresh XFS reflink
+checkpoint at `/exports/dockervolume/weazlcloud-backups/photo-lookup-20261009/data`.
+Canonical state hashes and all 69,267 file sizes, modes and owners matched the
+checkpoint. Vaults, uploaded originals, receipts and staged upload state were
+preserved. Cutover took 23.7 seconds; image names were the only Compose change.
+Runtime environment, mounts, ports, resource limits and container security
+settings were verified unchanged.
+
+Desk, Grab, WebDAV and renderer readiness passed. Public TLS readiness, exact UI
+assets and browser login rendering passed; the public lookup rejects anonymous
+requests with 401. No owner credential was used for a production content lookup.
+Owner login/unlock is required after restart. The iOS app must call the new API;
+deploying it does not automatically reconcile a failed seed or create backup
+receipts for existing matches.
+
+Release logs and configuration backups are in
+`/home/bobp/weazlcloud-releases/photo-lookup-20261009` on production. Preserve
+post-cutover uploads when rolling back; do not overwrite live data with the
+pre-cutover checkpoint.
