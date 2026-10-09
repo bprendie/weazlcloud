@@ -795,6 +795,48 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SourceBatch'
+  /api/v1/photos/source-collections/lookup:
+    post:
+      summary: Recover album and folder source mappings across the owner's devices
+      operationId: lookupPhotoSourceCollections
+      x-required-scopes: [photos:read]
+      x-legacy-photos-v1: false
+      x-implementation-state: implemented
+      description: >-
+        Read-only recovery across old/current device IDs and namespaces, including
+        mappings for deleted targets. Discover features.source_collection_recovery.
+        Does not adopt mappings, recreate collections, or alter memberships.
+        All ambiguous matches are returned. Pages are live keyset reads, not a
+        snapshot. Cursor binds the owner and source_ids/namespace filter.
+      security:
+      - DeviceBearer: []
+      - OwnerSession: []
+      parameters:
+      - $ref: '#/components/parameters/MutationHeader'
+      - $ref: '#/components/parameters/MobileContractHeader'
+      - $ref: '#/components/parameters/MobileContractQuery'
+      requestBody:
+        required: true
+        description: Maximum body 2 MiB; identifiers use UTF-8 byte limits.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourceRecoveryRequest'
+      responses:
+        default: *id001
+        '200':
+          description: Owner-scoped mappings with current target existence and revision
+          headers:
+            Cache-Control:
+              schema: {type: string, const: 'private, no-store'}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceRecoveryPage'
+        '400': *id002
+        '401': {description: Authentication required; invalid bearer never falls back to cookie}
+        '403': {description: Missing photos read scope or X-Weazl-Desk header}
+        '423': {description: Vault locked}
   /api/v1/photos/source-memberships:
     post:
       summary: POST /api/v1/photos/source-memberships
@@ -2560,6 +2602,7 @@ components:
             scoped_devices: {type: boolean}
             credential_rotation: {type: boolean}
             photo_collections: {type: boolean}
+            source_collection_recovery: {type: boolean}
             source_collections: {type: boolean}
             source_memberships: {type: boolean}
             file_reads: {type: boolean}
@@ -2576,6 +2619,8 @@ components:
         limits:
           type: object
           properties:
+            source_collection_lookup_items: {type: integer, const: 200}
+            source_collection_lookup_matches: {type: integer, const: 200}
             photo_lookup_items: {type: integer, const: 200}
             photo_lookup_matches: {type: integer, const: 20}
             active_devices: {type: integer, const: 32}
@@ -2905,6 +2950,54 @@ components:
         server_id: {type: string}
         revision: {type: integer, format: int64}
       x-source-type: internal/catalog/photo_sources.go:SourceOutcome
+    SourceRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [source_ids]
+      properties:
+        source_ids:
+          type: array
+          minItems: 1
+          maxItems: 200
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 4096}
+          description: Opaque IDs, each at most 4096 UTF-8 bytes, no NUL. Albums/folders only.
+        namespace:
+          type: string
+          maxLength: 200
+          description: Optional exact namespace; omit or empty for all. At most 200 UTF-8 bytes, no NUL.
+        limit: {type: integer, minimum: 1, maximum: 200, default: 200}
+        cursor: {type: string, maxLength: 2048}
+    SourceRecoveryMatch:
+      type: object
+      required: [device_id, namespace, source_id, kind, server_id, source_revision, server_revision, current_server_revision, target_exists]
+      properties:
+        device_id: {type: string}
+        namespace: {type: string}
+        source_id: {type: string}
+        kind: {type: string, enum: [album, folder]}
+        server_id: {type: string}
+        source_revision: {type: string}
+        server_revision:
+          type: integer
+          minimum: 0
+          description: Server revision recorded at the last source operation, possibly stale.
+        current_server_revision:
+          type: [integer, 'null']
+          minimum: 0
+          description: Actual current target revision; null when target no longer exists.
+        target_exists: {type: boolean}
+    SourceRecoveryPage:
+      type: object
+      required: [matches, has_more]
+      properties:
+        matches:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/SourceRecoveryMatch'
+        has_more: {type: boolean}
+        next_cursor: {type: string}
     SourceBatch:
       type: object
       properties:

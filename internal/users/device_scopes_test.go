@@ -32,6 +32,8 @@ func TestExplicitMethodGrantsLegacyAndEmptyPersistence(t *testing.T) {
 		{"POST", "/api/v1/photos/metadata-jobs", true, false},
 		{"GET", "/api/v1/photos/collections", false, true},
 		{"POST", "/api/v1/photos/source-collections", false, false},
+		{"POST", "/api/v1/photos/source-collections/lookup", false, true},
+		{"GET", "/api/v1/photos/source-collections/lookup", false, false},
 		{"GET", "/api/v1/files/sync", false, true},
 		{"HEAD", "/api/v1/files/file/content", false, true},
 		{"DELETE", "/api/v1/files/file/content", false, false},

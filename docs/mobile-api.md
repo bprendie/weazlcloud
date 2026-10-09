@@ -71,6 +71,7 @@ capability projection: instance/contract/owner IDs, profile username/full name,
 Cookie requests instead include `authentication: account_session`.
 At final handler inspection, `features` advertises `scoped_devices`,
 `credential_rotation`, `photo_collections`, `source_collections`, `source_memberships`,
+`source_collection_recovery`,
 `file_reads`, `files_sync`, `recurring_backups`, and `idempotent_grabs` as true;
 `parts_v1` and `auto_finalize` reflect whether the parts manager is configured.
 `transports` advertises `ordered-patch-v1` and `parts-v1`. These are actual emitted
@@ -334,6 +335,21 @@ Successful operations replay by operation ID and exact specification; failures d
 not consume their ID. Server edits require fresh expected revisions. `deleted`
 retains server organization and originals; incomplete scans never infer removal.
 
+`POST /api/v1/photos/source-collections/lookup` provides read-only, owner-scoped
+recovery across all old/current device IDs and source namespaces. Requires
+`photos:read` and an unlocked vault; discover `features.source_collection_recovery`.
+Body: `{source_ids:[...],namespace?,limit?,cursor?}` (1–200 unique source IDs,
+2 MiB body, limit 1–200/default 200). Omit namespace to search all namespaces.
+Each `matches` item returns `device_id,namespace,kind,source_id,server_id,
+source_revision,server_revision,current_server_revision,target_exists`.
+`server_revision` is the stored mapping revision; `current_server_revision` is
+null when the target no longer exists. Deleted targets retain their mappings.
+Multiple matches are all returned; do not select or overwrite one automatically.
+Follow `next_cursor` while `has_more`, repeating the same IDs/namespace. Cursors
+are owner/query-bound; pages are live reads, not a stable catalog snapshot.
+No mapping adoption, collection creation, revision change, or membership mutation
+occurs. See [recovery contract and client handling](mobile-source-recovery.md).
+
 Album summary `asset_ids` is bounded and is not a full album export. Use
 `GET /api/v1/photos/albums/memberships?id=&cursor=&limit=&hidden=1` to enumerate
 all context-visible IDs (at most 200/page). Cursors bind the album, generation and
@@ -494,6 +510,7 @@ are grants only, without matching operations in the new dispatchers.
 | `PATCH` | `/api/v1/photos/collections/*` | `photos:write` | no |
 | `DELETE` | `/api/v1/photos/collections/*` | `photos:write` | no |
 | `POST` | `/api/v1/photos/source-collections` | `photos:write` | no |
+| `POST` | `/api/v1/photos/source-collections/lookup` | `photos:read` | no |
 | `POST` | `/api/v1/photos/source-memberships` | `photos:write` | no |
 | `POST` | `/api/v1/photos/uploads` | `photos:write` | yes |
 | `GET` | `/api/v1/photos/uploads/*` | `photos:write` | yes |
